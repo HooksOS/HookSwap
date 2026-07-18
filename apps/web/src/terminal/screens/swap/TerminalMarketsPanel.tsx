@@ -1,24 +1,25 @@
 /**
- * HookSwap Terminal — B2 Swap left "Markets" panel (LIVE token list).
+ * HookSwap Terminal — B2 Swap left "Markets" InstrumentPanel (LIVE token list).
  *
- * Replaces the static `MarketListPanel` placeholder in `SwapScreen.tsx`. Same
- * 238px panel chrome, same `1.3fr 1fr 60px` grid, same theme tokens — now filled
- * with REAL rows from the interface's Explore token list (`useListTokens`) instead
- * of skeleton bars. Each row: token logo + symbol (+ name), the live USD price and
- * 24h % change, and a mini price-history sparkline. Clicking a row hands a real
- * sdk-core `Currency` back to the swap ticket as the output token.
+ * Desk / Daylight redesign: a dense mono market list wrapped in the shared
+ * `InstrumentPanel` (uppercase-mono header bar + hairline frame on cool paper).
+ * Each row is a pure mono line — symbol + sub (chain) on the left, live USD price
+ * over a colored 24h delta on the right; the selected row gets a green left tick
+ * (inset box-shadow) + a soft-green fill. Clicking a row hands a real sdk-core
+ * `Currency` back to the swap ticket as the output token.
  *
  * DATA POLICY (no mock data — handoff hard rule):
  *   • Rows join the app's real `useListTokens(chainId)` feed — the same list that
- *     powers `/explore`. Price / 24h change / sparkline come straight from each
- *     token's `stats`. Loading renders honest skeleton rows; a chain the backend
- *     doesn't index comes back empty → honest "No markets" state; query failure →
- *     honest error line. NO fabricated rows, prices, or sparklines ever.
+ *     powers `/explore`. Price / 24h change come straight from each token's `stats`.
+ *     Loading renders honest skeleton rows; a chain the backend doesn't index comes
+ *     back empty → honest "No markets" state; query failure → honest error line. NO
+ *     fabricated rows, prices, or deltas ever.
  */
 import type { MultichainToken } from '@uniswap/client-data-api/dist/data/v1/types_pb'
 import type { Currency } from '@uniswap/sdk-core'
 import { useMemo } from 'react'
 import type { UniverseChainId } from 'uniswap/src/features/chains/types'
+import { getChainLabel } from 'uniswap/src/features/chains/utils'
 import { useLocalizationContext } from 'uniswap/src/features/language/LocalizationContext'
 import { currencyId } from 'uniswap/src/utils/currencyId'
 import { NumberType } from 'utilities/src/format/types'
@@ -27,14 +28,11 @@ import { TokenSortMethod } from '~/components/Tokens/constants'
 import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens'
 import type { UseListTokensOptions } from '~/features/Explore/state/listTokens/types'
 import { multichainTokenToDisplayToken } from '~/features/Explore/state/listTokens/utils/multichainTokenToDisplayToken'
-import { SparklineCell, type TrendDirection } from '~/terminal/components/SparklineCell'
-import { terminalColors, terminalFonts, terminalTokenGradients } from '~/terminal/theme/tokens'
+import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
+import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
 const SANS = terminalFonts.sans
-
-/** Shared panel grid — MUST match the SwapScreen placeholder (PAIR / PRICE / spark). */
-const GRID = '1.3fr 1fr 60px'
 
 const SKELETON_ROWS = [0, 1, 2, 3, 4, 5, 6, 7]
 
@@ -50,20 +48,17 @@ interface MarketRow {
   currency: Currency
   id: string
   symbol: string
-  /** Secondary line under the symbol (token name, or "/USD" fallback). */
+  /** Secondary line under the symbol — the chain label (real, from currency.chainId). */
   secondary: string
-  logoUrl: string | undefined
   price: number | undefined
   change1d: number | undefined
-  /** 1d price-history closes, oldest → newest (drives the sparkline). */
-  sparkline: number[] | undefined
 }
 
 /**
  * Convert a `MultichainToken` → real sdk-core `Currency` via the app's existing
  * helpers: `multichainTokenToDisplayToken` (picks the deployment on `chainId`) →
- * `gqlToCurrency` (native-aware: returns `nativeOnChain` for native placeholders,
- * else a `Token`). Returns undefined when the token has no deployment on `chainId`.
+ * `gqlToCurrency` (native-aware). Returns undefined when the token has no
+ * deployment on `chainId`.
  */
 function toRow(token: MultichainToken, chainId: UniverseChainId): MarketRow | undefined {
   const display = multichainTokenToDisplayToken({ mcToken: token, exploreChainId: chainId })
@@ -76,42 +71,15 @@ function toRow(token: MultichainToken, chainId: UniverseChainId): MarketRow | un
   }
   const id = currencyId(currency)
   const stats = token.stats
-  const history = stats?.priceHistory1d
   return {
     key: token.multichainId || id,
     currency,
     id,
     symbol: token.symbol || currency.symbol || '—',
-    secondary: token.name || '/USD',
-    logoUrl: token.logoUrl || undefined,
+    secondary: getChainLabel(chainId),
     price: stats?.price,
     change1d: stats?.priceChange1d,
-    sparkline: history && history.length > 0 ? history.map((point) => point.value) : undefined,
   }
-}
-
-/* --------------------------------------------------------------- token logo */
-
-/**
- * Real token logo from `MultichainToken.logoUrl`, with the prototype's gradient
- * placeholder circle as a fallback. Mirrors `TerminalTokenLogo` in SwapScreen but
- * takes a raw URL (we have `logoUrl` directly, not a `CurrencyInfo`).
- */
-function MarketTokenLogo({ url, size }: { url: string | undefined; size: number }): JSX.Element {
-  return (
-    <span
-      style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        background: url
-          ? `${terminalColors.panel} center/cover no-repeat url(${JSON.stringify(url)})`
-          : terminalTokenGradients.eth,
-        flexShrink: 0,
-        display: 'inline-block',
-      }}
-    />
-  )
 }
 
 /* ------------------------------------------------------------------- row */
@@ -137,13 +105,6 @@ function MarketRowView({
       ? terminalColors.greenUp
       : terminalColors.redDown
 
-  // Spark direction by last vs first close (green when last ≥ first).
-  let sparkDirection: TrendDirection | undefined
-  if (row.sparkline && row.sparkline.length >= 2) {
-    const series = row.sparkline
-    sparkDirection = series[series.length - 1] >= series[0] ? 'up' : 'down'
-  }
-
   return (
     <div
       role="button"
@@ -157,72 +118,68 @@ function MarketRowView({
       }}
       style={{
         display: 'grid',
-        gridTemplateColumns: GRID,
+        gridTemplateColumns: '1fr auto',
         gap: 6,
         alignItems: 'center',
-        padding: '11px 12px',
+        padding: '10px 14px',
         borderBottom: `1px solid ${terminalColors.line3}`,
-        borderLeft: `2px solid ${active ? terminalColors.brandGreen : 'transparent'}`,
-        background: active ? terminalColors.panel2Alt : 'transparent',
+        background: active ? terminalColors.greenBg : 'transparent',
+        boxShadow: active ? `inset 2px 0 0 ${terminalColors.brandGreen}` : undefined,
         cursor: 'pointer',
       }}
     >
-      {/* PAIR: logo + symbol + secondary */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-        <MarketTokenLogo url={row.logoUrl} size={20} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-          <span
-            style={{
-              fontFamily: MONO,
-              fontWeight: 600,
-              fontSize: 12.5,
-              color: terminalColors.ink,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {row.symbol}
-          </span>
-          <span
-            style={{
-              fontFamily: MONO,
-              fontSize: 9.5,
-              color: terminalColors.ink3Alt,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {row.secondary}
-          </span>
+      {/* PAIR: symbol + chain sub */}
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontFamily: MONO,
+            fontWeight: 600,
+            fontSize: 12.5,
+            color: terminalColors.ink,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {row.symbol}
+        </div>
+        <div
+          style={{
+            fontFamily: MONO,
+            fontSize: 10.5,
+            color: terminalColors.ink3,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {row.secondary}
         </div>
       </div>
 
-      {/* PRICE (right): price over 24h % change */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-end', minWidth: 0 }}>
-        <span
+      {/* PRICE: price over 24h delta */}
+      <div style={{ textAlign: 'right', minWidth: 0 }}>
+        <div
           style={{
             fontFamily: MONO,
-            fontSize: 11.5,
+            fontSize: 12.5,
             color: priceText === '—' ? terminalColors.faint : terminalColors.ink,
             whiteSpace: 'nowrap',
           }}
         >
           {priceText}
-        </span>
-        <span style={{ fontFamily: MONO, fontSize: 10, color: changeColor, whiteSpace: 'nowrap' }}>
+        </div>
+        <div
+          style={{
+            fontFamily: MONO,
+            fontSize: 10.5,
+            fontWeight: 600,
+            color: changeColor,
+            whiteSpace: 'nowrap',
+          }}
+        >
           {hasChange ? formatSignedPct(row.change1d as number) : '—'}
-        </span>
-      </div>
-
-      {/* Sparkline (60px trailing cell) — blank when no series (never fabricated). */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-        {sparkDirection ? (
-          <SparklineCell data={row.sparkline as number[]} direction={sparkDirection} width={52} height={22} strokeWidth={2} />
-        ) : (
-          <span style={{ width: 52, height: 22, display: 'inline-block' }} />
-        )}
+        </div>
       </div>
     </div>
   )
@@ -259,78 +216,38 @@ export function TerminalMarketsPanel({
 
   const activeId = activeCurrency ? currencyId(activeCurrency) : undefined
   const showSkeleton = isLoading && rows.length === 0
+  const countLabel = isLoading && topTokens.length === 0 ? '—' : `${topTokens.length} pairs`
 
   return (
-    <div
-      style={{
-        width: 238,
-        flexShrink: 0,
-        borderRight: `1px solid ${terminalColors.line2}`,
-        background: terminalColors.bg,
-        display: 'flex',
-        flexDirection: 'column',
-      }}
+    <InstrumentPanel
+      title="Markets"
+      meta={[countLabel]}
+      flush
+      style={{ width: 236, flexShrink: 0 }}
     >
-      {/* Header: "Markets" + live count */}
-      <div
-        style={{
-          padding: '13px 14px',
-          borderBottom: `1px solid ${terminalColors.line2}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <span style={{ fontFamily: SANS, fontWeight: 600, fontSize: 13.5, color: terminalColors.ink }}>Markets</span>
-        <span
-          style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.ink3Alt }}
-          aria-busy={isLoading || undefined}
-        >
-          {isLoading && topTokens.length === 0 ? '—' : topTokens.length}
-        </span>
-      </div>
-
-      {/* Column header row */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: GRID,
-          gap: 6,
-          padding: '8px 12px',
-          fontFamily: MONO,
-          fontSize: 10,
-          color: terminalColors.ink3Alt,
-          borderBottom: `1px solid ${terminalColors.line3}`,
-        }}
-      >
-        <span>PAIR</span>
-        <span style={{ textAlign: 'right' }}>PRICE</span>
-        <span />
-      </div>
-
       {/* Body: skeleton while loading, then live rows / honest empty / error */}
-      <div style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 640, overflowY: 'auto' }}>
         {showSkeleton ? (
           SKELETON_ROWS.map((i) => (
             <div
               key={i}
               style={{
                 display: 'grid',
-                gridTemplateColumns: GRID,
+                gridTemplateColumns: '1fr auto',
                 gap: 6,
                 alignItems: 'center',
-                padding: '11px 12px',
+                padding: '10px 14px',
                 borderBottom: `1px solid ${terminalColors.line3}`,
               }}
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                 <span style={{ height: 9, width: 58, borderRadius: 3, background: terminalColors.line2 }} />
-                <span style={{ height: 8, width: 34, borderRadius: 3, background: terminalColors.line3 }} />
+                <span style={{ height: 8, width: 40, borderRadius: 3, background: terminalColors.line3 }} />
               </div>
-              <span
-                style={{ height: 9, width: 46, borderRadius: 3, background: terminalColors.line2, justifySelf: 'end' }}
-              />
-              <span style={{ height: 14, width: 52, borderRadius: 3, background: terminalColors.line3 }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'flex-end' }}>
+                <span style={{ height: 9, width: 46, borderRadius: 3, background: terminalColors.line2 }} />
+                <span style={{ height: 8, width: 30, borderRadius: 3, background: terminalColors.line3 }} />
+              </div>
             </div>
           ))
         ) : rows.length > 0 ? (
@@ -346,19 +263,17 @@ export function TerminalMarketsPanel({
           <div
             style={{
               padding: '22px 14px',
-              fontFamily: terminalFonts.sans,
+              fontFamily: SANS,
               fontSize: 11.5,
               lineHeight: 1.5,
-              color: terminalColors.ink3Alt,
+              color: terminalColors.ink3,
               textAlign: 'center',
             }}
           >
-            {isError
-              ? 'Markets unavailable right now.'
-              : 'No markets on this network yet.'}
+            {isError ? 'Markets unavailable right now.' : 'No markets on this network yet.'}
           </div>
         )}
       </div>
-    </div>
+    </InstrumentPanel>
   )
 }

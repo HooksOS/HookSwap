@@ -62,8 +62,11 @@ import { queryParametersToCurrencyState } from '~/pages/Swap/Swap/state/tradeQue
 import { useWrapCallback as useDirectWrapCallback } from '~/pages/Swap/Limit/ConfirmLimitOrderModal/useWrapCallback'
 import { maxAmountSpend } from '~/utils/maxAmountSpend'
 import { MultichainContextProvider } from '~/state/multichain/MultichainContext'
+import { useOnSelectCurrency } from 'uniswap/src/features/transactions/swap/form/hooks/useOnSelectCurrency'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
+import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { TerminalChartPanel } from '~/terminal/screens/swap/TerminalChartPanel'
+import { TerminalMarketsPanel } from '~/terminal/screens/swap/TerminalMarketsPanel'
 import { TerminalSwapReviewFlow, useTerminalReviewTrigger } from '~/terminal/screens/swap/TerminalSwapReviewFlow'
 import { terminalColors, terminalFonts, terminalShadows, terminalTokenGradients } from '~/terminal/theme/tokens'
 
@@ -190,23 +193,27 @@ function CurrencyField_Panel({
       style={{
         background: terminalColors.panel,
         border: `1px solid ${terminalColors.line2}`,
-        borderRadius: 12,
-        padding: 13,
+        borderRadius: 8,
+        padding: '12px 14px',
+        marginTop: 10,
       }}
     >
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
-          fontSize: 11.5,
+          fontFamily: MONO,
+          fontSize: 10.5,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
           color: terminalColors.ink3,
-          marginBottom: 7,
+          marginBottom: 8,
         }}
       >
         <span>{side}</span>
-        <span style={{ fontFamily: MONO }}>{balanceLabel}</span>
+        <span>{balanceLabel}</span>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
         <input
           inputMode="decimal"
           value={amountValue}
@@ -215,8 +222,8 @@ function CurrencyField_Panel({
           onChange={(e) => onAmountChange(sanitizeAmountInput(e.target.value))}
           style={{
             fontFamily: MONO,
-            fontSize: 24,
-            fontWeight: 500,
+            fontSize: 26,
+            fontWeight: 600,
             color: terminalColors.ink,
             border: 'none',
             outline: 'none',
@@ -232,11 +239,11 @@ function CurrencyField_Panel({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 7,
+            gap: 8,
             background: terminalColors.bg,
             border: `1px solid ${terminalColors.line}`,
             borderRadius: 999,
-            padding: '5px 11px 5px 5px',
+            padding: '5px 11px 5px 6px',
             cursor: 'pointer',
             flexShrink: 0,
           }}
@@ -336,12 +343,26 @@ function BreakdownRow({
       style={{
         display: 'flex',
         justifyContent: 'space-between',
-        fontSize: 11.5,
-        marginBottom: last ? 0 : 8,
+        alignItems: 'center',
+        gap: 10,
+        padding: '9px 0',
+        borderBottom: last ? 'none' : `1px dashed ${terminalColors.line}`,
       }}
     >
-      <span style={{ color: terminalColors.ink3 }}>{label}</span>
-      <span style={{ color: valueColor ?? terminalColors.ink }}>{value}</span>
+      <span
+        style={{
+          fontFamily: MONO,
+          fontSize: 10.5,
+          letterSpacing: '0.05em',
+          textTransform: 'uppercase',
+          color: terminalColors.ink3,
+        }}
+      >
+        {label}
+      </span>
+      <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: valueColor ?? terminalColors.ink }}>
+        {value}
+      </span>
     </div>
   )
 }
@@ -529,22 +550,21 @@ export function SwapTicket(): JSX.Element {
     // Trade ready — open the REAL review→confirm→submit modal via the interface's
     // own swap pipeline, reused verbatim (see TerminalSwapReviewFlow / SwapReviewScreen).
     // The button opens the review step; funds only move on explicit confirm in that modal.
-    swapLabel = 'Swap'
+    swapLabel = 'Review swap →'
     swapEnabled = true
     onSwap = onReview
   }
 
   return (
-    <div style={{ width: 326, flexShrink: 0, background: terminalColors.bg, padding: 16 }}>
-      {/* Market / Send tabs */}
+    <InstrumentPanel title="Order Ticket" meta={['Market']} style={{ width: '100%' }}>
+      {/* Market / Send tabs — desk segmented (well track, active = white keycap) */}
       <div
         style={{
           display: 'flex',
-          gap: 3,
+          gap: 2,
           background: terminalColors.panel2,
           padding: 3,
-          borderRadius: 9,
-          marginBottom: 14,
+          borderRadius: 8,
         }}
       >
         {TICKET_TABS.map((tab) => {
@@ -570,11 +590,12 @@ export function SwapTicket(): JSX.Element {
               style={{
                 flex: 1,
                 textAlign: 'center',
-                padding: 7,
-                fontSize: 12.5,
-                fontWeight: active ? 600 : 500,
+                padding: '5px 11px',
+                fontFamily: MONO,
+                fontSize: 11,
+                fontWeight: 600,
                 background: active ? terminalColors.bg : 'transparent',
-                color: active ? terminalColors.ink : terminalColors.ink2,
+                color: active ? terminalColors.ink : terminalColors.ink3,
                 borderRadius: 6,
                 boxShadow: active ? terminalShadows.segmentedActive : undefined,
                 cursor: 'pointer',
@@ -611,8 +632,8 @@ export function SwapTicket(): JSX.Element {
           onClick={onSwitch}
           aria-label="Switch tokens"
           style={{
-            width: 30,
-            height: 30,
+            width: 34,
+            height: 34,
             borderRadius: 9,
             background: terminalColors.bg,
             border: `1px solid ${terminalColors.line}`,
@@ -664,48 +685,49 @@ export function SwapTicket(): JSX.Element {
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          gap: 10,
           width: '100%',
-          marginTop: 12,
-          padding: 2,
+          padding: '14px 2px 6px',
+          fontFamily: terminalFonts.sans,
+          fontSize: 13,
+          color: terminalColors.ink2,
           opacity: 0.6,
           cursor: 'not-allowed',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg
-            width={15}
-            height={15}
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={terminalColors.ink3Alt}
-            strokeWidth={2}
-            strokeLinejoin="round"
-          >
-            <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />
-          </svg>
-          <span style={{ fontSize: 12.5, color: terminalColors.ink2, fontWeight: 500 }}>MEV protection</span>
-          <span
-            style={{
-              fontFamily: MONO,
-              fontSize: 10.5,
-              fontWeight: 600,
-              letterSpacing: '0.02em',
-              textTransform: 'uppercase',
-              color: terminalColors.ink3Alt,
-              background: terminalColors.panel2,
-              padding: '2px 6px',
-              borderRadius: 5,
-            }}
-          >
-            Soon
-          </span>
-        </div>
+        <svg
+          width={15}
+          height={15}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={terminalColors.ink3}
+          strokeWidth={2}
+          strokeLinejoin="round"
+        >
+          <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" />
+        </svg>
+        <span>MEV protection</span>
+        <span
+          style={{
+            fontFamily: MONO,
+            fontSize: 10.5,
+            fontWeight: 600,
+            letterSpacing: '0.02em',
+            textTransform: 'uppercase',
+            color: terminalColors.ink3,
+            background: terminalColors.panel2,
+            padding: '2px 6px',
+            borderRadius: 5,
+          }}
+        >
+          Soon
+        </span>
         {/* Off + disabled toggle — visual only, no click handler. */}
         <span
           style={{
-            width: 34,
-            height: 20,
+            marginLeft: 'auto',
+            width: 38,
+            height: 22,
             borderRadius: 999,
             background: terminalColors.line,
             position: 'relative',
@@ -715,49 +737,52 @@ export function SwapTicket(): JSX.Element {
           <span
             style={{
               position: 'absolute',
-              top: 2,
-              left: 2,
+              top: 3,
+              left: 3,
               width: 16,
               height: 16,
               borderRadius: '50%',
-              background: terminalColors.ink,
+              background: terminalColors.bg,
             }}
           />
         </span>
       </div>
 
-      {/* Live breakdown */}
+      {/* Live receipt — dashed instrument block, mono rows */}
       <div
         style={{
-          border: `1px solid ${terminalColors.line2}`,
-          borderRadius: 11,
-          marginTop: 12,
-          padding: '12px 13px',
-          fontFamily: MONO,
+          border: `1px dashed ${terminalColors.line}`,
+          borderRadius: 8,
+          marginTop: 14,
+          padding: '6px 14px',
+          background: terminalColors.panel,
         }}
       >
-        <BreakdownRow label="rate" value={rateValue} />
-        <BreakdownRow label="impact" value={impactValue} valueColor={impactColor} />
-        <BreakdownRow label="min recv" value={minRecvValue} />
-        <BreakdownRow label="route" value={routeValue} last />
+        <BreakdownRow label="Rate" value={rateValue} />
+        <BreakdownRow label="Price impact" value={impactValue} valueColor={impactColor} />
+        <BreakdownRow label="Min received" value={minRecvValue} />
+        <BreakdownRow label="Route" value={routeValue} />
+        {/* Network fee: no verifiable per-quote gas estimate is surfaced here → honest "—". */}
+        <BreakdownRow label="Network fee" value="—" last />
       </div>
 
-      {/* Swap button */}
+      {/* Primary action — dynamic state machine (Connect / Enter amount / Insufficient /
+          Wrap / Review swap). Green, full-width. */}
       <button
         type="button"
         onClick={swapEnabled ? onSwap : undefined}
         disabled={!swapEnabled}
         style={{
           width: '100%',
+          height: 46,
           background: swapEnabled ? terminalColors.brandGreen : terminalColors.panel2,
           color: swapEnabled ? terminalColors.btnInk : terminalColors.ink3,
           fontWeight: 600,
-          fontSize: 15,
+          fontSize: 14,
           fontFamily: terminalFonts.sans,
-          padding: 14,
-          borderRadius: 12,
+          borderRadius: 8,
           textAlign: 'center',
-          marginTop: 12,
+          marginTop: 14,
           border: 'none',
           cursor: swapEnabled ? 'pointer' : 'not-allowed',
         }}
@@ -767,7 +792,7 @@ export function SwapTicket(): JSX.Element {
 
       {/* Real token selector (app's SwapTokenSelector, driven by the swap form store) */}
       <SwapTokenSelector isModalOpen={selectingCurrencyField !== undefined} />
-    </div>
+    </InstrumentPanel>
   )
 }
 
@@ -858,12 +883,26 @@ function SwapScreenBody(): JSX.Element {
   // SwapDependenciesStoreContextProvider"). Provided here around the whole body.
   const swapHandlers = useSwapHandlers()
 
-  // Mobile: single, centered swap ticket (no chart) to avoid horizontal overflow.
+  // Left "Markets" pane wiring — clicking a market row commits that token as the swap
+  // OUTPUT via the app's OWN selection path (`useOnSelectCurrency` → `selectTradeableAsset`),
+  // the SAME handler the real SwapTokenSelector uses, so the pair updates through the live
+  // swap-form store (no bespoke state). The list is scoped to the active pair's chain.
+  const onSelectCurrencyHandler = useOnSelectCurrency({})
+  const handleSelectMarket = (currency: Currency): void =>
+    onSelectCurrencyHandler({
+      currency,
+      field: CurrencyField.OUTPUT,
+      allowCrossChainPair: false,
+      isPreselectedAsset: false,
+    })
+  const marketChainId = inputCurrency?.chainId ?? outputCurrency?.chainId
+
+  // Mobile: single, centered swap ticket (no chart / markets) to avoid horizontal overflow.
   if (isMobile) {
     return (
       <SwapDependenciesStoreContextProvider swapHandlers={swapHandlers}>
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 8px 28px' }}>
-          <div style={{ width: 326, maxWidth: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 12px 28px' }}>
+          <div style={{ width: 340, maxWidth: '100%' }}>
             <WrongChainBanner />
             <TerminalSwapReviewFlow>
               <SwapTicket />
@@ -877,13 +916,25 @@ function SwapScreenBody(): JSX.Element {
   return (
     <SwapDependenciesStoreContextProvider swapHandlers={swapHandlers}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 660 }}>
-        <WrongChainBanner />
-        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        {/* Full-width honest wrong-chain banner — horizontal inset only so it collapses to
+            zero height (no phantom gap) when it returns null on the live chain. */}
+        <div style={{ padding: '0 24px' }}>
+          <WrongChainBanner />
+        </div>
+        {/* Desk: 3 framed instrument panels on cool paper, 16px gutters, top-aligned. */}
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', padding: '20px 24px 40px' }}>
+          {marketChainId !== undefined && isUniverseChainId(marketChainId) ? (
+            <TerminalMarketsPanel
+              chainId={marketChainId}
+              activeCurrency={outputCurrency}
+              onSelectCurrency={handleSelectMarket}
+            />
+          ) : null}
           <TerminalChartPanel inputCurrency={inputCurrency} outputCurrency={outputCurrency} />
           {/* Fixed-width, top-aligned wrapper: TransactionModal (rendered inside the flow)
               uses <Flex fill justifyContent="flex-end">, which would otherwise stretch to
               the row height and steal the chart's width / bottom-align the ticket. */}
-          <div style={{ width: 326, flexShrink: 0, alignSelf: 'flex-start' }}>
+          <div style={{ width: 340, flexShrink: 0, alignSelf: 'flex-start' }}>
             <TerminalSwapReviewFlow>
               <SwapTicket />
             </TerminalSwapReviewFlow>

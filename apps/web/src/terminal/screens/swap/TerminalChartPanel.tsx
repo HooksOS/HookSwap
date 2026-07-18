@@ -1,10 +1,11 @@
 /**
- * HookSwap Terminal — B2 Swap live price-chart panel.
+ * HookSwap Terminal — B2 Swap live price-chart panel (Desk / Daylight redesign).
  *
- * Self-contained, prop-driven replacement for the placeholder `ChartPanel` that
- * previously lived in `SwapScreen.tsx`. The panel chrome (pair header, timeframe
- * tab row, large chart area, right-side stat cells) is a pixel-for-pixel copy of
- * that placeholder — only the data is now LIVE.
+ * The center pane of the swap desk: a framed `InstrumentPanel` (live dot + green
+ * corner registration ticks) whose header names the pair, with a chart-head row
+ * (overlapped token logos + pair symbol + live spot/delta + a mono keycap
+ * timeframe segmented control), a large area chart, and a mono OHLC row
+ * (O / H / L / C / VOL) derived from the displayed series.
  *
  * DATA POLICY (no mock data — handoff hard rule):
  *   • Price series + spot price come from the interface's real token price-history
@@ -12,29 +13,14 @@
  *     shared `PriceChartBody` (lightweight-charts). Real for backend-indexed chains
  *     (e.g. Mainnet); for chains the hosted GraphQL does not index (Robinhood — the
  *     Terminal's live chain), the 1D timeframe instead renders HookSwap's OWN
- *     data-api native relative price series (`TokenStats.priceHistory1d`, the same
- *     feed Markets' sparklines read) as an UNLABELED line — no USD axis, since the
- *     series is native-denominated (no stablecoin USD anchor exists pre-liquidity).
- *     Other timeframes (1H/1W/1M/1Y), which the 1D series cannot serve, keep the
- *     honest empty state ("No price history yet"). NO fabricated series is drawn.
- *   • 24h % change is a UNITLESS %: sourced from the data-api token stats
- *     (`TokenStats.priceChange1d`, real on Robinhood now) with the GraphQL
- *     `useTokenPriceChange` as fallback for indexed chains; honest "—" when neither.
- *   • The header "Price" cell precedence: (1) GraphQL USD spot ($) on indexed chains; else
- *     (2) the data-api NATIVE spot (latest priceHistory1d value = the token's price in the
- *     chain's wrapped-native); else (3) a LIVE native spot derived from the pool's CURRENT
- *     on-chain v2 reserves (`useV2Pair` → `Pair.priceOf`, used on custom chains like
- *     Robinhood whose pool has reserves but no indexed history yet); else honest "—". Both
- *     native branches render as "<value> <QUOTE>" (e.g. "0.00005 WETH") with a plain-number
- *     formatter — NEVER under a "$"/USD label; the reserves branch only engages when the
- *     OTHER charted currency IS the wrapped-native, so <QUOTE> is always the true
- *     denomination. A "Price in <QUOTE>" caption over the native line makes the axis-less
- *     series explicitly native, not USD.
- *   • 24h high / low / vol stat cells are USD-denominated → they stay on the GraphQL
- *     stack and render honest "—" on chains without a USD anchor. They are deliberately
- *     NOT populated from native data (that would mislabel a native ratio under a "$"/USD
- *     label). 24h high/low are derived from the GraphQL price series ONLY on the 1D
- *     timeframe (otherwise "—" — never a 52-week value under "24h").
+ *     data-api native relative price series (`TokenStats.priceHistory1d`) as an
+ *     UNLABELED line — no USD axis, since the series is native-denominated. Other
+ *     timeframes keep the honest empty state. NO fabricated series is drawn.
+ *   • Spot price + 24h % change + OHLC row are all REAL (data-api / GraphQL), with
+ *     honest "—" fallbacks; the O/H/L/C row is computed from the SAME series the
+ *     chart draws (open = first point, close = last, high/low = window extents),
+ *     formatted USD on indexed chains and plain-number on native chains — never a
+ *     native ratio under a "$"/USD label.
  *
  * The component reads NO swap-form store and performs NO navigation — it is driven
  * purely by `inputCurrency` / `outputCurrency` props, so it is decoupled + reusable.
@@ -45,7 +31,7 @@ import type { UTCTimestamp } from 'lightweight-charts'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { WRAPPED_NATIVE_CURRENCY } from 'uniswap/src/constants/tokens'
 import type { UniverseChainId } from 'uniswap/src/features/chains/types'
-import { toGraphQLChain } from 'uniswap/src/features/chains/utils'
+import { getChainLabel, isUniverseChainId, toGraphQLChain } from 'uniswap/src/features/chains/utils'
 import { useTokenMarketStats, useTokenPriceChange } from 'uniswap/src/features/dataApi/tokenDetails/useTokenDetailsData'
 import { useLocalizationContext } from 'uniswap/src/features/language/LocalizationContext'
 import { CurrencyField } from 'uniswap/src/types/currency'
@@ -62,15 +48,15 @@ import { toStrictlyAscendingByTime } from '~/hooks/useTokenPriceChartData'
 import { useTokenPriceChartPanel } from '~/hooks/useTokenPriceChartPanel'
 import { useV2Pair } from '~/hooks/useV2Pairs'
 import { getNativeTokenDBAddress } from '~/utils/nativeTokens'
+import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
 
 /**
- * Timeframe tabs — visually identical pill row to the placeholder, now functional.
- * Each label maps to a REAL `TimePeriod` the price-history backend serves (the
- * hosted data API has no sub-hour granularity, so honest supported durations are
- * used rather than fabricated intraday buckets).
+ * Timeframe tabs — each label maps to a REAL `TimePeriod` the price-history backend
+ * serves (the hosted data API has no sub-hour granularity, so honest supported
+ * durations are used rather than fabricated intraday buckets).
  */
 const TIME_OPTIONS = [
   { label: '1H', period: TimePeriod.HOUR },
@@ -82,62 +68,50 @@ const TIME_OPTIONS = [
 
 /* ------------------------------------------------------------- shared chrome */
 
-function HeaderStat({
-  label,
-  value,
-  valueColor,
-  size = 14,
-  weight,
-}: {
-  label: string
-  value: string
-  valueColor?: string
-  /** Prototype: Price value is 15px; all other stats 14px. */
-  size?: number
-  /** Prototype: only Price is weight 600. */
-  weight?: number
-}): JSX.Element {
-  return (
-    <div>
-      <div style={{ fontSize: 10.5, color: terminalColors.ink3Alt, whiteSpace: 'nowrap' }}>{label}</div>
-      <div
-        style={{
-          fontFamily: MONO,
-          fontSize: size,
-          fontWeight: weight,
-          color: valueColor ?? terminalColors.ink2,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  )
-}
-
-/** Right-side stat cluster — same five cells / order / styling as the placeholder. */
-function StatsCluster({
+/** Compact live spot + 24h delta, sat beside the pair symbol in the chart head. */
+function PairPrice({
   price,
   change,
   changeColor,
-  high,
-  low,
-  vol,
 }: {
   price: string
   change: string
   changeColor: string
-  high: string
-  low: string
-  vol: string
 }): JSX.Element {
   return (
-    <div style={{ display: 'flex', gap: 22, alignItems: 'center', flexShrink: 0 }}>
-      <HeaderStat label="Price" value={price} valueColor={terminalColors.ink} size={15} weight={600} />
-      <HeaderStat label="24h" value={change} valueColor={changeColor} />
-      <HeaderStat label="24h high" value={high} />
-      <HeaderStat label="24h low" value={low} />
-      <HeaderStat label="24h vol" value={vol} />
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 8, marginLeft: 4, whiteSpace: 'nowrap' }}>
+      <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 600, color: terminalColors.ink }}>{price}</span>
+      <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 600, color: changeColor }}>{change}</span>
+    </span>
+  )
+}
+
+/** Mono OHLC row — O / H / L / C / VOL, honest "—" when the series can't fill a cell. */
+function OhlcRow({
+  open,
+  high,
+  low,
+  close,
+  vol,
+}: {
+  open: string
+  high: string
+  low: string
+  close: string
+  vol: string
+}): JSX.Element {
+  const cell = (label: string, value: string): JSX.Element => (
+    <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.ink3, whiteSpace: 'nowrap' }}>
+      {label} <b style={{ color: terminalColors.ink, fontWeight: 600 }}>{value}</b>
+    </span>
+  )
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 22, padding: '12px 4px 0' }}>
+      {cell('O', open)}
+      {cell('H', high)}
+      {cell('L', low)}
+      {cell('C', close)}
+      {cell('VOL', vol)}
     </div>
   )
 }
@@ -185,7 +159,7 @@ function TokenToggle({
   )
 }
 
-/** Pair header left group: overlapped token logos + "IN / OUT" title + token toggle. */
+/** Chart-head left group: overlapped token logos + "IN / OUT" title + token toggle. */
 function PairHeaderLeft({
   inputCurrency,
   outputCurrency,
@@ -201,14 +175,14 @@ function PairHeaderLeft({
   const outSym = outputCurrency?.symbol ?? '—'
   const showToggle = !!inputCurrency && !!outputCurrency
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <span style={{ display: 'flex' }}>
-        <CurrencyLogo currency={inputCurrency} size={28} />
-        <span style={{ marginLeft: -9 }}>
-          <CurrencyLogo currency={outputCurrency} size={28} />
+        <CurrencyLogo currency={inputCurrency} size={22} />
+        <span style={{ marginLeft: -8 }}>
+          <CurrencyLogo currency={outputCurrency} size={22} />
         </span>
       </span>
-      <span style={{ fontFamily: MONO, fontWeight: 600, fontSize: 17, color: terminalColors.ink, whiteSpace: 'nowrap' }}>
+      <span style={{ fontFamily: MONO, fontWeight: 600, fontSize: 16, color: terminalColors.ink, whiteSpace: 'nowrap' }}>
         {inSym} / {outSym}
       </span>
       {showToggle && (
@@ -223,7 +197,8 @@ function PairHeaderLeft({
   )
 }
 
-function TimeframeTabs({
+/** Mono keycap timeframe segmented control (well track, active = white keycap). */
+function TimeframeSeg({
   timePeriod,
   onChange,
 }: {
@@ -233,11 +208,12 @@ function TimeframeTabs({
   return (
     <div
       style={{
-        display: 'flex',
-        gap: 3,
-        padding: '9px 20px',
-        borderBottom: `1px solid ${terminalColors.line2}`,
-        background: terminalColors.bg,
+        marginLeft: 'auto',
+        display: 'inline-flex',
+        gap: 2,
+        background: terminalColors.panel2,
+        borderRadius: 8,
+        padding: 3,
       }}
     >
       {TIME_OPTIONS.map(({ label, period }) => {
@@ -249,14 +225,15 @@ function TimeframeTabs({
             onClick={() => onChange(period)}
             style={{
               fontFamily: MONO,
-              fontSize: 11.5,
-              fontWeight: active ? 600 : 400,
-              color: active ? terminalColors.ink : terminalColors.ink2,
-              background: active ? terminalColors.panel2Alt : 'transparent',
-              padding: '4px 10px',
+              fontSize: 11,
+              fontWeight: 600,
+              color: active ? terminalColors.ink : terminalColors.ink3,
+              background: active ? terminalColors.bg : 'transparent',
+              padding: '5px 11px',
               borderRadius: 6,
               border: 'none',
               cursor: 'pointer',
+              boxShadow: active ? terminalShadows.segmentedActive : undefined,
             }}
           >
             {label}
@@ -268,9 +245,9 @@ function TimeframeTabs({
 }
 
 /**
- * Honest empty/loading chart state — the placeholder's grid scaffold + centered
- * message + optional corner spot badge. NO fabricated series is drawn; shown when
- * the price-history feed returns nothing (unindexed chain) or is still loading.
+ * Honest empty/loading chart state — a grid scaffold + centered message + optional
+ * corner spot badge. NO fabricated series is drawn; shown when the price-history
+ * feed returns nothing (unindexed chain) or is still loading.
  */
 function EmptyChartOverlay({ spotLabel, loading }: { spotLabel: string; loading: boolean }): JSX.Element {
   return (
@@ -316,7 +293,19 @@ function EmptyChartOverlay({ spotLabel, loading }: { spotLabel: string; loading:
   )
 }
 
-/** Outer panel frame + header row + timeframe tabs shared by the live + empty branches. */
+/** Resolve the framed panel's uppercase-mono pair title + chain meta chip. */
+function usePanelChrome(inputCurrency: Maybe<Currency>, outputCurrency: Maybe<Currency>): {
+  title: string
+  meta: string[]
+} {
+  const inSym = inputCurrency?.symbol ?? '—'
+  const outSym = outputCurrency?.symbol ?? '—'
+  const chainId = inputCurrency?.chainId ?? outputCurrency?.chainId
+  const chainLabel = chainId !== undefined && isUniverseChainId(chainId) ? getChainLabel(chainId) : undefined
+  return { title: `${inSym} / ${outSym}`, meta: chainLabel ? [chainLabel] : [] }
+}
+
+/** Framed InstrumentPanel + chart-head (pair / price / timeframe) shared by both branches. */
 function PanelShell({
   inputCurrency,
   outputCurrency,
@@ -324,7 +313,8 @@ function PanelShell({
   onSelectField,
   timePeriod,
   onTimePeriodChange,
-  stats,
+  priceNode,
+  ohlc,
   children,
 }: {
   inputCurrency: Maybe<Currency>
@@ -333,30 +323,28 @@ function PanelShell({
   onSelectField: (field: CurrencyField) => void
   timePeriod: TimePeriod
   onTimePeriodChange: (period: TimePeriod) => void
-  stats: JSX.Element
+  priceNode: JSX.Element
+  ohlc: JSX.Element
   children: React.ReactNode
 }): JSX.Element {
+  const { title, meta } = usePanelChrome(inputCurrency, outputCurrency)
   return (
-    <div
-      style={{
-        flex: 1,
-        minWidth: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        borderRight: `1px solid ${terminalColors.line2}`,
-      }}
+    <InstrumentPanel
+      title={title}
+      live
+      corners
+      meta={meta}
+      style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}
+      bodyStyle={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, padding: 16 }}
     >
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
+          gap: 14,
           rowGap: 10,
           flexWrap: 'wrap',
-          padding: '15px 20px',
-          borderBottom: `1px solid ${terminalColors.line2}`,
-          background: terminalColors.bg,
+          paddingBottom: 14,
         }}
       >
         <PairHeaderLeft
@@ -365,24 +353,21 @@ function PanelShell({
           selectedField={selectedField}
           onSelectField={onSelectField}
         />
-        {stats}
+        {priceNode}
+        <TimeframeSeg timePeriod={timePeriod} onChange={onTimePeriodChange} />
       </div>
-      <TimeframeTabs timePeriod={timePeriod} onChange={onTimePeriodChange} />
       {children}
-    </div>
+      {ohlc}
+    </InstrumentPanel>
   )
 }
 
 /* ------------------------------------------------------------- live data body */
 
-const EMPTY_STATS = { price: '—', change: '—', high: '—', low: '—', vol: '—' } as const
-
 /**
  * Looks up HookSwap's OWN data-api token stats (the SAME `useListTokens` feed the
- * Markets screen joins for price/24H/sparklines) for the charted currency. Returns
- * the native-denominated `TokenStats` sub-message, or `undefined` when the indexer
- * has no entry for this token yet (→ honest empty). Join keys mirror MarketsScreen:
- * exact `chainId:erc20Address`, then a symbol fallback.
+ * Markets screen joins) for the charted currency. Returns the native-denominated
+ * `TokenStats` sub-message, or `undefined` when the indexer has no entry yet.
  */
 function useDataApiTokenStats(currency: Currency): TokenStats | undefined {
   const { topTokens } = useListTokens(undefined)
@@ -417,12 +402,10 @@ function useDataApiTokenStats(currency: Currency): TokenStats | undefined {
 }
 
 /**
- * Converts the data-api native relative series (`TokenStats.priceHistory1d`,
- * `TimestampedValue[]`) into lightweight-charts points. Line rendering only uses
- * `time`+`value`; open/high/low/close are set to `value` (same shape the GraphQL
- * fallback path uses). Timestamps are normalized to seconds (ms → s) since
- * lightweight-charts expects UNIX seconds. Returns `[]` when there is nothing to
- * plot (fewer than 2 usable points) so callers keep the honest empty state.
+ * Converts the data-api native relative series (`TokenStats.priceHistory1d`) into
+ * lightweight-charts points. Line rendering only uses `time`+`value`; open/high/low/
+ * close are set to `value`. Timestamps normalized to seconds. Returns `[]` when there
+ * is nothing to plot (fewer than 2 usable points).
  */
 function nativePriceHistoryToChartData(stats: TokenStats | undefined): PriceChartData[] {
   const history = stats?.priceHistory1d
@@ -446,7 +429,6 @@ function nativePriceHistoryToChartData(stats: TokenStats | undefined): PriceChar
 /**
  * Live branch — mounted ONLY when the charted currency exists, so the data hooks
  * (which require a non-null `Currency`) are always called unconditionally here.
- * Mirrors SlideoutChartCard's variables build + useTokenPriceChartPanel usage.
  */
 function TerminalChartPanelBody({
   chartedCurrency,
@@ -482,8 +464,7 @@ function TerminalChartPanelBody({
   const { entries, loading } = priceQuery
 
   const chartedCurrencyId = useMemo(() => currencyId(chartedCurrency), [chartedCurrency])
-  // 24h % change: prefer HookSwap's own data-api native stat (unitless %, real on
-  // Robinhood now); fall back to GraphQL for backend-indexed chains; else honest "—".
+  // 24h % change: prefer HookSwap's own data-api native stat; fall back to GraphQL; else "—".
   const dataApiStats = useDataApiTokenStats(chartedCurrency)
   const graphChange24h = useTokenPriceChange(chartedCurrencyId)
   const change24h = dataApiStats?.priceChange1d ?? graphChange24h
@@ -496,7 +477,7 @@ function TerminalChartPanelBody({
   // Chart area needs a concrete pixel height for lightweight-charts — measure the
   // flex region so PriceChartBody always receives a non-zero height.
   const chartRef = useRef<HTMLDivElement>(null)
-  const [chartHeight, setChartHeight] = useState(360)
+  const [chartHeight, setChartHeight] = useState(340)
   useLayoutEffect(() => {
     const el = chartRef.current
     if (!el) {
@@ -509,26 +490,22 @@ function TerminalChartPanelBody({
     return () => ro.disconnect()
   }, [])
 
-  // --- Header stats (all REAL, honest "—" when unavailable) -----------------
+  // --- Header spot / delta (all REAL, honest "—" when unavailable) ----------
   const spot = entries.at(-1)?.value
 
   // Native spot fallback for chains with no USD anchor: the latest data-api native
   // priceHistory1d value = the charted token's price in the chain's wrapped-native.
-  // It is ALWAYS labeled with the quote symbol (e.g. "0.00005 WETH") and formatted
-  // with SwapPrice (a plain number formatter) — NEVER under a "$"/USD label.
   const quoteSymbol = WRAPPED_NATIVE_CURRENCY[chartedCurrency.chainId]?.symbol
   const nativeHistory = dataApiStats?.priceHistory1d
-  const nativeSpotRaw = nativeHistory && nativeHistory.length > 0 ? nativeHistory[nativeHistory.length - 1]?.value : undefined
+  const nativeSpotRaw =
+    nativeHistory && nativeHistory.length > 0 ? nativeHistory[nativeHistory.length - 1]?.value : undefined
   const nativeSpot =
     typeof nativeSpotRaw === 'number' && Number.isFinite(nativeSpotRaw) && nativeSpotRaw > 0 ? nativeSpotRaw : undefined
 
-  // Live native spot from CURRENT on-chain v2 reserves — the deepest fallback for custom
-  // chains (e.g. Robinhood) whose pool HAS reserves but no indexed price history yet (the
-  // data-api priceHistory1d is empty). Engaged ONLY when the OTHER charted currency IS the
-  // chain's wrapped-native, so the pool price of the charted token is denominated in the
-  // wrapped-native (== `quoteSymbol`) and is NEVER mislabeled. `useV2Pair` reads reserves
-  // via the chain's own v2 factory (`V2_FACTORY_ADDRESSES`, wired for the custom chains);
-  // on chains without a factory entry it returns a null pair → this contributes nothing.
+  // Live native spot from CURRENT on-chain v2 reserves — deepest fallback for custom
+  // chains whose pool HAS reserves but no indexed history yet. Engaged ONLY when the
+  // OTHER charted currency IS the chain's wrapped-native, so the price is denominated
+  // in the wrapped-native (== `quoteSymbol`) and is NEVER mislabeled.
   const otherCurrency = selectedField === CurrencyField.INPUT ? outputCurrency : inputCurrency
   const wrappedNative = WRAPPED_NATIVE_CURRENCY[chartedCurrency.chainId]
   const otherIsQuote = !!otherCurrency && !!wrappedNative && otherCurrency.wrapped.equals(wrappedNative)
@@ -538,8 +515,6 @@ function TerminalChartPanelBody({
       return undefined
     }
     try {
-      // priceOf(chartedToken) = price of the charted token denominated in the OTHER token
-      // (here the wrapped-native), decimal-adjusted by the SDK. Reserves-derived, so real.
       const price = Number(reservesPair.priceOf(chartedCurrency.wrapped).toSignificant(8))
       return Number.isFinite(price) && price > 0 ? price : undefined
     } catch {
@@ -547,9 +522,9 @@ function TerminalChartPanelBody({
     }
   }, [reservesPair, chartedCurrency])
 
-  // Prefer the GraphQL USD spot ($) on indexed chains; else the data-api native spot; else
-  // the LIVE reserves native spot; else honest "—". Native branches are labeled with the
-  // quote symbol (e.g. "0.001 WETH"), never under a "$"/USD label.
+  // Prefer the GraphQL USD spot ($) on indexed chains; else the data-api native spot;
+  // else the LIVE reserves native spot; else honest "—". Native branches are labeled
+  // with the quote symbol, never under a "$"/USD label.
   const priceStr =
     spot !== undefined
       ? convertFiatAmountFormatted(spot, NumberType.FiatTokenPrice)
@@ -561,25 +536,34 @@ function TerminalChartPanelBody({
 
   const changeStr = change24h === undefined ? '—' : `${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%`
   const changeColor =
-    change24h === undefined ? terminalColors.ink2 : change24h >= 0 ? terminalColors.greenUp : terminalColors.redDown
+    change24h === undefined ? terminalColors.ink3 : change24h >= 0 ? terminalColors.greenUp : terminalColors.redDown
 
   const volStr = volume === undefined ? '—' : convertFiatAmountFormatted(volume, NumberType.FiatTokenStats)
 
-  // 24h high/low derived from the series ONLY on the 1D timeframe (honest — never a
-  // 52-week figure under a "24h" label). Other timeframes render "—".
-  let high24h: number | undefined
-  let low24h: number | undefined
-  if (timePeriod === TimePeriod.DAY && entries.length > 0) {
-    high24h = entries.reduce((m, e) => Math.max(m, e.value), Number.NEGATIVE_INFINITY)
-    low24h = entries.reduce((m, e) => Math.min(m, e.value), Number.POSITIVE_INFINITY)
-  }
-  const highStr =
-    high24h === undefined || !Number.isFinite(high24h) ? '—' : convertFiatAmountFormatted(high24h, NumberType.FiatTokenPrice)
-  const lowStr =
-    low24h === undefined || !Number.isFinite(low24h) ? '—' : convertFiatAmountFormatted(low24h, NumberType.FiatTokenPrice)
-
   // Only the 1D indexer window can serve the native series; 1H/1W/1M/1Y stay honest-empty.
   const showNativeSeries = timePeriod === TimePeriod.DAY && nativeSeries.length >= 2
+
+  // --- OHLC row, from the SAME series the chart draws (honest "—" otherwise) --
+  // Indexed → USD-formatted; native → plain number (denomination shown by the caption).
+  const usedSeries = !showInvalidSkeleton ? entries : showNativeSeries ? nativeSeries : []
+  const fmtSeries = (v: number | undefined): string => {
+    if (v === undefined || !Number.isFinite(v)) {
+      return '—'
+    }
+    return !showInvalidSkeleton
+      ? convertFiatAmountFormatted(v, NumberType.FiatTokenPrice)
+      : formatNumberOrString({ value: v, type: NumberType.SwapPrice })
+  }
+  let ohlcOpen: number | undefined
+  let ohlcHigh: number | undefined
+  let ohlcLow: number | undefined
+  let ohlcClose: number | undefined
+  if (usedSeries.length > 0) {
+    ohlcOpen = usedSeries[0]?.value
+    ohlcClose = usedSeries[usedSeries.length - 1]?.value
+    ohlcHigh = usedSeries.reduce((m, e) => Math.max(m, e.value), Number.NEGATIVE_INFINITY)
+    ohlcLow = usedSeries.reduce((m, e) => Math.min(m, e.value), Number.POSITIVE_INFINITY)
+  }
 
   return (
     <PanelShell
@@ -589,14 +573,20 @@ function TerminalChartPanelBody({
       onSelectField={onSelectField}
       timePeriod={timePeriod}
       onTimePeriodChange={onTimePeriodChange}
-      stats={
-        <StatsCluster price={priceStr} change={changeStr} changeColor={changeColor} high={highStr} low={lowStr} vol={volStr} />
+      priceNode={<PairPrice price={priceStr} change={changeStr} changeColor={changeColor} />}
+      ohlc={
+        <OhlcRow
+          open={fmtSeries(ohlcOpen)}
+          high={fmtSeries(ohlcHigh)}
+          low={fmtSeries(ohlcLow)}
+          close={fmtSeries(ohlcClose)}
+          vol={volStr}
+        />
       }
     >
-      <div ref={chartRef} style={{ position: 'relative', flex: 1, minHeight: 300, background: terminalColors.bgApp }}>
+      <div ref={chartRef} style={{ position: 'relative', flex: 1, minHeight: 300, background: terminalColors.bg }}>
         {/* Native-denomination caption — makes the UNLABELED native line explicitly "priced in
-            <wrapped-native>", so a viewer never reads the axis-less line as a USD chart. Only on the
-            native branch (GraphQL-unindexed 1D series). */}
+            <wrapped-native>". Only on the native branch (GraphQL-unindexed 1D series). */}
         {showInvalidSkeleton && showNativeSeries && quoteSymbol && (
           <div
             style={{
@@ -606,7 +596,7 @@ function TerminalChartPanelBody({
               zIndex: 1,
               fontFamily: MONO,
               fontSize: 10.5,
-              color: terminalColors.ink3Alt,
+              color: terminalColors.ink3,
               background: terminalColors.panel2,
               padding: '2px 6px',
               borderRadius: 4,
@@ -630,8 +620,8 @@ function TerminalChartPanelBody({
           />
         ) : showNativeSeries ? (
           // GraphQL unindexed (Robinhood) + a data-api 1D native series exists → plot it
-          // UNLABELED: hideYAxis removes the price scale and yAxisFormatter guards the
-          // crosshair label, so a native-denominated ratio is never shown under a "$".
+          // UNLABELED (hideYAxis + yAxisFormatter guards) so a native ratio is never
+          // shown under a "$".
           <PriceChartBody
             data={nativeSeries}
             height={chartHeight}
@@ -652,6 +642,8 @@ function TerminalChartPanelBody({
 }
 
 /* ---------------------------------------------------------------- component */
+
+const EMPTY_OHLC = <OhlcRow open="—" high="—" low="—" close="—" vol="—" />
 
 export function TerminalChartPanel({
   inputCurrency,
@@ -679,8 +671,8 @@ export function TerminalChartPanel({
     )
   }
 
-  // No charted currency (charted side empty) — full chrome with honest "—" stats
-  // and the empty chart scaffold. Data hooks are skipped (they require a Currency).
+  // No charted currency (charted side empty) — full chrome with honest "—" and the
+  // empty chart scaffold. Data hooks are skipped (they require a Currency).
   return (
     <PanelShell
       inputCurrency={inputCurrency}
@@ -689,18 +681,10 @@ export function TerminalChartPanel({
       onSelectField={setSelectedField}
       timePeriod={timePeriod}
       onTimePeriodChange={setTimePeriod}
-      stats={
-        <StatsCluster
-          price={EMPTY_STATS.price}
-          change={EMPTY_STATS.change}
-          changeColor={terminalColors.greenUp}
-          high={EMPTY_STATS.high}
-          low={EMPTY_STATS.low}
-          vol={EMPTY_STATS.vol}
-        />
-      }
+      priceNode={<PairPrice price="—" change="—" changeColor={terminalColors.ink3} />}
+      ohlc={EMPTY_OHLC}
     >
-      <div style={{ position: 'relative', flex: 1, minHeight: 300, background: terminalColors.bgApp }}>
+      <div style={{ position: 'relative', flex: 1, minHeight: 300, background: terminalColors.bg }}>
         <EmptyChartOverlay spotLabel="—" loading={false} />
       </div>
     </PanelShell>
