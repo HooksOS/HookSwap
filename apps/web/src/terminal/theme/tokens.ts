@@ -30,8 +30,8 @@ export const terminalColors = {
 
   // Surfaces  — paper app bg, pure-white cards, faint card2 for wells
   bg: '#FFFFFF', // cards, top bar, active pills
-  bgApp: '#F3F5F0', // main content / page background (cool paper)
-  panel: '#F7F8F3', // inputs, rail background, inset fields / chart wells
+  bgApp: '#F2F4EC', // main content / page background (cool Daylight paper)
+  panel: '#F6F8F1', // inputs, rail background, inset fields / chart wells
   panel2: '#EEF1EA', // segmented-control track, chips (primary)
   panel2Alt: '#EAECE4', // segmented-control track, chips (alt)
 

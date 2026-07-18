@@ -150,10 +150,12 @@ export function DataTable<Row>({
           gridTemplateColumns,
           gap: 0,
           padding: '0 6px 10px',
-          borderBottom: `1px solid ${terminalColors.line2}`,
-          fontSize: 11,
-          color: terminalColors.ink3Alt,
-          fontWeight: 500,
+          borderBottom: `1px solid ${terminalColors.line}`,
+          fontSize: 10.5,
+          letterSpacing: '0.11em',
+          textTransform: 'uppercase',
+          color: terminalColors.ink3,
+          fontWeight: 600,
           fontFamily: terminalFonts.mono,
         }}
       >
@@ -309,7 +311,8 @@ export function DataTable<Row>({
                     ...(column.mono
                       ? {
                           fontFamily: terminalFonts.mono,
-                          fontSize: 12.5,
+                          fontSize: 13,
+                          fontVariantNumeric: 'tabular-nums',
                           color: column.cellColor?.(row) ?? terminalColors.ink2,
                         }
                       : column.cellColor

@@ -140,6 +140,7 @@ function NavItem({
   const [open, setOpen] = useState(false)
   const hasDropdown = Boolean(section.children && section.children.length > 0)
 
+  // Desk command-bar nav: uppercase mono labels with tracking (matches the tape / status strip).
   const labelStyle: CSSProperties = {
     display: 'flex',
     alignItems: 'center',
@@ -149,10 +150,12 @@ function NavItem({
     cursor: 'pointer',
     padding: '0 2px',
     height: 64,
-    fontFamily: terminalFonts.sans,
-    fontSize: 13.5,
-    fontWeight: active ? 600 : 500,
-    color: active ? terminalColors.ink : terminalColors.ink2,
+    fontFamily: terminalFonts.mono,
+    fontSize: 11.5,
+    fontWeight: 600,
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    color: active ? terminalColors.ink : terminalColors.ink3,
     position: 'relative',
   }
 
@@ -282,11 +285,16 @@ export function TopNav({
   return (
     <div
       style={{
-        position: 'relative',
+        position: 'sticky',
+        top: 0,
+        zIndex: 40,
         height: 64,
         boxSizing: 'border-box',
-        background: terminalColors.bgApp,
-        borderBottom: `1px solid ${terminalColors.line2}`,
+        // Desk command bar: translucent white on paper + blur, crisp hairline.
+        background: 'rgba(255,255,255,.86)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        borderBottom: `1px solid ${terminalColors.line}`,
         display: 'flex',
         alignItems: 'center',
         gap: 14,
@@ -366,7 +374,7 @@ export function TopNav({
           ) : (
             <span style={{ width: 14, height: 14, borderRadius: '50%', background: chain?.dotBackground ?? terminalTokenGradients.eth }} />
           )}
-          <span style={{ fontFamily: terminalFonts.sans, fontSize: 12.5, fontWeight: 600, color: terminalColors.ink, whiteSpace: 'nowrap' }}>
+          <span style={{ fontFamily: terminalFonts.mono, fontSize: 12, fontWeight: 600, color: terminalColors.ink, whiteSpace: 'nowrap' }}>
             {chain?.name ?? 'Network'}
           </span>
           <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke={terminalColors.faint} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -432,16 +440,17 @@ export function TopNav({
             onClick={onConnectWallet}
             style={{
               height: 36,
-              padding: '0 16px',
-              borderRadius: 10,
+              padding: '0 18px',
+              borderRadius: 9,
               border: 'none',
               background: terminalColors.brandGreen,
               color: terminalColors.btnInk,
               fontFamily: terminalFonts.mono,
-              fontSize: 12.5,
+              fontSize: 11.5,
               fontWeight: 600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
               cursor: 'pointer',
-              boxShadow: `0 0 18px -6px ${terminalColors.brandGreen}`,
             }}
           >
             Connect
