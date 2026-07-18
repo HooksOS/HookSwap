@@ -59,7 +59,6 @@ import { UniverseChainId } from 'uniswap/src/features/chains/types'
 import { getChainLabel } from 'uniswap/src/features/chains/utils'
 import { useLocalizationContext } from 'uniswap/src/features/language/LocalizationContext'
 import {
-  TransactionStatus,
   TransactionType,
   type TransactionDetails,
 } from 'uniswap/src/features/transactions/types/transactionDetails'

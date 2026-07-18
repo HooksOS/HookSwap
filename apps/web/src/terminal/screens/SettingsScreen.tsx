@@ -15,12 +15,12 @@
  *   • Transaction deadline — LIVE + PERSISTED. Reads `state.user.userDeadline`
  *     (seconds) and writes it via `updateUserDeadline`. This is the exact TTL that
  *     `useGetTransactionDeadline` applies to every submitted transaction.
- *   • Appearance (theme) — DARK ONLY (honest, disabled control). The Terminal surface
- *     is styled entirely from the static dark `terminalColors` token set
- *     (theme/tokens.ts) via inline styles; no light token set exists or is consumed
+ *   • Appearance (theme) — LIGHT ONLY (honest, disabled control). The Terminal surface
+ *     is styled entirely from the static light "Daylight" `terminalColors` token set
+ *     (theme/tokens.ts) via inline styles; no dark token set exists or is consumed
  *     here, so a System/Light/Dark toggle would retint nothing on this screen. The
- *     Theme control is therefore rendered disabled and locked to Dark with an honest
- *     "Dark only" note — never a toggle that silently does nothing.
+ *     Theme control is therefore rendered disabled and locked to Light with an honest
+ *     "Light only" note — never a toggle that silently does nothing.
  *   • Network panel — read-only view of the app's REAL enabled chains
  *     (`useEnabledChains` + `getChainLabel`). No fabricated networks.
  *
@@ -508,11 +508,12 @@ function TradingPanel({
 }
 
 /**
- * Appearance — the Terminal ships a SINGLE dark theme. Every Terminal surface is
- * inline-styled from the static dark `terminalColors` token set (theme/tokens.ts);
- * no light token set exists or is consumed here, so a System/Light/Dark toggle would
- * change nothing on this screen. Rather than fake a working toggle, the Theme control
- * is rendered disabled and locked to Dark with an honest "Dark only" note.
+ * Appearance — the Terminal ships a SINGLE light "Daylight" theme. Every Terminal
+ * surface is inline-styled from the static light `terminalColors` token set
+ * (theme/tokens.ts); no dark token set exists or is consumed here, so a
+ * System/Light/Dark toggle would change nothing on this screen. Rather than fake a
+ * working toggle, the Theme control is rendered disabled and locked to Light with an
+ * honest "Light only" note.
  */
 function AppearancePanel(): JSX.Element {
   return (
@@ -522,8 +523,8 @@ function AppearancePanel(): JSX.Element {
         <SettingRow
           first
           title="Theme"
-          description="The HookSwap Terminal ships a single dark theme. A light color scheme isn't available yet."
-          disabledNote="Dark only"
+          description="The HookSwap Terminal ships a single light (Daylight) theme. A dark color scheme isn't available yet."
+          disabledNote="Light only"
           control={
             <Segmented<AppearanceSettingType>
               options={[
@@ -531,7 +532,7 @@ function AppearancePanel(): JSX.Element {
                 { value: AppearanceSettingType.Light, label: 'Light' },
                 { value: AppearanceSettingType.Dark, label: 'Dark' },
               ]}
-              value={AppearanceSettingType.Dark}
+              value={AppearanceSettingType.Light}
               disabled
             />
           }
