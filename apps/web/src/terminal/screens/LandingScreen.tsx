@@ -77,12 +77,14 @@ import { use24hProtocolVolume, useDailyTVLWithChange } from '~/features/Explore/
 import { ExploreTablesFilterStoreContextProvider } from '~/features/Explore/state/exploreTablesFilterStore'
 import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens'
 import { useTopPools } from '~/features/Explore/state/topPools/useTopPools'
-import { serializeSwapAddressesToURLParameters } from '~/pages/Swap/Swap/state/tradeQueryParams'
 import { useAccount } from '~/hooks/useAccount'
+import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { SparklineCell } from '~/terminal/components/SparklineCell'
 import { TerminalCommandPalette } from '~/terminal/components/TerminalCommandPalette'
+import { TickerTape, type TickerItem } from '~/terminal/components/TickerTape'
 import { HOOKSWAP_LINKS } from '~/terminal/config/screens'
 import { useCaptureRef } from '~/terminal/referral/useCaptureRef'
+import '~/terminal/theme/terminal.css'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { formatRelativeTime } from '~/terminal/utils/time'
 import type { PoolStat } from '~/types/explore'
@@ -113,22 +115,9 @@ function shortenAddress(address: string): string {
 
 /* ------------------------------------------------------------ keyframes (once) */
 
-/** Marquee + pulse keyframes + clickable-ticker hover, namespaced so they never collide with app CSS. */
+/** Blip (pulse) keyframe for the live status dots, namespaced so it never collides with app CSS. */
 const KEYFRAMES = `
-@keyframes hs-tape { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 @keyframes hs-blip { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
-.hs-ticker-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  padding: 3px 8px;
-  cursor: pointer;
-  transition: background 120ms ease;
-}
-.hs-ticker-item:hover { background: ${terminalColors.line3}; }
 `
 
 /**
@@ -652,11 +641,13 @@ function Header({
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  padding: 0,
-                  fontFamily: SANS,
-                  fontSize: 13.5,
-                  fontWeight: link.active ? 600 : 400,
-                  color: link.active ? terminalColors.ink : terminalColors.ink2,
+                  padding: '8px 2px',
+                  fontFamily: MONO,
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  color: link.active ? terminalColors.ink : terminalColors.ink3,
                 }}
               >
                 {link.label}
@@ -680,6 +671,12 @@ function Header({
                   </svg>
                 ) : null}
               </button>
+              {link.active ? (
+                <span
+                  aria-hidden
+                  style={{ position: 'absolute', left: 2, right: 14, bottom: 3, height: 2, background: terminalColors.brandGreen, borderRadius: 2 }}
+                />
+              ) : null}
 
               {hasDropdown && isOpen ? (
                 <div
@@ -791,13 +788,17 @@ function Header({
             height: 36,
             background: terminalColors.bg,
             border: `1px solid ${terminalColors.line}`,
-            borderRadius: 10,
+            borderRadius: 9,
             padding: '0 12px',
             cursor: 'pointer',
           }}
         >
+          <span
+            aria-hidden
+            style={{ width: 7, height: 7, borderRadius: '50%', background: terminalColors.brandGreen, boxShadow: `0 0 0 3px ${terminalColors.greenBg}` }}
+          />
           {chainId !== undefined ? <ChainLogo chainId={chainId} size={16} /> : null}
-          <span style={{ fontFamily: SANS, fontSize: 12.5, fontWeight: 600, color: terminalColors.ink }}>
+          <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: terminalColors.ink }}>
             {chainId !== undefined ? getChainLabel(chainId) : 'Network'}
           </span>
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={terminalColors.faint} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginLeft: 1 }}>
@@ -814,108 +815,16 @@ function Header({
             height: 36,
             background: terminalColors.brandGreen,
             border: 'none',
-            borderRadius: 10,
-            padding: '0 15px',
+            borderRadius: 9,
+            padding: '0 16px',
             cursor: 'pointer',
-            boxShadow: `0 0 18px -6px ${terminalColors.brandGreen}`,
           }}
         >
-          <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 600, color: terminalColors.btnInk }}>
+          <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: terminalColors.btnInk }}>
             {walletLabel ?? 'Connect'}
           </span>
         </button>
       </div>
-    </div>
-  )
-}
-
-/* ----------------------------------------------------------------- ticker */
-
-function TickerTape({
-  tickers,
-  loading,
-  error,
-  fiatPrice,
-  onSelect,
-}: {
-  tickers: Ticker[]
-  loading: boolean
-  error: boolean
-  fiatPrice: (value: number | undefined) => string
-  onSelect: (ticker: Ticker) => void
-}): JSX.Element {
-  const hasData = tickers.length > 0
-  const loop = hasData ? [...tickers, ...tickers] : []
-  return (
-    <div
-      style={{
-        height: 40,
-        background: terminalColors.bgApp,
-        borderBottom: `1px solid ${terminalColors.line2}`,
-        overflow: 'hidden',
-        display: 'flex',
-        alignItems: 'center',
-        position: 'relative',
-      }}
-    >
-      {loading && !hasData ? (
-        <div style={{ display: 'flex', gap: 26, paddingLeft: 40 }}>
-          {Array.from({ length: 8 }, (_, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ height: 11, width: 34, borderRadius: 4, background: terminalColors.line2 }} />
-              <div style={{ height: 11, width: 52, borderRadius: 4, background: terminalColors.line3 }} />
-            </div>
-          ))}
-        </div>
-      ) : !hasData ? (
-        <span style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.faint, paddingLeft: 40 }}>
-          {error
-            ? 'Token feed unavailable right now.'
-            : 'No token prices yet — builds as trading activity accrues.'}
-        </span>
-      ) : (
-        <div style={{ display: 'flex', gap: 26, whiteSpace: 'nowrap', animation: 'hs-tape 38s linear infinite', paddingLeft: 32 }}>
-          {loop.map((ticker, i) => {
-            const up = (ticker.change1d ?? 0) >= 0
-            return (
-              <button
-                key={`${ticker.symbol}-${i}`}
-                type="button"
-                className="hs-ticker-item"
-                onClick={() => onSelect(ticker)}
-                aria-label={`Swap ${ticker.symbol}`}
-                style={{ fontFamily: MONO, fontSize: 13 }}
-              >
-                <span style={{ color: terminalColors.faint }}>{ticker.symbol}</span>
-                <span style={{ color: terminalColors.ink2 }}>{fiatPrice(ticker.price)}</span>
-                <span
-                  style={{
-                    color:
-                      ticker.change1d === undefined
-                        ? terminalColors.faint
-                        : up
-                          ? terminalColors.greenUp
-                          : terminalColors.redDown,
-                  }}
-                >
-                  {ticker.change1d !== undefined ? formatSignedPct(ticker.change1d) : '—'}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      )}
-      <div
-        style={{
-          position: 'absolute',
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: 90,
-          background: `linear-gradient(90deg, transparent, ${terminalColors.bgApp})`,
-          pointerEvents: 'none',
-        }}
-      />
     </div>
   )
 }
@@ -940,29 +849,40 @@ function StatCard({
       style={{
         background: terminalColors.bg,
         border: `1px solid ${terminalColors.line}`,
-        borderRadius: 13,
-        padding: '13px 15px',
+        borderRadius: 10,
+        padding: 16,
         minWidth: 0,
       }}
     >
-      <div style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.faint }}>{label}</div>
+      <div
+        style={{
+          fontFamily: MONO,
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: '0.11em',
+          textTransform: 'uppercase',
+          color: terminalColors.ink3,
+        }}
+      >
+        {label}
+      </div>
       {loading || value === undefined ? (
-        <div style={{ height: 22, width: 72, borderRadius: 4, background: terminalColors.line2, marginTop: 6 }} />
+        <div style={{ height: 26, width: 84, borderRadius: 4, background: terminalColors.line2, marginTop: 10 }} />
       ) : (
         <>
           <div
             style={{
               fontFamily: MONO,
-              fontSize: 22,
+              fontSize: 26,
               fontWeight: 600,
               color: terminalColors.ink,
-              marginTop: 3,
-              letterSpacing: '-0.02em',
+              marginTop: 9,
+              letterSpacing: '-0.01em',
             }}
           >
             {value}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, gap: 8 }}>
             <span
               style={{
                 fontFamily: MONO,
@@ -1323,22 +1243,19 @@ function LandingScreenBody(): JSX.Element {
     defaultChainId ??
     chains[0]
 
-  // Clickable ticker → open the swap screen with this token pre-selected as output
-  // (same deep-link pattern as the ⌘K command palette's goToSwap).
-  const goToTickerSwap = (ticker: Ticker): void => {
-    let path = '/swap'
-    if (ticker.address && ticker.chainId !== undefined) {
-      try {
-        path += serializeSwapAddressesToURLParameters({
-          outputTokenAddress: ticker.address,
-          chainId: ticker.chainId as UniverseChainId,
-        })
-      } catch {
-        path = '/swap'
-      }
-    }
-    navigate(path)
-  }
+  // Map the live ticker feed to the Desk TickerTape's pre-formatted item shape.
+  // All strings come from live sources (fiatPrice / real 24h change); never fabricated.
+  const tickerItems: TickerItem[] = tickers.map((ticker) => ({
+    symbol: ticker.symbol,
+    price: fiatPrice(ticker.price),
+    change: ticker.change1d !== undefined ? formatSignedPct(ticker.change1d) : '—',
+    up: ticker.change1d === undefined ? null : ticker.change1d >= 0,
+  }))
+  const tickerEmptyLabel = tokensError
+    ? 'Token feed unavailable right now.'
+    : tokensLoading
+      ? 'Loading token feed…'
+      : 'No token prices yet — builds as trading activity accrues.'
 
   const navLinks: NavLink[] = [
     {
@@ -1389,6 +1306,9 @@ function LandingScreenBody(): JSX.Element {
     <div style={{ background: terminalColors.bgApp, minHeight: '100vh' }}>
       <style>{KEYFRAMES}</style>
       <div style={{ width: '100%', maxWidth: CONTENT_WIDTH, margin: '0 auto', background: terminalColors.bgApp, overflow: 'hidden' }}>
+        {/* Desk ticker tape — sits above the sticky command bar, scrolls with the page. */}
+        <TickerTape items={tickerItems} emptyLabel={tickerEmptyLabel} />
+
         <Header
           navLinks={navLinks}
           chainId={displayChainId}
@@ -1405,76 +1325,72 @@ function LandingScreenBody(): JSX.Element {
           padX={padX}
         />
 
-        <TickerTape
-          tickers={tickers}
-          loading={tokensLoading}
-          error={tokensError}
-          fiatPrice={fiatPrice}
-          onSelect={goToTickerSwap}
-        />
+        {/* Desk status strip — token-feed state is live-bound; GAS/BLOCK have no client
+            source here so they render an honest "—"; routing runs in embed mode. */}
+        <div
+          style={{
+            borderBottom: `1px solid ${terminalColors.line}`,
+            background: terminalColors.bg,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
+            height: 32,
+            padding: `0 ${padX}px`,
+            fontFamily: MONO,
+            fontSize: 11,
+            color: terminalColors.ink3,
+            overflow: 'hidden',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            <span
+              aria-hidden
+              style={{ width: 6, height: 6, background: tokensError ? terminalColors.redDown : terminalColors.warn }}
+            />
+            TOKEN FEED · {tokensError ? 'OFFLINE' : tokensLoading ? 'SETTLING' : 'LIVE'}
+          </span>
+          <span>GAS —</span>
+          <span>BLOCK —</span>
+          <span style={{ marginLeft: 'auto', color: terminalColors.brandGreen }}>● ROUTING · EMBED</span>
+        </div>
 
         {/* ---------------------------------------------------------- HERO */}
-        <div style={{ padding: `44px ${padX}px 30px`, display: 'flex', gap: 28, position: 'relative', flexWrap: 'wrap' }}>
-          <div
-            style={{
-              position: 'absolute',
-              right: 20,
-              top: -10,
-              width: 560,
-              height: 360,
-              background: `radial-gradient(circle at 70% 30%, ${terminalColors.brandGreen}26 0%, transparent 60%)`,
-              pointerEvents: 'none',
-            }}
-          />
+        <div style={{ padding: `52px ${padX}px 34px`, display: 'flex', gap: 40, position: 'relative', flexWrap: 'wrap', alignItems: 'center' }}>
           {/* Hero copy + stats */}
           <div style={{ flex: '1 1 440px', minWidth: 0, position: 'relative' }}>
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                background: terminalColors.greenBg,
-                border: `1px solid ${terminalColors.greenBorder}`,
-                borderRadius: 999,
-                padding: '6px 13px',
-                fontFamily: MONO,
-                fontSize: 11.5,
-                fontWeight: 600,
-                color: terminalColors.brandGreen,
-                letterSpacing: '0.03em',
-              }}
-            >
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, marginBottom: 20 }}>
               <span
+                aria-hidden
                 style={{
-                  width: 6,
-                  height: 6,
+                  width: 7,
+                  height: 7,
                   borderRadius: '50%',
                   background: terminalColors.brandGreen,
-                  boxShadow: `0 0 6px ${terminalColors.brandGreen}`,
                   animation: 'hs-blip 2s ease-in-out infinite',
                 }}
               />
-              V2 · V3 · MULTI-CHAIN DEX
+              <Eyebrow>V2 · V3 · Multi-chain DEX execution</Eyebrow>
             </div>
             <h1
               style={{
                 fontFamily: DISPLAY,
                 fontWeight: 600,
-                fontSize: isMobile ? 34 : 50,
-                lineHeight: 1.04,
-                letterSpacing: '-0.02em',
+                fontSize: isMobile ? 36 : 56,
+                lineHeight: 1.02,
+                letterSpacing: '-0.03em',
                 color: terminalColors.ink,
-                margin: '18px 0 0',
+                margin: 0,
               }}
             >
               HookSwap.
               <br />A DEX in <span style={{ color: terminalColors.brandGreen }}>terminal</span> form.
             </h1>
-            <p style={{ fontFamily: SANS, fontSize: 15.5, color: terminalColors.ink2, lineHeight: 1.55, margin: '16px 0 0', maxWidth: 440 }}>
+            <p style={{ fontFamily: SANS, fontSize: 16, color: terminalColors.ink2, lineHeight: 1.55, margin: '20px 0 0', maxWidth: 460 }}>
               Depth charts, live routing, and concentrated liquidity across every HookSwap chain — pro tooling wired into
               HookSwap&apos;s own v2 + v3 deployments.
             </p>
-            <div style={{ display: 'flex', gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 12, marginTop: 26, flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() => navigate('/swap')}
@@ -1482,16 +1398,17 @@ function LandingScreenBody(): JSX.Element {
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 9,
-                  fontFamily: SANS,
-                  fontSize: 14,
+                  fontFamily: MONO,
+                  fontSize: 13,
                   fontWeight: 600,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
                   color: terminalColors.btnInk,
                   background: terminalColors.brandGreen,
-                  padding: '13px 24px',
-                  borderRadius: 11,
+                  padding: '13px 22px',
+                  borderRadius: 9,
                   border: 'none',
                   cursor: 'pointer',
-                  boxShadow: `0 0 24px -4px ${terminalColors.brandGreen}`,
                 }}
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={terminalColors.btnInk} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1503,14 +1420,11 @@ function LandingScreenBody(): JSX.Element {
                 type="button"
                 onClick={() => navigate('/markets')}
                 style={{
-                  fontFamily: SANS,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  color: terminalColors.ink,
-                  background: terminalColors.bg,
-                  border: `1px solid ${terminalColors.line}`,
-                  padding: '13px 22px',
-                  borderRadius: 11,
+                  ...terminalKeycap,
+                  fontSize: 13,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  padding: '13px 20px',
                   cursor: 'pointer',
                 }}
               >
@@ -1536,48 +1450,27 @@ function LandingScreenBody(): JSX.Element {
             ) : null}
           </div>
 
-          {/* Featured price card */}
-          <div
-            style={{
-              width: 468,
-              flexShrink: 0,
-              background: terminalColors.bg,
-              border: `1px solid ${terminalColors.line}`,
-              borderRadius: 16,
-              overflow: 'hidden',
-              position: 'relative',
-              maxWidth: '100%',
-              boxShadow: terminalShadows.screenFrame,
-            }}
+          {/* Featured price card — Desk instrument panel (green corner ticks + live dot) */}
+          <InstrumentPanel
+            title={featuredRow ? `${featuredRow.symbol0} / ${featuredRow.symbol1}` : '—'}
+            live
+            corners
+            meta={featuredRow ? [getChainLabel(account.chainId ?? displayChainId), '1D'] : ['1D']}
+            flush
+            style={{ width: 468, flexShrink: 0, maxWidth: '100%', overflow: 'hidden' }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px 12px', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-                <DoubleCurrencyLogo currencies={[featuredRow?.currency0, featuredRow?.currency1]} size={30} />
-                <div style={{ minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontFamily: MONO,
-                      fontWeight: 600,
-                      fontSize: 15,
-                      color: terminalColors.ink,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {featuredRow ? `${featuredRow.symbol0} / ${featuredRow.symbol1}` : '—'}
-                  </div>
-                  <div style={{ fontFamily: MONO, fontSize: 11.5, color: terminalColors.faint }}>
-                    {featuredRow ? getChainLabel(account.chainId ?? displayChainId) : 'Live market'}
-                  </div>
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontFamily: MONO, fontSize: 19, fontWeight: 600, color: terminalColors.ink }}>{fiatPrice(featuredMetric?.price)}</div>
-                <div
+            {/* Price + real close-series chart (native shape, USD tag only on a real USD spot) */}
+            <div style={{ padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <DoubleCurrencyLogo currencies={[featuredRow?.currency0, featuredRow?.currency1]} size={26} />
+                <span style={{ fontFamily: MONO, fontSize: 32, fontWeight: 600, letterSpacing: '-0.01em', color: terminalColors.ink }}>
+                  {fiatPrice(featuredMetric?.price)}
+                </span>
+                <span
                   style={{
                     fontFamily: MONO,
-                    fontSize: 12,
+                    fontSize: 13,
+                    fontWeight: 600,
                     color:
                       featuredMetric?.change1d === undefined
                         ? terminalColors.faint
@@ -1587,42 +1480,37 @@ function LandingScreenBody(): JSX.Element {
                   }}
                 >
                   {featuredMetric?.change1d !== undefined ? formatSignedPct(featuredMetric.change1d) : '—'}
-                </div>
+                </span>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                {poolsLoading && !featured ? (
+                  <div style={{ height: 250, background: terminalColors.panel }} aria-busy="true" />
+                ) : (
+                  <PriceChart closes={featuredMetric?.sparkline} lastPriceUsd={featuredMetric?.price} fiatPrice={fiatPrice} />
+                )}
               </div>
             </div>
-            {/* Timeframe tabs — the featured series is 1d closes, so "1D" is the truthful active view. */}
-            <div style={{ display: 'flex', gap: 5, padding: '0 18px 12px', alignItems: 'center' }}>
-              <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, color: terminalColors.ink, background: terminalColors.panel2, padding: '4px 9px', borderRadius: 6 }}>
-                1D
-              </span>
-              <span style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>Live price</span>
-            </div>
-            {poolsLoading && !featured ? (
-              <div style={{ height: 250, background: terminalColors.panel }} aria-busy="true" />
-            ) : (
-              <PriceChart closes={featuredMetric?.sparkline} lastPriceUsd={featuredMetric?.price} fiatPrice={fiatPrice} />
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderTop: `1px solid ${terminalColors.line}` }}>
-              <div style={{ padding: '11px 14px', borderRight: `1px solid ${terminalColors.line}` }}>
-                <div style={{ fontFamily: SANS, fontSize: 10.5, color: terminalColors.faint }}>Liquidity</div>
-                <div style={{ fontFamily: MONO, fontSize: 13.5, fontWeight: 600, color: terminalColors.ink, marginTop: 2 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderTop: `1px solid ${terminalColors.line2}` }}>
+              <div style={{ padding: '12px 14px', borderRight: `1px solid ${terminalColors.line2}` }}>
+                <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: terminalColors.ink3 }}>Liquidity</div>
+                <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: terminalColors.ink, marginTop: 5 }}>
                   {featuredRow ? fiatStats(featuredRow.tvl) : '—'}
                 </div>
               </div>
-              <div style={{ padding: '11px 14px', borderRight: `1px solid ${terminalColors.line}` }}>
-                <div style={{ fontFamily: SANS, fontSize: 10.5, color: terminalColors.faint }}>24h vol</div>
-                <div style={{ fontFamily: MONO, fontSize: 13.5, fontWeight: 600, color: terminalColors.ink, marginTop: 2 }}>
+              <div style={{ padding: '12px 14px', borderRight: `1px solid ${terminalColors.line2}` }}>
+                <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: terminalColors.ink3 }}>24h Vol</div>
+                <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: terminalColors.ink, marginTop: 5 }}>
                   {featuredRow ? fiatStats(featuredRow.volume24h) : '—'}
                 </div>
               </div>
-              <div style={{ padding: '11px 14px' }}>
-                <div style={{ fontFamily: SANS, fontSize: 10.5, color: terminalColors.faint }}>APR</div>
-                <div style={{ fontFamily: MONO, fontSize: 13.5, fontWeight: 600, color: terminalColors.brandGreen, marginTop: 2 }}>
+              <div style={{ padding: '12px 14px' }}>
+                <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: terminalColors.ink3 }}>APR</div>
+                <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: terminalColors.brandGreen, marginTop: 5 }}>
                   {featuredRow ? featuredRow.aprText : '—'}
                 </div>
               </div>
             </div>
-          </div>
+          </InstrumentPanel>
         </div>
 
         {/* ------------------------------------------------- STAT WALL */}
@@ -1662,26 +1550,18 @@ function LandingScreenBody(): JSX.Element {
         {/* --------------------------------------------- DEPTH + MOVERS */}
         <div style={{ padding: `6px ${padX}px 34px`, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           {/* Liquidity depth — reserve-derived; honest empty until a featured pool exposes reserves */}
-          <div style={{ flex: '1.4 1 340px', minWidth: 0, background: terminalColors.bg, border: `1px solid ${terminalColors.line}`, borderRadius: 14, padding: '16px 18px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <span style={{ fontFamily: SANS, fontWeight: 600, fontSize: 15, color: terminalColors.ink }}>Liquidity depth</span>
-              <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>±3% · reserves</span>
-            </div>
+          <InstrumentPanel title="Liquidity Depth" meta={['±3% · reserves']} style={{ flex: '1.4 1 340px', minWidth: 0 }}>
             <DepthCurve
               tvlUsd={featured?.totalLiquidity?.value}
               pair={featuredRow ? `${featuredRow.symbol0}/${featuredRow.symbol1}` : undefined}
             />
-          </div>
+          </InstrumentPanel>
 
           {/* Movers — top tokens by 24h change, from the live listTokens feed */}
-          <div style={{ flex: '1 1 280px', minWidth: 0, background: terminalColors.bg, border: `1px solid ${terminalColors.line}`, borderRadius: 14, padding: '16px 18px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <span style={{ fontFamily: SANS, fontWeight: 600, fontSize: 15, color: terminalColors.ink }}>Movers</span>
-              <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>24h · % change</span>
-            </div>
+          <InstrumentPanel title="Movers" meta={['24h']} style={{ flex: '1 1 280px', minWidth: 0 }}>
             {tickers.length > 0 ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-                {tickers.slice(0, 12).map((tk) => {
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                {tickers.slice(0, 8).map((tk) => {
                   const known = tk.change1d !== undefined
                   const up = (tk.change1d ?? 0) >= 0
                   return (
@@ -1689,18 +1569,18 @@ function LandingScreenBody(): JSX.Element {
                       key={tk.symbol + (tk.address ?? '')}
                       style={{
                         borderRadius: 8,
-                        padding: '9px 9px',
-                        border: `1px solid ${known ? (up ? terminalColors.greenBorder : terminalColors.line) : terminalColors.line}`,
-                        background: !known ? 'transparent' : up ? terminalColors.greenBg : terminalColors.redBg,
+                        padding: '11px 12px',
+                        border: `1px solid ${terminalColors.line2}`,
+                        background: terminalColors.panel,
                       }}
                     >
-                      <div style={{ fontFamily: MONO, fontSize: 11.5, color: terminalColors.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: terminalColors.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {tk.symbol}
                       </div>
                       <div
                         style={{
                           fontFamily: MONO,
-                          fontSize: 12,
+                          fontSize: 15,
                           fontWeight: 600,
                           marginTop: 4,
                           color: !known ? terminalColors.faint : up ? terminalColors.greenUp : terminalColors.redDown,
@@ -1717,25 +1597,26 @@ function LandingScreenBody(): JSX.Element {
                 {tokensLoading ? 'Loading token feed…' : 'Token feed unavailable right now.'}
               </div>
             )}
-          </div>
+          </InstrumentPanel>
         </div>
 
         {/* --------------------------------------------------- TOP MARKETS */}
         <div style={{ padding: `0 ${padX}px 40px` }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 26, letterSpacing: '-0.02em', color: terminalColors.ink }}>Top markets</span>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 27, letterSpacing: '-0.02em', color: terminalColors.ink }}>Top markets</span>
             <button
               type="button"
               onClick={() => navigate('/markets')}
               style={{
                 fontFamily: MONO,
-                fontSize: 11.5,
+                fontSize: 11,
                 fontWeight: 600,
-                color: terminalColors.ink,
-                background: terminalColors.panel2,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                color: terminalColors.brandGreen,
+                background: 'none',
                 border: 'none',
-                padding: '6px 12px',
-                borderRadius: 8,
+                padding: 0,
                 cursor: 'pointer',
               }}
             >
@@ -1743,7 +1624,7 @@ function LandingScreenBody(): JSX.Element {
             </button>
           </div>
           <div style={{ overflowX: 'auto', minWidth: 0 }}>
-            <div style={{ minWidth: 680, background: terminalColors.bg, border: `1px solid ${terminalColors.line}`, borderRadius: 14, overflow: 'hidden' }}>
+            <InstrumentPanel flush style={{ minWidth: 680, overflow: 'hidden' }}>
               {/* Header — NO Hook column (hooks removed) */}
               <div
                 style={{
@@ -1781,6 +1662,12 @@ function LandingScreenBody(): JSX.Element {
                       key={row.key}
                       type="button"
                       onClick={() => (row.detailPath ? navigate(row.detailPath) : navigate('/markets'))}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = terminalColors.panel
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'transparent'
+                      }}
                       style={{
                         display: 'grid',
                         gridTemplateColumns: '32px 2.4fr 1fr 1fr 0.8fr 150px',
@@ -1793,6 +1680,7 @@ function LandingScreenBody(): JSX.Element {
                         border: 'none',
                         borderBottom: `1px solid ${terminalColors.line3}`,
                         cursor: row.detailPath ? 'pointer' : 'default',
+                        transition: 'background 120ms ease',
                       }}
                     >
                       <span style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.faint }}>{row.rank}</span>
@@ -1800,9 +1688,9 @@ function LandingScreenBody(): JSX.Element {
                         <DoubleCurrencyLogo currencies={[row.currency0, row.currency1]} size={26} />
                         <span
                           style={{
-                            fontFamily: SANS,
+                            fontFamily: MONO,
                             fontWeight: 600,
-                            fontSize: 13.5,
+                            fontSize: 13,
                             color: terminalColors.ink,
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
@@ -1846,14 +1734,17 @@ function LandingScreenBody(): JSX.Element {
                   </div>
                 ))
               )}
-            </div>
+            </InstrumentPanel>
           </div>
         </div>
 
         {/* ------------------------------------------------- FEATURE GRID */}
         <div style={{ padding: `14px ${padX}px 20px`, borderTop: `1px solid ${terminalColors.line2}` }}>
-          <div style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 26, letterSpacing: '-0.02em', color: terminalColors.ink, marginTop: 26 }}>
-            Everything in one terminal
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 26 }}>
+            <div style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 27, letterSpacing: '-0.02em', color: terminalColors.ink }}>
+              Everything in one terminal
+            </div>
+            <Eyebrow>Launch · Trade · Earn · Track</Eyebrow>
           </div>
           <div style={{ fontFamily: SANS, fontSize: 14.5, color: terminalColors.ink2, marginTop: 6 }}>
             Trade, earn, and track across HookSwap&apos;s own v2 + v3 deployments on every chain.
@@ -1861,15 +1752,20 @@ function LandingScreenBody(): JSX.Element {
 
           {FEATURE_GROUPS.map((group) => (
             <div key={group.label}>
-              <div style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint, letterSpacing: '0.08em', margin: '26px 0 12px' }}>
-                {group.label}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: featureCols(group.features.length), gap: 14 }}>
-                {group.features.map((feature) => (
+              <div style={{ display: 'grid', gridTemplateColumns: featureCols(group.features.length), gap: 14, marginTop: 20 }}>
+                {group.features.map((feature, fi) => (
                   <button
                     key={feature.title}
                     type="button"
                     onClick={() => navigate(feature.path)}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = terminalColors.greenBg
+                      e.currentTarget.style.borderColor = terminalColors.greenBorder
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = terminalColors.bg
+                      e.currentTarget.style.borderColor = terminalColors.line
+                    }}
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
@@ -1877,33 +1773,23 @@ function LandingScreenBody(): JSX.Element {
                       textAlign: 'left',
                       background: terminalColors.bg,
                       border: `1px solid ${terminalColors.line}`,
-                      borderRadius: 14,
-                      padding: 20,
+                      borderRadius: 10,
+                      padding: 18,
                       cursor: 'pointer',
                       minWidth: 0,
+                      transition: 'background 140ms ease, border-color 140ms ease',
                     }}
                   >
-                    <span
-                      style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 10,
-                        background: terminalColors.greenBg,
-                        border: `1px solid ${terminalColors.greenBorder}`,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <FeatureIcon name={feature.icon} />
+                    <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: terminalColors.faint }}>
+                      {String(fi + 1).padStart(2, '0')} · {group.label}
                     </span>
-                    <span style={{ fontFamily: SANS, fontWeight: 600, fontSize: 17, color: terminalColors.ink, marginTop: 14 }}>
+                    <span style={{ fontFamily: SANS, fontWeight: 600, fontSize: 16, color: terminalColors.ink, marginTop: 22 }}>
                       {feature.title}
                     </span>
-                    <span style={{ fontFamily: SANS, fontSize: 13, color: terminalColors.ink2, lineHeight: 1.5, marginTop: 6, flex: 1 }}>
+                    <span style={{ fontFamily: SANS, fontSize: 13, color: terminalColors.ink3, lineHeight: 1.45, marginTop: 7, flex: 1 }}>
                       {feature.desc}
                     </span>
-                    <span style={{ fontFamily: SANS, fontSize: 13, fontWeight: 600, color: terminalColors.brandGreen, marginTop: 14 }}>
+                    <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: terminalColors.brandGreen, marginTop: 14 }}>
                       {feature.cta} →
                     </span>
                   </button>
@@ -1916,17 +1802,17 @@ function LandingScreenBody(): JSX.Element {
         {/* ---------------------------------------------- WHY HOOKSWAP (replaces hook marketplace) */}
         <div style={{ padding: `20px ${padX}px 20px` }}>
           <div style={{ marginTop: 20, marginBottom: 16 }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontFamily: MONO, fontSize: 11, color: terminalColors.brandGreen, letterSpacing: '0.06em' }}>
-              <span style={{ width: 5, height: 5, borderRadius: '50%', background: terminalColors.brandGreen, boxShadow: `0 0 6px ${terminalColors.brandGreen}` }} />
-              WHY HOOKSWAP
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: terminalColors.brandGreen }} />
+              <Eyebrow>Why HookSwap</Eyebrow>
             </div>
-            <div style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 26, letterSpacing: '-0.02em', color: terminalColors.ink, marginTop: 8 }}>
+            <div style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 27, letterSpacing: '-0.02em', color: terminalColors.ink, marginTop: 8 }}>
               Every swap, best execution.
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: featureCols(WHY_CARDS.length), gap: 14 }}>
             {WHY_CARDS.map((card) => (
-              <div key={card.title} style={{ background: terminalColors.bg, border: `1px solid ${terminalColors.line}`, borderRadius: 14, padding: 18 }}>
+              <div key={card.title} style={{ background: terminalColors.bg, border: `1px solid ${terminalColors.line}`, borderRadius: 10, padding: 18 }}>
                 <span
                   style={{
                     width: 38,
@@ -1941,8 +1827,8 @@ function LandingScreenBody(): JSX.Element {
                 >
                   <FeatureIcon name={card.icon} />
                 </span>
-                <div style={{ fontFamily: SANS, fontWeight: 600, fontSize: 17, color: terminalColors.ink, marginTop: 14 }}>{card.title}</div>
-                <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink2, lineHeight: 1.5, marginTop: 6 }}>{card.desc}</div>
+                <div style={{ fontFamily: SANS, fontWeight: 600, fontSize: 16, color: terminalColors.ink, marginTop: 14 }}>{card.title}</div>
+                <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3, lineHeight: 1.5, marginTop: 6 }}>{card.desc}</div>
               </div>
             ))}
           </div>
@@ -1951,14 +1837,17 @@ function LandingScreenBody(): JSX.Element {
         {/* --------------------------------------------------- LIVE ACTIVITY */}
         <div style={{ padding: `24px ${padX}px 20px` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-            <span style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 26, letterSpacing: '-0.02em', color: terminalColors.ink }}>Live activity</span>
+            <span style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 27, letterSpacing: '-0.02em', color: terminalColors.ink }}>Live activity</span>
             <span
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 6,
                 fontFamily: MONO,
-                fontSize: 11,
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
                 color: terminalColors.brandGreen,
                 background: terminalColors.greenBg,
                 border: `1px solid ${terminalColors.greenBorder}`,
@@ -1966,11 +1855,11 @@ function LandingScreenBody(): JSX.Element {
                 borderRadius: 6,
               }}
             >
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: terminalColors.brandGreen, boxShadow: `0 0 6px ${terminalColors.brandGreen}`, animation: 'hs-blip 1.6s ease-in-out infinite' }} />
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: terminalColors.brandGreen, animation: 'hs-blip 1.6s ease-in-out infinite' }} />
               {address ? 'streaming' : 'connect'}
             </span>
           </div>
-          <div style={{ background: terminalColors.bg, border: `1px solid ${terminalColors.line}`, borderRadius: 14, overflow: 'hidden' }}>
+          <InstrumentPanel flush style={{ overflow: 'hidden' }}>
             {!address ? (
               <div style={{ padding: '32px 20px', textAlign: 'center', fontFamily: SANS, fontSize: 13, color: terminalColors.ink3Alt, lineHeight: 1.5 }}>
                 Connect a wallet to stream your live on-chain activity — swaps, liquidity, and transfers.
@@ -2004,7 +1893,7 @@ function LandingScreenBody(): JSX.Element {
                 No recent activity on this wallet yet.
               </div>
             )}
-          </div>
+          </InstrumentPanel>
         </div>
 
         {/* --------------------------------------------------------- CTA BAND */}
@@ -2012,14 +1901,13 @@ function LandingScreenBody(): JSX.Element {
           <div
             style={{
               position: 'relative',
-              background: `linear-gradient(120deg, ${terminalColors.greenBg} 0%, ${terminalColors.bgApp} 60%)`,
+              background: `linear-gradient(120deg, ${terminalColors.greenBg} 0%, ${terminalColors.bg} 62%)`,
               border: `1px solid ${terminalColors.greenBorder}`,
-              borderRadius: 20,
+              borderRadius: 14,
               padding: isMobile ? '32px 22px' : '48px 44px',
               overflow: 'hidden',
             }}
           >
-            <div style={{ position: 'absolute', right: -60, top: -80, width: 420, height: 420, background: `radial-gradient(circle, ${terminalColors.brandGreen}2E 0%, transparent 62%)`, pointerEvents: 'none' }} />
             <svg width="300" height="300" viewBox="0 0 48 48" fill="none" style={{ position: 'absolute', right: 30, top: -40, overflow: 'visible', opacity: 0.5 }} aria-hidden="true">
               <path d="M24 3.5 L41.8 13.75 L41.8 34.25 L24 44.5 L6.2 34.25 L6.2 13.75 Z" fill="none" stroke={terminalColors.greenBorder} strokeWidth="1.2" strokeLinejoin="round" />
               <circle cx="24" cy="25" r="7.2" fill="none" stroke={terminalColors.brandGreen} strokeWidth="1.2" strokeLinecap="round" strokeDasharray="33 13" transform="rotate(118 24 25)" />
@@ -2039,16 +1927,17 @@ function LandingScreenBody(): JSX.Element {
                   type="button"
                   onClick={() => navigate('/swap')}
                   style={{
-                    fontFamily: SANS,
-                    fontSize: 14,
+                    fontFamily: MONO,
+                    fontSize: 13,
                     fontWeight: 600,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
                     color: terminalColors.btnInk,
                     background: terminalColors.brandGreen,
                     border: 'none',
-                    padding: '13px 26px',
-                    borderRadius: 11,
+                    padding: '13px 24px',
+                    borderRadius: 9,
                     cursor: 'pointer',
-                    boxShadow: `0 0 26px -4px ${terminalColors.brandGreen}`,
                   }}
                 >
                   Launch app
@@ -2058,14 +1947,11 @@ function LandingScreenBody(): JSX.Element {
                   target="_blank"
                   rel="noreferrer"
                   style={{
-                    fontFamily: SANS,
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: terminalColors.ink,
-                    background: terminalColors.bg,
-                    border: `1px solid ${terminalColors.line}`,
-                    padding: '13px 22px',
-                    borderRadius: 11,
+                    ...terminalKeycap,
+                    fontSize: 13,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    padding: '13px 20px',
                     textDecoration: 'none',
                   }}
                 >
