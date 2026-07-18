@@ -39,6 +39,7 @@ import { ExplorerDataType, getExplorerLink } from 'uniswap/src/utils/linking'
 import { erc20Abi, erc721Abi, formatUnits, isAddress, parseUnits, type Address, type Hash } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import {
   nftPositionManagerAbi,
@@ -47,8 +48,9 @@ import {
   v3PositionLockerAbi,
 } from '~/terminal/lockers/abis'
 import { getLockerAddresses } from '~/terminal/lockers/addresses'
-import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { assume0xAddress } from '~/utils/wagmi'
+import '~/terminal/theme/terminal.css'
 
 const MONO = terminalFonts.mono
 const DISPLAY = terminalFonts.display
@@ -84,33 +86,6 @@ function fmtUnlock(unixSec: number): string {
 
 /* ------------------------------------------------------------------ primitives */
 
-function Panel({ children, padding = 18 }: { children: React.ReactNode; padding?: number }): JSX.Element {
-  return (
-    <div
-      style={{
-        border: `1px solid ${terminalColors.line}`,
-        borderRadius: 14,
-        background: terminalColors.bg,
-        padding,
-        boxSizing: 'border-box',
-      }}
-    >
-      {children}
-    </div>
-  )
-}
-
-function StepLabel({ index, label, note }: { index: string; label: string; note?: string }): JSX.Element {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
-      <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', color: terminalColors.ink3Alt }}>
-        {index} · {label.toUpperCase()}
-      </span>
-      {note ? <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt }}>{note}</span> : null}
-    </div>
-  )
-}
-
 function FieldLabel({ children }: { children: React.ReactNode }): JSX.Element {
   return (
     <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt, marginBottom: 5 }}>{children}</div>
@@ -142,7 +117,7 @@ function TextField({
         boxSizing: 'border-box',
         border: `1px solid ${terminalColors.line}`,
         borderRadius: 11,
-        background: terminalColors.bg,
+        background: terminalColors.panel,
         padding: '10px 12px',
         fontFamily: mono ? MONO : SANS,
         fontSize: 13.5,
@@ -173,7 +148,7 @@ function SelectField({
         boxSizing: 'border-box',
         border: `1px solid ${terminalColors.line}`,
         borderRadius: 11,
-        background: terminalColors.bg,
+        background: terminalColors.panel,
         padding: '10px 12px',
         fontFamily: MONO,
         fontSize: 13.5,
@@ -359,8 +334,10 @@ function PrimaryButton({
       style={{
         marginTop: 14,
         width: '100%',
-        fontFamily: SANS,
-        fontSize: 14,
+        fontFamily: MONO,
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
+        fontSize: 13,
         fontWeight: 600,
         color: terminalColors.btnInk,
         background: disabled ? terminalColors.line : terminalColors.brandGreen,
@@ -710,8 +687,7 @@ function TokenLpTab({
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       {/* Create panel */}
       <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Panel>
-          <StepLabel index="01" label="Lock tokens / LP" note={deployed ? undefined : 'not deployed'} />
+        <InstrumentPanel title="LOCK TOKENS / LP" corners meta={deployed ? undefined : ['not deployed']}>
           {!deployed ? (
             <NotDeployedNote chainLabel={chainLabel} />
           ) : (
@@ -771,9 +747,9 @@ function TokenLpTab({
               </div>
             </div>
           )}
-        </Panel>
+        </InstrumentPanel>
 
-        <Panel>
+        <InstrumentPanel title="REVIEW">
           <SummaryRow
             label="Lock fee"
             value={
@@ -817,15 +793,12 @@ function TokenLpTab({
               unlock time; a one-time lock fee is sent with the lock transaction.
             </div>
           ) : null}
-        </Panel>
+        </InstrumentPanel>
       </div>
 
       {/* My locks */}
       <div style={{ flex: '1 1 420px', minWidth: 0 }}>
-        <Panel>
-          <div style={{ fontFamily: SANS, fontSize: 14, fontWeight: 600, color: terminalColors.ink, marginBottom: 14 }}>
-            My token &amp; LP locks
-          </div>
+        <InstrumentPanel title="MY TOKEN & LP LOCKS">
           <TokenLocksList
             deployed={deployed}
             connected={connected}
@@ -834,7 +807,7 @@ function TokenLpTab({
             locks={locks}
             onConnect={onConnect}
           />
-        </Panel>
+        </InstrumentPanel>
       </div>
     </div>
   )
@@ -1233,8 +1206,7 @@ function V3Tab({
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       {/* Create panel */}
       <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Panel>
-          <StepLabel index="01" label="Lock v3 position" note={deployed ? undefined : 'not deployed'} />
+        <InstrumentPanel title="LOCK V3 POSITION" corners meta={deployed ? undefined : ['not deployed']}>
           {!deployed ? (
             <NotDeployedNote chainLabel={chainLabel} />
           ) : (
@@ -1311,9 +1283,9 @@ function V3Tab({
               </div>
             </div>
           )}
-        </Panel>
+        </InstrumentPanel>
 
-        <Panel>
+        <InstrumentPanel title="REVIEW">
           <SummaryRow
             label="Lock fee"
             value={
@@ -1357,15 +1329,12 @@ function V3Tab({
               can still collect its trading fees while it is locked.
             </div>
           ) : null}
-        </Panel>
+        </InstrumentPanel>
       </div>
 
       {/* My locks */}
       <div style={{ flex: '1 1 420px', minWidth: 0 }}>
-        <Panel>
-          <div style={{ fontFamily: SANS, fontSize: 14, fontWeight: 600, color: terminalColors.ink, marginBottom: 14 }}>
-            My v3 position locks
-          </div>
+        <InstrumentPanel title="MY V3 POSITION LOCKS">
           <V3LocksList
             deployed={deployed}
             connected={connected}
@@ -1375,7 +1344,7 @@ function V3Tab({
             locks={locks}
             onConnect={onConnect}
           />
-        </Panel>
+        </InstrumentPanel>
       </div>
     </div>
   )
@@ -1542,9 +1511,9 @@ function V3LockRowItem({
               boxSizing: 'border-box',
               border: `1px solid ${terminalColors.line}`,
               borderRadius: 9,
-              background: terminalColors.bg,
+              background: terminalColors.panel,
               padding: '8px 10px',
-              fontFamily: SANS,
+              fontFamily: MONO,
               fontSize: 12.5,
               color: terminalColors.ink,
               outline: 'none',
@@ -1568,14 +1537,12 @@ function V3LockRowItem({
 
 function rowActionStyle(enabled: boolean): React.CSSProperties {
   return {
-    fontFamily: SANS,
-    fontSize: 12,
-    fontWeight: 600,
+    ...terminalKeycap,
+    fontSize: 11.5,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
     color: enabled ? terminalColors.greenDeep : terminalColors.faint,
-    background: enabled ? terminalColors.greenBg : terminalColors.panel,
-    border: `1px solid ${enabled ? terminalColors.greenBorder : terminalColors.line}`,
     padding: '6px 12px',
-    borderRadius: 9,
     cursor: enabled ? 'pointer' : 'default',
     whiteSpace: 'nowrap',
   }
@@ -1584,14 +1551,12 @@ function rowActionStyle(enabled: boolean): React.CSSProperties {
 /** Neutral (non-primary) row action — e.g. "Extend" toggles an inline field. */
 function rowNeutralActionStyle(enabled: boolean): React.CSSProperties {
   return {
-    fontFamily: SANS,
-    fontSize: 12,
-    fontWeight: 600,
+    ...terminalKeycap,
+    fontSize: 11.5,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
     color: enabled ? terminalColors.ink2 : terminalColors.faint,
-    background: terminalColors.bg,
-    border: `1px solid ${terminalColors.line}`,
     padding: '6px 12px',
-    borderRadius: 9,
     cursor: enabled ? 'pointer' : 'default',
     whiteSpace: 'nowrap',
   }
@@ -1607,8 +1572,10 @@ function ConnectInline({ onConnect }: { onConnect: () => void }): JSX.Element {
         type="button"
         onClick={onConnect}
         style={{
-          fontFamily: SANS,
-          fontSize: 13,
+          fontFamily: MONO,
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+          fontSize: 12.5,
           fontWeight: 600,
           color: terminalColors.btnInk,
           background: terminalColors.brandGreen,
@@ -1636,14 +1603,12 @@ function ErrorInline({ onRetry }: { onRetry: () => void }): JSX.Element {
         type="button"
         onClick={onRetry}
         style={{
-          fontFamily: SANS,
-          fontSize: 12,
-          fontWeight: 600,
+          ...terminalKeycap,
+          fontSize: 11.5,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
           color: terminalColors.ink2,
-          background: terminalColors.panel,
-          border: `1px solid ${terminalColors.line}`,
           padding: '5px 12px',
-          borderRadius: 9,
           cursor: 'pointer',
         }}
       >
@@ -1706,16 +1671,7 @@ function LockAnalyticsCard({
   const unlockablePct = hasData ? (breakdown!.unlockable / breakdown!.total) * 100 : 0
 
   return (
-    <Panel>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
-        <span style={{ fontFamily: SANS, fontSize: 14, fontWeight: 600, color: terminalColors.ink }}>
-          Lock analytics
-        </span>
-        <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', color: terminalColors.ink3Alt }}>
-          {hasData ? 'YOUR LOCKS' : 'NO LOCKS YET'}
-        </span>
-      </div>
-
+    <InstrumentPanel title="LOCK ANALYTICS" meta={[hasData ? 'YOUR LOCKS' : 'NO LOCKS YET']}>
       {loading ? (
         <div style={{ height: 14, borderRadius: 999, background: terminalColors.line2 }} aria-busy="true" />
       ) : hasData ? (
@@ -1756,7 +1712,7 @@ function LockAnalyticsCard({
           </div>
         </div>
       )}
-    </Panel>
+    </InstrumentPanel>
   )
 }
 
@@ -1846,6 +1802,7 @@ export function LockerScreen(): JSX.Element {
   return (
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
       {/* Header */}
+      <Eyebrow style={{ display: 'block', marginBottom: 8 }}>TOKEN LOCKER</Eyebrow>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
         <h1
           style={{
@@ -1926,7 +1883,7 @@ export function LockerScreen(): JSX.Element {
                 fontWeight: 600,
                 color: active ? terminalColors.ink : terminalColors.ink2,
                 background: active ? terminalColors.bg : 'transparent',
-                boxShadow: active ? '0 1px 2px rgba(11,15,20,.06)' : undefined,
+                boxShadow: active ? terminalShadows.segmentedActive : undefined,
               }}
             >
               {id === 'token' ? 'Token & LP' : 'v3 Position'}

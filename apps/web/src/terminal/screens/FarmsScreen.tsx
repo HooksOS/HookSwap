@@ -31,12 +31,14 @@ import { useEnabledChains } from 'uniswap/src/features/chains/hooks/useEnabledCh
 import { formatUnits, type Address } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
-import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { getFarmFactory } from '~/terminal/farms/addresses'
 import { useCreateFarm } from '~/terminal/farms/useCreateFarm'
 import { useFarm, useFarmList } from '~/terminal/farms/useFarm'
 import { assume0xAddress } from '~/utils/wagmi'
+import '~/terminal/theme/terminal.css'
 
 const MONO = terminalFonts.mono
 const DISPLAY = terminalFonts.display
@@ -107,34 +109,7 @@ function fmtAmount(raw?: bigint, decimals?: number): string {
   return n.toLocaleString('en-US', { maximumFractionDigits: 6 })
 }
 
-/* ------------------------------------------------------------------ primitives (mirror VestingScreen) */
-
-function Panel({ children, padding = 18 }: { children: React.ReactNode; padding?: number }): JSX.Element {
-  return (
-    <div
-      style={{
-        border: `1px solid ${terminalColors.line}`,
-        borderRadius: 14,
-        background: terminalColors.bg,
-        padding,
-        boxSizing: 'border-box',
-      }}
-    >
-      {children}
-    </div>
-  )
-}
-
-function StepLabel({ index, label, note }: { index: string; label: string; note?: string }): JSX.Element {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-      <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', color: terminalColors.ink3Alt }}>
-        {index} · {label.toUpperCase()}
-      </span>
-      {note ? <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt }}>{note}</span> : null}
-    </div>
-  )
-}
+/* ------------------------------------------------------------------ primitives */
 
 function FieldLabel({ children }: { children: React.ReactNode }): JSX.Element {
   return <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt, marginBottom: 5 }}>{children}</div>
@@ -165,7 +140,7 @@ function TextField({
         boxSizing: 'border-box',
         border: `1px solid ${terminalColors.line}`,
         borderRadius: 11,
-        background: terminalColors.bg,
+        background: terminalColors.panel,
         padding: '10px 12px',
         fontFamily: mono ? MONO : SANS,
         fontSize: 13.5,
@@ -229,8 +204,10 @@ function PrimaryButton({ label, onClick, disabled }: { label: string; onClick: (
       style={{
         marginTop: 12,
         width: '100%',
-        fontFamily: SANS,
-        fontSize: 14,
+        fontFamily: MONO,
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
+        fontSize: 13,
         fontWeight: 600,
         color: terminalColors.btnInk,
         background: disabled ? terminalColors.line : terminalColors.brandGreen,
@@ -245,7 +222,7 @@ function PrimaryButton({ label, onClick, disabled }: { label: string; onClick: (
   )
 }
 
-/** A secondary (outline) action button, used for Claim / Unstake alongside the primary stake CTA. */
+/** A secondary (keycap) action button, used for Claim / Unstake alongside the primary stake CTA. */
 function SecondaryButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }): JSX.Element {
   return (
     <button
@@ -253,15 +230,13 @@ function SecondaryButton({ label, onClick, disabled }: { label: string; onClick:
       onClick={onClick}
       disabled={disabled}
       style={{
+        ...terminalKeycap,
         width: '100%',
-        fontFamily: SANS,
-        fontSize: 13.5,
-        fontWeight: 600,
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
+        fontSize: 12.5,
         color: disabled ? terminalColors.faint : terminalColors.greenDeep,
-        background: disabled ? terminalColors.panel : terminalColors.greenBg,
-        border: `1px solid ${disabled ? terminalColors.line : terminalColors.greenBorder}`,
         padding: '11px 0',
-        borderRadius: 12,
         cursor: disabled ? 'default' : 'pointer',
       }}
     >
@@ -311,8 +286,10 @@ function ConnectInline({ text, onConnect }: { text: string; onConnect: () => voi
         type="button"
         onClick={onConnect}
         style={{
-          fontFamily: SANS,
-          fontSize: 13,
+          fontFamily: MONO,
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+          fontSize: 12.5,
           fontWeight: 600,
           color: terminalColors.btnInk,
           background: terminalColors.brandGreen,
@@ -434,8 +411,7 @@ function CreateTab({
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       {/* Left: farm details */}
       <div style={{ flex: '1 1 340px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Panel>
-          <StepLabel index="01" label="Farm details" note={deployed ? undefined : 'not deployed'} />
+        <InstrumentPanel title="FARM DETAILS" corners meta={deployed ? undefined : ['not deployed']}>
           {!deployed ? (
             <NotDeployedNote chainLabel={chainLabel} />
           ) : (
@@ -504,7 +480,7 @@ function CreateTab({
               </div>
             </div>
           )}
-        </Panel>
+        </InstrumentPanel>
 
         {deployed ? (
           <Notice tone="muted">
@@ -516,7 +492,7 @@ function CreateTab({
 
       {/* Right: review + create */}
       <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Panel>
+        <InstrumentPanel title="REVIEW">
           <SummaryRow label="Staking token" value={farm.stakingSymbol ?? (farm.validStakingToken ? '…' : '—')} />
           <SummaryRow label="Reward token" value={farm.rewardSymbol ?? (farm.validRewardToken ? '…' : '—')} />
           <SummaryRow
@@ -557,7 +533,7 @@ function CreateTab({
               staking-rewards contract and starts the stream.
             </div>
           ) : null}
-        </Panel>
+        </InstrumentPanel>
       </div>
     </div>
   )
@@ -619,9 +595,9 @@ function ManageTab({
 
   if (!deployed) {
     return (
-      <Panel>
+      <InstrumentPanel title="FARMS" meta={['not deployed']}>
         <NotDeployedNote chainLabel={chainLabel} />
-      </Panel>
+      </InstrumentPanel>
     )
   }
 
@@ -672,8 +648,7 @@ function ManageTab({
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       {/* Left: farm picker + live stats */}
       <div style={{ flex: '1 1 360px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Panel>
-          <StepLabel index="01" label="Select a farm" />
+        <InstrumentPanel title="SELECT A FARM" corners>
           <FieldLabel>Farm address</FieldLabel>
           <TextField value={selectedFarm} onChange={setSelectedFarm} placeholder="0x… (paste a farm address)" />
           {selectedFarm !== '' && !farm.validFarm ? (
@@ -740,19 +715,13 @@ function ManageTab({
               </div>
             )}
           </div>
-        </Panel>
+        </InstrumentPanel>
 
         {farm.validFarm ? (
-          <Panel>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-              <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 600, color: terminalColors.ink }}>
-                {farm.stakingSymbol ?? '…'}
-              </span>
-              <span style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3Alt }}>
-                stake → earn {farm.rewardSymbol ?? '…'}
-              </span>
-            </div>
-
+          <InstrumentPanel
+            title="STAKE → EARN"
+            meta={[farm.stakingSymbol ?? '…', `→ ${farm.rewardSymbol ?? '…'}`]}
+          >
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 14 }}>
               <FarmStat label="Your stake" value={fmtAmount(farm.staked, farm.stakingDecimals)} />
               <FarmStat label="Total staked" value={fmtAmount(farm.totalStaked, farm.stakingDecimals)} />
@@ -775,14 +744,13 @@ function ManageTab({
             <div style={{ marginTop: 16 }}>
               <AprNote />
             </div>
-          </Panel>
+          </InstrumentPanel>
         ) : null}
       </div>
 
       {/* Right: stake / claim / unstake */}
       <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Panel>
-          <StepLabel index="02" label="Stake / manage" />
+        <InstrumentPanel title="STAKE / MANAGE" corners>
           {!farm.validFarm ? (
             <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, padding: '6px 0' }}>
               Select or paste a farm address to stake, claim rewards, or unstake.
@@ -837,14 +805,12 @@ function ManageTab({
                     }}
                     disabled={farm.staked === undefined || farm.staked === 0n}
                     style={{
-                      fontFamily: SANS,
-                      fontSize: 12,
-                      fontWeight: 600,
+                      ...terminalKeycap,
+                      fontSize: 11,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
                       color: farm.staked && farm.staked > 0n ? terminalColors.ink2 : terminalColors.faint,
-                      background: terminalColors.panel,
-                      border: `1px solid ${terminalColors.line}`,
                       padding: '9px 12px',
-                      borderRadius: 10,
                       cursor: farm.staked && farm.staked > 0n ? 'pointer' : 'default',
                       whiteSpace: 'nowrap',
                     }}
@@ -878,7 +844,7 @@ function ManageTab({
               )}
             </div>
           )}
-        </Panel>
+        </InstrumentPanel>
       </div>
     </div>
   )
@@ -922,6 +888,7 @@ export function FarmsScreen(): JSX.Element {
   return (
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
       {/* Header */}
+      <Eyebrow style={{ display: 'block', marginBottom: 8 }}>YIELD FARMS</Eyebrow>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
         <h1
           style={{
@@ -992,7 +959,7 @@ export function FarmsScreen(): JSX.Element {
                 fontWeight: 600,
                 color: active ? terminalColors.ink : terminalColors.ink2,
                 background: active ? terminalColors.bg : 'transparent',
-                boxShadow: active ? '0 1px 2px rgba(11,15,20,.06)' : undefined,
+                boxShadow: active ? terminalShadows.segmentedActive : undefined,
               }}
             >
               {id === 'create' ? 'Create farm' : 'Stake / manage'}

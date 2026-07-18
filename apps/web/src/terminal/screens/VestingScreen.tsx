@@ -32,13 +32,15 @@ import { useReadContract } from 'wagmi'
 import { formatUnits, type Address } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
-import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { vestingManagerAbi } from '~/terminal/vesting/abis'
 import { getVestingAddress } from '~/terminal/vesting/addresses'
 import { useCreateVesting } from '~/terminal/vesting/useCreateVesting'
 import { useMySchedules, type VestingScheduleRow } from '~/terminal/vesting/useMySchedules'
 import { assume0xAddress } from '~/utils/wagmi'
+import '~/terminal/theme/terminal.css'
 
 const MONO = terminalFonts.mono
 const DISPLAY = terminalFonts.display
@@ -141,33 +143,6 @@ function fmtAmount(raw: bigint, decimals?: number): string {
 
 /* ------------------------------------------------------------------ primitives */
 
-function Panel({ children, padding = 18 }: { children: React.ReactNode; padding?: number }): JSX.Element {
-  return (
-    <div
-      style={{
-        border: `1px solid ${terminalColors.line}`,
-        borderRadius: 14,
-        background: terminalColors.bg,
-        padding,
-        boxSizing: 'border-box',
-      }}
-    >
-      {children}
-    </div>
-  )
-}
-
-function StepLabel({ index, label, note }: { index: string; label: string; note?: string }): JSX.Element {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-      <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', color: terminalColors.ink3Alt }}>
-        {index} · {label.toUpperCase()}
-      </span>
-      {note ? <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt }}>{note}</span> : null}
-    </div>
-  )
-}
-
 function FieldLabel({ children }: { children: React.ReactNode }): JSX.Element {
   return <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt, marginBottom: 5 }}>{children}</div>
 }
@@ -200,7 +175,7 @@ function TextField({
         boxSizing: 'border-box',
         border: `1px solid ${terminalColors.line}`,
         borderRadius: 11,
-        background: terminalColors.bg,
+        background: terminalColors.panel,
         padding: '10px 12px',
         fontFamily: mono ? MONO : SANS,
         fontSize: 13.5,
@@ -231,7 +206,7 @@ function SelectField({
         boxSizing: 'border-box',
         border: `1px solid ${terminalColors.line}`,
         borderRadius: 11,
-        background: terminalColors.bg,
+        background: terminalColors.panel,
         padding: '10px 12px',
         fontFamily: SANS,
         fontSize: 13.5,
@@ -355,8 +330,10 @@ function PrimaryButton({
       style={{
         marginTop: 12,
         width: '100%',
-        fontFamily: SANS,
-        fontSize: 14,
+        fontFamily: MONO,
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
+        fontSize: 13,
         fontWeight: 600,
         color: terminalColors.btnInk,
         background: disabled ? terminalColors.line : terminalColors.brandGreen,
@@ -406,14 +383,12 @@ function NotDeployedNote({ chainLabel }: { chainLabel: string }): JSX.Element {
 
 function rowActionStyle(enabled: boolean): React.CSSProperties {
   return {
-    fontFamily: SANS,
-    fontSize: 12,
-    fontWeight: 600,
+    ...terminalKeycap,
+    fontSize: 11.5,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
     color: enabled ? terminalColors.greenDeep : terminalColors.faint,
-    background: enabled ? terminalColors.greenBg : terminalColors.panel,
-    border: `1px solid ${enabled ? terminalColors.greenBorder : terminalColors.line}`,
     padding: '6px 12px',
-    borderRadius: 9,
     cursor: enabled ? 'pointer' : 'default',
     whiteSpace: 'nowrap',
   }
@@ -429,8 +404,10 @@ function ConnectInline({ onConnect }: { onConnect: () => void }): JSX.Element {
         type="button"
         onClick={onConnect}
         style={{
-          fontFamily: SANS,
-          fontSize: 13,
+          fontFamily: MONO,
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+          fontSize: 12.5,
           fontWeight: 600,
           color: terminalColors.btnInk,
           background: terminalColors.brandGreen,
@@ -460,14 +437,12 @@ function ErrorInline({ onRetry }: { onRetry: () => void }): JSX.Element {
         type="button"
         onClick={onRetry}
         style={{
-          fontFamily: SANS,
-          fontSize: 12,
-          fontWeight: 600,
+          ...terminalKeycap,
+          fontSize: 11.5,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
           color: terminalColors.ink2,
-          background: terminalColors.panel,
-          border: `1px solid ${terminalColors.line}`,
           padding: '5px 12px',
-          borderRadius: 9,
           cursor: 'pointer',
         }}
       >
@@ -627,8 +602,7 @@ function CreateTab({
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       {/* Left: schedule details */}
       <div style={{ flex: '1 1 340px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Panel>
-          <StepLabel index="01" label="Schedule details" note={deployed ? undefined : 'not deployed'} />
+        <InstrumentPanel title="SCHEDULE DETAILS" corners meta={deployed ? undefined : ['not deployed']}>
           {!deployed ? (
             <NotDeployedNote chainLabel={chainLabel} />
           ) : (
@@ -694,7 +668,7 @@ function CreateTab({
               />
             </div>
           )}
-        </Panel>
+        </InstrumentPanel>
 
         {deployed ? (
           <Notice tone="muted">
@@ -706,7 +680,7 @@ function CreateTab({
 
       {/* Right: review + create */}
       <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Panel>
+        <InstrumentPanel title="REVIEW">
           <SummaryRow label="Token" value={symbolLabel} />
           <SummaryRow label="Beneficiary" value={vesting.validBeneficiary ? shortAddr(beneficiary) : '—'} />
           <SummaryRow
@@ -745,7 +719,7 @@ function CreateTab({
               contract; the beneficiary claims it as it vests.
             </div>
           ) : null}
-        </Panel>
+        </InstrumentPanel>
       </div>
     </div>
   )
@@ -930,16 +904,7 @@ function ClaimTab({
   })()
 
   return (
-    <Panel>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-        <span style={{ fontFamily: SANS, fontSize: 14, fontWeight: 600, color: terminalColors.ink }}>
-          My vesting schedules
-        </span>
-        <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', color: terminalColors.ink3Alt }}>
-          RECEIVING + GRANTED
-        </span>
-      </div>
-
+    <InstrumentPanel title="MY VESTING SCHEDULES" meta={['RECEIVING + GRANTED']}>
       {body}
 
       {schedules.releaseError ? (
@@ -947,7 +912,7 @@ function ClaimTab({
           {schedules.releaseError}
         </div>
       ) : null}
-    </Panel>
+    </InstrumentPanel>
   )
 }
 
@@ -1017,6 +982,7 @@ export function VestingScreen(): JSX.Element {
   return (
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
       {/* Header */}
+      <Eyebrow style={{ display: 'block', marginBottom: 8 }}>TOKEN VESTING</Eyebrow>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
         <h1
           style={{
@@ -1094,7 +1060,7 @@ export function VestingScreen(): JSX.Element {
                 fontWeight: 600,
                 color: active ? terminalColors.ink : terminalColors.ink2,
                 background: active ? terminalColors.bg : 'transparent',
-                boxShadow: active ? '0 1px 2px rgba(11,15,20,.06)' : undefined,
+                boxShadow: active ? terminalShadows.segmentedActive : undefined,
               }}
             >
               {id === 'create' ? 'Create' : 'My schedules'}

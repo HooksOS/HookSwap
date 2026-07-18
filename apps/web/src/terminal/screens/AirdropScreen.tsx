@@ -38,9 +38,11 @@ import { useAccount } from '~/hooks/useAccount'
 import { merkleDistributorFactoryAbi } from '~/terminal/airdrop/abis'
 import { getAirdropFactory } from '~/terminal/airdrop/addresses'
 import { useClaimAirdrop, useCreateAirdrop, type ClaimsFile } from '~/terminal/airdrop/useAirdrop'
+import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
-import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { assume0xAddress } from '~/utils/wagmi'
+import '~/terminal/theme/terminal.css'
 
 const MONO = terminalFonts.mono
 const DISPLAY = terminalFonts.display
@@ -85,33 +87,6 @@ function download(filename: string, text: string): void {
 
 /* ------------------------------------------------------------------ primitives */
 
-function Panel({ children, padding = 18 }: { children: React.ReactNode; padding?: number }): JSX.Element {
-  return (
-    <div
-      style={{
-        border: `1px solid ${terminalColors.line}`,
-        borderRadius: 14,
-        background: terminalColors.bg,
-        padding,
-        boxSizing: 'border-box',
-      }}
-    >
-      {children}
-    </div>
-  )
-}
-
-function StepLabel({ index, label, note }: { index: string; label: string; note?: string }): JSX.Element {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-      <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', color: terminalColors.ink3Alt }}>
-        {index} · {label.toUpperCase()}
-      </span>
-      {note ? <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt }}>{note}</span> : null}
-    </div>
-  )
-}
-
 function FieldLabel({ children }: { children: React.ReactNode }): JSX.Element {
   return <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt, marginBottom: 5 }}>{children}</div>
 }
@@ -138,7 +113,7 @@ function TextField({
         boxSizing: 'border-box',
         border: `1px solid ${terminalColors.line}`,
         borderRadius: 11,
-        background: terminalColors.bg,
+        background: terminalColors.panel,
         padding: '10px 12px',
         fontFamily: mono ? MONO : SANS,
         fontSize: 13.5,
@@ -239,8 +214,10 @@ function PrimaryButton({ label, onClick, disabled }: { label: string; onClick: (
       style={{
         marginTop: 12,
         width: '100%',
-        fontFamily: SANS,
-        fontSize: 14,
+        fontFamily: MONO,
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
+        fontSize: 13,
         fontWeight: 600,
         color: terminalColors.btnInk,
         background: disabled ? terminalColors.line : terminalColors.brandGreen,
@@ -255,7 +232,7 @@ function PrimaryButton({ label, onClick, disabled }: { label: string; onClick: (
   )
 }
 
-/** Secondary (outlined) button — used for the claims.json download / file picker. */
+/** Secondary (keycap) button — used for the claims.json download / file picker. */
 function GhostButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }): JSX.Element {
   return (
     <button
@@ -263,15 +240,11 @@ function GhostButton({ label, onClick, disabled }: { label: string; onClick: () 
       onClick={onClick}
       disabled={disabled}
       style={{
+        ...terminalKeycap,
         width: '100%',
-        fontFamily: SANS,
-        fontSize: 13,
-        fontWeight: 600,
+        fontSize: 12.5,
         color: disabled ? terminalColors.faint : terminalColors.greenDeep,
-        background: disabled ? terminalColors.panel : terminalColors.greenBg,
-        border: `1px solid ${disabled ? terminalColors.line : terminalColors.greenBorder}`,
         padding: '10px 0',
-        borderRadius: 11,
         cursor: disabled ? 'default' : 'pointer',
       }}
     >
@@ -312,8 +285,10 @@ function ConnectInline({ text, onConnect }: { text: string; onConnect: () => voi
         type="button"
         onClick={onConnect}
         style={{
-          fontFamily: SANS,
-          fontSize: 13,
+          fontFamily: MONO,
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+          fontSize: 12.5,
           fontWeight: 600,
           color: terminalColors.btnInk,
           background: terminalColors.brandGreen,
@@ -521,8 +496,7 @@ function CreateTab({
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       {/* Left: token + recipients */}
       <div style={{ flex: '1 1 360px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Panel>
-          <StepLabel index="01" label="Token & recipients" note={deployed ? undefined : 'not deployed'} />
+        <InstrumentPanel title="TOKEN & RECIPIENTS" corners meta={deployed ? undefined : ['not deployed']}>
           {!deployed ? (
             <NotDeployedNote chainLabel={chainLabel} />
           ) : (
@@ -560,7 +534,7 @@ function CreateTab({
               </div>
             </div>
           )}
-        </Panel>
+        </InstrumentPanel>
 
         {deployed ? (
           <Notice tone="muted">
@@ -573,7 +547,7 @@ function CreateTab({
 
       {/* Right: review + deploy + fund */}
       <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Panel>
+        <InstrumentPanel title="REVIEW">
           <SummaryRow label="Token" value={symbolLabel} />
           <SummaryRow label="Recipients" value={create.parsed.validCount > 0 ? String(create.parsed.validCount) : '—'} />
           <SummaryRow
@@ -614,12 +588,11 @@ function CreateTab({
               the full total.
             </div>
           ) : null}
-        </Panel>
+        </InstrumentPanel>
 
         {/* Claims artifact — the one thing the project must host for recipients */}
         {create.distributor && claimsJson ? (
-          <Panel>
-            <StepLabel index="02" label="Claims file" />
+          <InstrumentPanel title="CLAIMS FILE">
             <div style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink2, lineHeight: 1.5, marginBottom: 10 }}>
               Download <span style={{ fontFamily: MONO, color: terminalColors.ink }}>claims-{shortAddr(create.distributor)}.json</span>{' '}
               and host it (e.g. your site / IPFS). Recipients load it in the Claim tab to generate their proof — the
@@ -629,7 +602,7 @@ function CreateTab({
               label="Download claims.json"
               onClick={() => download(`claims-${create.distributor}.json`, claimsJson)}
             />
-          </Panel>
+          </InstrumentPanel>
         ) : null}
       </div>
     </div>
@@ -739,8 +712,7 @@ function ClaimTab({
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       {/* Left: distributor + source */}
       <div style={{ flex: '1 1 360px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Panel>
-          <StepLabel index="01" label="Airdrop" note={deployed ? undefined : 'not deployed'} />
+        <InstrumentPanel title="AIRDROP" corners meta={deployed ? undefined : ['not deployed']}>
           {!deployed ? (
             <NotDeployedNote chainLabel={chainLabel} />
           ) : (
@@ -795,12 +767,12 @@ function ClaimTab({
               ) : null}
             </div>
           )}
-        </Panel>
+        </InstrumentPanel>
       </div>
 
       {/* Right: allocation + claim */}
       <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Panel>
+        <InstrumentPanel title="CLAIM">
           <SummaryRow label="Token" value={claim.tokenSymbol ?? (claim.validDistributor ? '…' : '—')} />
           <SummaryRow label="Your address" value={connected && owner ? shortAddr(owner) : '—'} />
           <SummaryRow
@@ -839,7 +811,7 @@ function ClaimTab({
               <ConnectInline text="Connect a wallet to check and claim your allocation." onConnect={onConnect} />
             </div>
           ) : null}
-        </Panel>
+        </InstrumentPanel>
       </div>
     </div>
   )
@@ -893,6 +865,7 @@ export function AirdropScreen(): JSX.Element {
   return (
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
       {/* Header */}
+      <Eyebrow style={{ display: 'block', marginBottom: 8 }}>AIRDROP / MULTISENDER</Eyebrow>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
         <h1 style={{ fontFamily: DISPLAY, fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', color: terminalColors.ink, margin: 0 }}>
           Airdrop
@@ -939,7 +912,7 @@ export function AirdropScreen(): JSX.Element {
                 fontWeight: 600,
                 color: active ? terminalColors.ink : terminalColors.ink2,
                 background: active ? terminalColors.bg : 'transparent',
-                boxShadow: active ? '0 1px 2px rgba(11,15,20,.06)' : undefined,
+                boxShadow: active ? terminalShadows.segmentedActive : undefined,
               }}
             >
               {id === 'create' ? 'Create' : 'Claim'}
