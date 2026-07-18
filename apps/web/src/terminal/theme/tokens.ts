@@ -16,52 +16,52 @@
 /* ------------------------------------------------------------------ colors */
 
 export const terminalColors = {
-  // Text / ink  — DARK THEME (roles preserved; hexes flipped for a dark surface)
-  ink: '#E7ECF2', // primary text / headings (was #0B0F14)
-  ink2: '#9AA4B2', // secondary text (was #59626F)
-  ink3: '#7C8698', // muted labels (primary) (was #8A94A3)
-  ink3Alt: '#7C8698', // muted labels (alt used in rail section labels) (was #98A0AC)
-  faint: '#5C6675', // axis labels, timestamps (was #B0B7C0)
+  // Text / ink  — DAYSIGNAL LIGHT THEME ("Signal" layout language on a cool-paper surface)
+  ink: '#12160F', // primary text / headings
+  ink2: '#3C4235', // secondary text
+  ink3: '#69705F', // muted labels (primary)
+  ink3Alt: '#69705F', // muted labels (alt used in rail section labels)
+  faint: '#98A08C', // axis labels, timestamps
 
-  // Lines / dividers
-  line: '#232B36', // card/frame borders (was #E6E9EE)
-  line2: '#1C232D', // inner dividers / section rules (was #EFF1F4)
-  line3: '#1A212B', // table row dividers (was #F4F6F8)
+  // Lines / dividers  — warm-neutral hairlines biased toward the green accent
+  line: '#DFE2D8', // card/frame borders
+  line2: '#E6E8DF', // inner dividers / section rules
+  line3: '#EDEFE7', // table row dividers
 
-  // Surfaces
-  bg: '#12181F', // cards, top bar, active pills (was #FFFFFF)
-  bgApp: '#0B0F14', // main content / page background (was #FCFCFD)
-  panel: '#0E141B', // inputs, rail background, inset fields / chart wells (was #F6F8FA)
-  panel2: '#0E141B', // segmented-control track, chips (primary) (was #F0F3F6)
-  panel2Alt: '#0E141B', // segmented-control track, chips (alt) (was #EEF1F4)
+  // Surfaces  — paper app bg, pure-white cards, faint card2 for wells
+  bg: '#FFFFFF', // cards, top bar, active pills
+  bgApp: '#F3F5F0', // main content / page background (cool paper)
+  panel: '#F7F8F3', // inputs, rail background, inset fields / chart wells
+  panel2: '#EEF1EA', // segmented-control track, chips (primary)
+  panel2Alt: '#EAECE4', // segmented-control track, chips (alt)
 
-  // Brand green
-  brandGreen: '#2FE07E', // primary buttons, active accent, "Swap" wordmark (kept)
-  greenDeep: '#2FE07E', // green text/links — brightened for contrast on dark (was #0AA85A)
-  greenUp: '#2FE07E', // positive values (was #12B866)
-  greenBg: '#0B2418', // green badge/surface (was #E9FBEF)
-  greenBorder: '#12502F', // green card border (was #C7F3D8)
-  btnInk: '#0B0F14', // text on brand-green buttons — dark ink (was #08110A)
+  // Brand green  — deep acid green on light, white ink on green fills
+  brandGreen: '#0C8A42', // primary buttons, active accent, "Swap" wordmark
+  greenDeep: '#0C8A42', // green text/links
+  greenUp: '#0C8A42', // positive values
+  greenBg: '#E9F7EF', // green badge/surface
+  greenBorder: '#BFE6CD', // green card border
+  btnInk: '#FFFFFF', // text on brand-green buttons — white on deep green
 
   // Red / negative
-  redDown: '#EF4E4A', // negative values (kept)
-  redBg: '#2A1214', // negative surface — dark red well (was #FDEBEA)
+  redDown: '#C0291F', // negative values
+  redBg: '#FBEAE8', // negative surface — light red well
 
-  // Warn
-  warn: '#F0913A', // gas, out-of-range (kept; legible amber on dark)
-  warnBg: '#2A1E10', // warn surface (primary) — dark amber well (was #FFF3E8)
-  warnBgAlt: '#2A1E10', // warn surface (alt) (was #FFF1E9)
+  // Warn  — gold (DAYSIGNAL rule/accent), replaces amber
+  warn: '#B98A1E', // gas, out-of-range
+  warnBg: '#FBF3E2', // warn surface (primary)
+  warnBgAlt: '#FBF1E5', // warn surface (alt)
 
-  // Accents (categories / token icons) — kept: saturated, legible on dark
-  accentIndigo: '#5B6BFF', // ETH icon, TWAMM category
+  // Accents (categories / token icons) — deepened one step for legibility on light
+  accentIndigo: '#4B5CF0', // ETH icon, TWAMM category
   accentBlue: '#2E7CF6', // USDC icon
-  accentPurple: '#8A6BFF', // governance
-  accentPink: '#E0517A', // security category
-  accentTeal: '#12B0A8', // yield category
+  accentPurple: '#7A52C8', // governance
+  accentPink: '#D63D6A', // security category
+  accentTeal: '#0F9A92', // yield category
 
-  // Rail-specific inactive icon (from NavRailB.dc.html)
-  railIconInactive: '#7C8698', // inactive nav icon on dark rail (was #8A92A0)
-  railWalletSub: '#7C8698', // wallet chip subtext (kept — chip was already dark)
+  // Rail-specific inactive icon
+  railIconInactive: '#98A08C', // inactive nav icon on light rail
+  railWalletSub: '#98A08C', // wallet chip subtext
 } as const
 
 export type TerminalColorToken = keyof typeof terminalColors
@@ -74,7 +74,7 @@ export type TerminalColorToken = keyof typeof terminalColors
 export const terminalTokenGradients = {
   eth: 'linear-gradient(135deg,#8A92FF,#5B6BFF)',
   usdc: 'linear-gradient(135deg,#2E7CF6,#2563EB)',
-  walletAvatar: 'linear-gradient(135deg,#2FE07E,#12B866)',
+  walletAvatar: 'linear-gradient(135deg,#17B357,#0C8A42)',
 } as const
 
 /* -------------------------------------------------------------- typography */
@@ -150,11 +150,11 @@ export const terminalShadows = {
   modal: '0 40px 90px -20px rgba(11,15,20,.5)',
   segmentedActive: '0 1px 2px rgba(11,15,20,.06)',
   railActiveItem: '0 1px 2px rgba(11,15,20,.05)',
-  greenGlow: '0 0 8px #2FE07E', // connection dot glow (top bar)
+  greenGlow: '0 0 0 3px rgba(23,179,87,.16)', // connection dot halo (top bar)
 } as const
 
 /** Modal scrim colour (B8/B9/B11). */
-export const terminalScrim = 'rgba(0,0,0,.6)'
+export const terminalScrim = 'rgba(18,22,15,.38)'
 
 /* --------------------------------------------------------------- layout */
 

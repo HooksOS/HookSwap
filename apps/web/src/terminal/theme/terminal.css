@@ -57,38 +57,38 @@
 /* --------------------------------------------------------- CSS variables -- */
 
 .tm-root {
-  /* Colors — DARK THEME (mirrors tokens.ts; roles preserved) */
-  --tm-ink: #e7ecf2;
-  --tm-ink-2: #9aa4b2;
-  --tm-ink-3: #7c8698;
-  --tm-ink-3-alt: #7c8698;
-  --tm-faint: #5c6675;
-  --tm-line: #232b36;
-  --tm-line-2: #1c232d;
-  --tm-line-3: #1a212b;
-  --tm-bg: #12181f;
-  --tm-bg-app: #0b0f14;
-  --tm-panel: #0e141b;
-  --tm-panel-2: #0e141b;
-  --tm-panel-2-alt: #0e141b;
-  --tm-brand-green: #2fe07e;
-  --tm-green-deep: #2fe07e;
-  --tm-green-up: #2fe07e;
-  --tm-green-bg: #0b2418;
-  --tm-green-border: #12502f;
-  --tm-btn-ink: #0b0f14;
-  --tm-red-down: #ef4e4a;
-  --tm-red-bg: #2a1214;
-  --tm-warn: #f0913a;
-  --tm-warn-bg: #2a1e10;
-  --tm-warn-bg-alt: #2a1e10;
-  --tm-accent-indigo: #5b6bff;
+  /* Colors — DAYSIGNAL LIGHT THEME (mirrors tokens.ts; roles preserved) */
+  --tm-ink: #12160f;
+  --tm-ink-2: #3c4235;
+  --tm-ink-3: #69705f;
+  --tm-ink-3-alt: #69705f;
+  --tm-faint: #98a08c;
+  --tm-line: #dfe2d8;
+  --tm-line-2: #e6e8df;
+  --tm-line-3: #edefe7;
+  --tm-bg: #ffffff;
+  --tm-bg-app: #f3f5f0;
+  --tm-panel: #f7f8f3;
+  --tm-panel-2: #eef1ea;
+  --tm-panel-2-alt: #eaece4;
+  --tm-brand-green: #0c8a42;
+  --tm-green-deep: #0c8a42;
+  --tm-green-up: #0c8a42;
+  --tm-green-bg: #e9f7ef;
+  --tm-green-border: #bfe6cd;
+  --tm-btn-ink: #ffffff;
+  --tm-red-down: #c0291f;
+  --tm-red-bg: #fbeae8;
+  --tm-warn: #b98a1e;
+  --tm-warn-bg: #fbf3e2;
+  --tm-warn-bg-alt: #fbf1e5;
+  --tm-accent-indigo: #4b5cf0;
   --tm-accent-blue: #2e7cf6;
-  --tm-accent-purple: #8a6bff;
-  --tm-accent-pink: #e0517a;
-  --tm-accent-teal: #12b0a8;
-  --tm-rail-icon-inactive: #7c8698;
-  --tm-rail-wallet-sub: #7c8698;
+  --tm-accent-purple: #7a52c8;
+  --tm-accent-pink: #d63d6a;
+  --tm-accent-teal: #0f9a92;
+  --tm-rail-icon-inactive: #98a08c;
+  --tm-rail-wallet-sub: #98a08c;
 
   /* Fonts */
   --tm-font-display: 'Space Grotesk', -apple-system, system-ui, sans-serif;
@@ -155,7 +155,7 @@
 
 /* Modal scrim */
 .tm-scrim {
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(18, 22, 15, 0.38);
 }
 
 /* Convenience: every numeric/monetary/address value uses mono (hard rule). */
@@ -176,23 +176,23 @@
    so other dialogs (swap review, settings) are untouched. Pure restyle — no
    component logic is changed. Terminal values mirror theme/tokens.ts. */
 .is_DialogContent:has([data-testid='explore-search-input']) {
-  /* Remap Tamagui theme vars → Terminal surfaces / ink / acid-green */
-  --surface1: #12181f;
-  --background: #12181f;
-  --surface2: #0e141b;
-  --surface1Hovered: #171f28;
-  --surface2Hovered: #1a222c;
-  --surface3: #232b36;
-  --surface3Solid: #2a3542;
-  --neutral1: #e7ecf2;
-  --neutral2: #9aa4b2;
-  --neutral3: #7c8698;
-  --accent1: #2fe07e;
-  --accent2: rgba(47, 224, 126, 0.14);
-  background: #12181f !important;
-  border: 1px solid #232b36 !important;
+  /* Remap Tamagui theme vars → Terminal LIGHT surfaces / ink / deep-green */
+  --surface1: #ffffff;
+  --background: #ffffff;
+  --surface2: #f7f8f3;
+  --surface1Hovered: #f3f5f0;
+  --surface2Hovered: #eef1ea;
+  --surface3: #dfe2d8;
+  --surface3Solid: #d3d7ca;
+  --neutral1: #12160f;
+  --neutral2: #3c4235;
+  --neutral3: #69705f;
+  --accent1: #0c8a42;
+  --accent2: rgba(12, 138, 66, 0.12);
+  background: #ffffff !important;
+  border: 1px solid #dfe2d8 !important;
   border-radius: 16px !important;
-  box-shadow: 0 40px 90px -20px rgba(0, 0, 0, 0.6) !important;
+  box-shadow: 0 40px 90px -20px rgba(18, 22, 15, 0.28) !important;
   font-family: 'IBM Plex Sans', sans-serif !important;
 }
 .is_DialogContent:has([data-testid='explore-search-input']) * {
@@ -224,5 +224,5 @@
   letter-spacing: 0.09em !important;
   font-size: 11px !important;
   font-weight: 600 !important;
-  color: #7c8698 !important;
+  color: #69705f !important;
 }
