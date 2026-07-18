@@ -432,7 +432,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
         boxSizing: 'border-box',
       }}
     >
-      <div style={{ fontFamily: DISPLAY, fontSize: 14, fontWeight: 600, color: terminalColors.ink, marginBottom: 14 }}>
+      <div style={{ fontFamily: SANS, fontSize: 14, fontWeight: 600, color: terminalColors.ink, marginBottom: 14 }}>
         {title}
       </div>
       {children}

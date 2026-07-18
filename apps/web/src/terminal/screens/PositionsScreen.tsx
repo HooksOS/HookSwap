@@ -39,7 +39,7 @@ import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
 import { StatCard } from '~/terminal/components/StatCard'
 import { AddLiquidityModal } from '~/terminal/pools/AddLiquidityModal'
 import { RemoveLiquidityModal } from '~/terminal/pools/RemoveLiquidityModal'
-import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { terminalColors, terminalFonts, terminalType } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
 const DISPLAY = terminalFonts.display
@@ -83,8 +83,10 @@ function VersionBadge({ version }: { version: ProtocolVersion }): JSX.Element {
         fontSize: 11,
         fontWeight: 600,
         color: isV3 ? terminalColors.accentIndigo : terminalColors.ink2,
-        background: isV3 ? 'rgba(91,107,255,0.10)' : terminalColors.panel2,
-        border: `1px solid ${isV3 ? 'rgba(91,107,255,0.22)' : terminalColors.line}`,
+        // Translucent tints derived from accentIndigo (#4B5CF0 → rgb(75,92,240)); no
+        // alpha token exists for these, so the rgba is the token colour at low opacity.
+        background: isV3 ? 'rgba(75,92,240,0.10)' : terminalColors.panel2,
+        border: `1px solid ${isV3 ? 'rgba(75,92,240,0.22)' : terminalColors.line}`,
         padding: '2px 8px',
         borderRadius: 999,
         whiteSpace: 'nowrap',
@@ -354,7 +356,8 @@ function PositionPairCell({ position }: { position: PositionInfo }): JSX.Element
       <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <span
           style={{
-            fontFamily: SANS,
+            // Pair/ticker → IBM Plex Mono (DAYSIGNAL hard rule), matching the Markets pair cell.
+            fontFamily: MONO,
             fontSize: 13,
             fontWeight: 600,
             color: terminalColors.ink,
@@ -737,9 +740,9 @@ function Header({
           <h1
             style={{
               fontFamily: DISPLAY,
-              fontSize: 24,
-              fontWeight: 600,
-              letterSpacing: '-0.02em',
+              fontSize: terminalType.sectionTitle.size,
+              fontWeight: terminalType.sectionTitle.weight,
+              letterSpacing: terminalType.sectionTitle.ls,
               color: terminalColors.ink,
               margin: 0,
             }}

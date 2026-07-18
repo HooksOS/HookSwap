@@ -43,7 +43,7 @@ import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks
 import { useAccount } from '~/hooks/useAccount'
 import { NotificationRow, type NotificationCategory } from '~/terminal/components/NotificationRow'
 import { StatCard } from '~/terminal/components/StatCard'
-import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { formatRelativeTime } from '~/terminal/utils/time'
 
 const MONO = terminalFonts.mono
@@ -145,7 +145,7 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
         border: active ? `1px solid ${terminalColors.line}` : '1px solid transparent',
         background: active ? terminalColors.bg : 'transparent',
         color: active ? terminalColors.ink : terminalColors.ink2,
-        boxShadow: active ? '0 1px 2px rgba(11,15,20,.06)' : undefined,
+        boxShadow: active ? terminalShadows.segmentedActive : undefined,
       }}
     >
       {label}

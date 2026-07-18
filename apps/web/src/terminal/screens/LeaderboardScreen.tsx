@@ -18,7 +18,7 @@
 import { ReactNode, useMemo, useState } from 'react'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
 import { StatCard } from '~/terminal/components/StatCard'
-import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import {
   LeaderboardMetric,
   LeaderboardRow,
@@ -76,7 +76,7 @@ function Segmented<T extends string>({
               border: 'none',
               background: active ? terminalColors.bg : 'transparent',
               color: active ? terminalColors.ink : terminalColors.ink2,
-              boxShadow: active ? '0 1px 2px rgba(11,15,20,.06)' : undefined,
+              boxShadow: active ? terminalShadows.segmentedActive : undefined,
             }}
           >
             {option.label}

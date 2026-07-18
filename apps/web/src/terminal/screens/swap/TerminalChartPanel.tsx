@@ -62,10 +62,9 @@ import { toStrictlyAscendingByTime } from '~/hooks/useTokenPriceChartData'
 import { useTokenPriceChartPanel } from '~/hooks/useTokenPriceChartPanel'
 import { useV2Pair } from '~/hooks/useV2Pairs'
 import { getNativeTokenDBAddress } from '~/utils/nativeTokens'
-import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
-const DISPLAY = terminalFonts.display
 
 /**
  * Timeframe tabs — visually identical pill row to the placeholder, now functional.
@@ -175,7 +174,7 @@ function TokenToggle({
               borderRadius: 5,
               border: 'none',
               cursor: 'pointer',
-              boxShadow: active ? '0 1px 2px rgba(11,15,20,.06)' : undefined,
+              boxShadow: active ? terminalShadows.segmentedActive : undefined,
             }}
           >
             {currency.symbol ?? '—'}
@@ -209,7 +208,7 @@ function PairHeaderLeft({
           <CurrencyLogo currency={outputCurrency} size={28} />
         </span>
       </span>
-      <span style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 17, color: terminalColors.ink, whiteSpace: 'nowrap' }}>
+      <span style={{ fontFamily: MONO, fontWeight: 600, fontSize: 17, color: terminalColors.ink, whiteSpace: 'nowrap' }}>
         {inSym} / {outSym}
       </span>
       {showToggle && (

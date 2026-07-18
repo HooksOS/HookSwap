@@ -31,7 +31,7 @@ import { SparklineCell, type TrendDirection } from '~/terminal/components/Sparkl
 import { terminalColors, terminalFonts, terminalTokenGradients } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
-const DISPLAY = terminalFonts.display
+const SANS = terminalFonts.sans
 
 /** Shared panel grid — MUST match the SwapScreen placeholder (PAIR / PRICE / spark). */
 const GRID = '1.3fr 1fr 60px'
@@ -173,7 +173,7 @@ function MarketRowView({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
           <span
             style={{
-              fontFamily: DISPLAY,
+              fontFamily: MONO,
               fontWeight: 600,
               fontSize: 12.5,
               color: terminalColors.ink,
@@ -281,7 +281,7 @@ export function TerminalMarketsPanel({
           justifyContent: 'space-between',
         }}
       >
-        <span style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 13.5, color: terminalColors.ink }}>Markets</span>
+        <span style={{ fontFamily: SANS, fontWeight: 600, fontSize: 13.5, color: terminalColors.ink }}>Markets</span>
         <span
           style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.ink3Alt }}
           aria-busy={isLoading || undefined}

@@ -48,7 +48,7 @@ import { useTopPools } from '~/features/Explore/state/topPools/useTopPools'
 import { ComingSoon } from '~/terminal/components/ComingSoon'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
 import { SparklineCell } from '~/terminal/components/SparklineCell'
-import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { terminalColors, terminalFonts, terminalShadows, terminalType } from '~/terminal/theme/tokens'
 import type { PoolStat } from '~/types/explore'
 
 const MONO = terminalFonts.mono
@@ -310,7 +310,7 @@ function FilterChip({
         border: active ? `1px solid ${terminalColors.line}` : '1px solid transparent',
         background: active ? terminalColors.bg : 'transparent',
         color: active ? terminalColors.ink : terminalColors.ink2,
-        boxShadow: active ? '0 1px 2px rgba(11,15,20,.06)' : undefined,
+        boxShadow: active ? terminalShadows.segmentedActive : undefined,
       }}
     >
       {label}
@@ -632,9 +632,9 @@ function MarketsScreenBody(): JSX.Element {
           <h1
             style={{
               fontFamily: DISPLAY,
-              fontSize: 24,
-              fontWeight: 600,
-              letterSpacing: '-0.02em',
+              fontSize: terminalType.sectionTitle.size,
+              fontWeight: terminalType.sectionTitle.weight,
+              letterSpacing: terminalType.sectionTitle.ls,
               color: terminalColors.ink,
               margin: 0,
             }}

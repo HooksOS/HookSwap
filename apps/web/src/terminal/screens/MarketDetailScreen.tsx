@@ -497,7 +497,7 @@ function YourPositionTab({
             style={{ border: `1px solid ${terminalColors.line2}`, borderRadius: 11, padding: '12px 13px' }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <span style={{ fontFamily: SANS, fontSize: 12.5, fontWeight: 600, color: terminalColors.ink }}>
+              <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 600, color: terminalColors.ink }}>
                 {p.currency0Amount.currency.symbol ?? '—'} / {p.currency1Amount.currency.symbol ?? '—'}
               </span>
               <span style={{ fontFamily: SANS, fontSize: 11, fontWeight: 600, color: status.color }}>{status.label}</span>

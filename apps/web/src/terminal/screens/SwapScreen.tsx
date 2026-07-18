@@ -65,7 +65,7 @@ import { MultichainContextProvider } from '~/state/multichain/MultichainContext'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { TerminalChartPanel } from '~/terminal/screens/swap/TerminalChartPanel'
 import { TerminalSwapReviewFlow, useTerminalReviewTrigger } from '~/terminal/screens/swap/TerminalSwapReviewFlow'
-import { terminalColors, terminalFonts, terminalTokenGradients } from '~/terminal/theme/tokens'
+import { terminalColors, terminalFonts, terminalShadows, terminalTokenGradients } from '~/terminal/theme/tokens'
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -242,7 +242,9 @@ function CurrencyField_Panel({
           }}
         >
           <TerminalTokenLogo currencyInfo={currencyInfo} size={20} fallbackGradient={fallbackGradient} />
-          <span style={{ fontWeight: 600, fontSize: 13, color: terminalColors.ink }}>{symbol ?? 'Select'}</span>
+          <span style={{ fontFamily: MONO, fontWeight: 600, fontSize: 13, color: terminalColors.ink }}>
+            {symbol ?? 'Select'}
+          </span>
           <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke={terminalColors.ink2} strokeWidth={2.5}>
             <path d="M6 9l6 6 6-6" />
           </svg>
@@ -574,7 +576,7 @@ export function SwapTicket(): JSX.Element {
                 background: active ? terminalColors.bg : 'transparent',
                 color: active ? terminalColors.ink : terminalColors.ink2,
                 borderRadius: 6,
-                boxShadow: active ? '0 1px 2px rgba(11,15,20,.06)' : undefined,
+                boxShadow: active ? terminalShadows.segmentedActive : undefined,
                 cursor: 'pointer',
               }}
             >

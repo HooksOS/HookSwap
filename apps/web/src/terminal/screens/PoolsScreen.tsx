@@ -45,7 +45,7 @@ import { useAccount } from '~/hooks/useAccount'
 import { AddLiquidityModal } from '~/terminal/pools/AddLiquidityModal'
 import { getPoolAddresses } from '~/terminal/pools/addresses'
 import { useCreateV2Pool } from '~/terminal/pools/useCreateV2Pool'
-import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { terminalColors, terminalFonts, terminalType } from '~/terminal/theme/tokens'
 import { assume0xAddress } from '~/utils/wagmi'
 
 const MONO = terminalFonts.mono
@@ -683,9 +683,9 @@ function PoolsScreenBody(): JSX.Element {
         <h1
           style={{
             fontFamily: DISPLAY,
-            fontSize: 24,
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
+            fontSize: terminalType.sectionTitle.size,
+            fontWeight: terminalType.sectionTitle.weight,
+            letterSpacing: terminalType.sectionTitle.ls,
             color: terminalColors.ink,
             margin: 0,
           }}
