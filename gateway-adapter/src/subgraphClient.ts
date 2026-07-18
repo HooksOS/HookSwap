@@ -33,15 +33,23 @@ export async function querySubgraph<T>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> {
+  // Bound the request so a hung/slow graph-node can't wedge the resolver (cf. data-api's 8s cap).
+  const timeoutMs = Number(process.env.SUBGRAPH_TIMEOUT_MS || 8000)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   let res
   try {
     res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ query, variables }),
+      signal: controller.signal,
     })
   } catch (e) {
-    throw new SubgraphQueryError(`Subgraph fetch failed: ${(e as Error).message}`, url)
+    const reason = controller.signal.aborted ? `timed out after ${timeoutMs}ms` : (e as Error).message
+    throw new SubgraphQueryError(`Subgraph fetch failed: ${reason}`, url)
+  } finally {
+    clearTimeout(timer)
   }
 
   if (!res.ok) {

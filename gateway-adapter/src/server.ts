@@ -29,8 +29,16 @@ import { LOCAL_QUERY_FIELDS, resolvers } from './resolvers'
 
 const PORT = Number(process.env.PORT || 4000)
 const GRAPHQL_ENDPOINT = process.env.GRAPHQL_ENDPOINT || '/v1/graphql'
-const CORS_ALLOW_ORIGIN = process.env.CORS_ALLOW_ORIGIN || '*'
+// Fail CLOSED: with no CORS_ALLOW_ORIGIN set, allow no cross-origin caller rather than reflecting
+// every origin WITH credentials (the anti-pattern the sibling data-api / trading-api adapters avoid).
+// Set CORS_ALLOW_ORIGIN to a comma-separated exact-origin allowlist in prod (see .env.example).
+const CORS_ORIGINS = (process.env.CORS_ALLOW_ORIGIN || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean)
 const UPSTREAM_GATEWAY_URL = process.env.UPSTREAM_GATEWAY_URL || ''
+/** Upstream/subgraph fetches are bounded so a degraded gateway can't hang the request (cf. data-api's 8s cap). */
+const UPSTREAM_TIMEOUT_MS = Number(process.env.UPSTREAM_TIMEOUT_MS || 8000)
 
 /** The served SDL lives at the project root (copied from packages/api/.../schema.graphql at build). */
 function loadSchemaSDL(): string {
@@ -149,17 +157,24 @@ async function proxyUpstream(params: GraphQLParams): Promise<unknown> {
       headers[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim()
     }
   }
-  const res = await fetch(UPSTREAM_GATEWAY_URL, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      query: params.query,
-      variables: params.variables,
-      operationName: params.operationName,
-      extensions: params.extensions,
-    }),
-  })
-  return res.json()
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS)
+  try {
+    const res = await fetch(UPSTREAM_GATEWAY_URL, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        query: params.query,
+        variables: params.variables,
+        operationName: params.operationName,
+        extensions: params.extensions,
+      }),
+      signal: controller.signal,
+    })
+    return res.json()
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /**
@@ -184,7 +199,7 @@ const yoga = createYoga({
   graphqlEndpoint: GRAPHQL_ENDPOINT,
   landingPage: false,
   cors: {
-    origin: CORS_ALLOW_ORIGIN,
+    origin: CORS_ORIGINS,
     credentials: true,
     // Mirror the headers the interface's graphql client sets on gateway calls.
     allowedHeaders: ['content-type', 'x-api-key', 'origin', 'x-request-source', 'x-app-version'],
