@@ -36,6 +36,7 @@ import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks
 import { DoubleCurrencyLogo } from '~/components/Logo/DoubleLogo'
 import { useAccount } from '~/hooks/useAccount'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
+import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { AddLiquidityModal } from '~/terminal/pools/AddLiquidityModal'
 import { RemoveLiquidityModal } from '~/terminal/pools/RemoveLiquidityModal'
@@ -216,26 +217,10 @@ function AllocationCard({
   fiat: (v: number | undefined) => string
 }): JSX.Element {
   return (
-    <Card>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          gap: 12,
-          marginBottom: 14,
-        }}
-      >
-        <div style={{ fontFamily: SANS, fontSize: 14, fontWeight: 600, color: terminalColors.ink }}>
-          Allocation by pair
-        </div>
-        {!loading && allocation.total > 0 ? (
-          <div style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 600, color: terminalColors.ink }}>
-            {fiat(allocation.total)}
-          </div>
-        ) : null}
-      </div>
-
+    <InstrumentPanel
+      title="Allocation by pair"
+      meta={!loading && allocation.total > 0 ? [fiat(allocation.total)] : undefined}
+    >
       {loading ? (
         <div style={{ height: 14, borderRadius: 999, background: terminalColors.line2 }} aria-busy="true" />
       ) : allocation.slices.length === 0 ? (
@@ -289,7 +274,7 @@ function AllocationCard({
           </div>
         </>
       )}
-    </Card>
+    </InstrumentPanel>
   )
 }
 
@@ -669,12 +654,15 @@ export function PositionsScreen(): JSX.Element {
         </div>
       ) : null}
 
-      <Card>
-        {showEmpty ? (
+      {showEmpty ? (
+        <Card>
           <EmptyState onNewPosition={onNewPosition} />
-        ) : (
-          /* Wide table scrolls inside its own container (built into DataTable) so
-             column minima never widen the page at narrow content widths. */
+        </Card>
+      ) : (
+        /* Wide table scrolls inside its own container (built into DataTable) so
+           column minima never widen the page at narrow content widths. Framed in a
+           flush InstrumentPanel (Desk table surface) with a live header. */
+        <InstrumentPanel flush live title="Positions" meta={[`${positions.length} open`]} style={{ overflow: 'hidden' }}>
           <DataTable<PositionInfo>
             columns={columns}
             rows={isLoading ? undefined : positions}
@@ -689,8 +677,8 @@ export function PositionsScreen(): JSX.Element {
             // v2 → open the in-Terminal Add modal (its legacy detail page 404s); v3 → detail route.
             onRowClick={(p) => (p.version === ProtocolVersion.V2 ? setAddPosition(p) : navigate(getPositionUrl(p)))}
           />
-        )}
-      </Card>
+        </InstrumentPanel>
+      )}
     </div>
 
     {addPosition ? (
@@ -736,6 +724,9 @@ function Header({
       }}
     >
       <div>
+        <div style={{ marginBottom: 8 }}>
+          <Eyebrow>Liquidity · your book</Eyebrow>
+        </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
           <h1
             style={{

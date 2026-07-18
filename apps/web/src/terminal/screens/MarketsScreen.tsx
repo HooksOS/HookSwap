@@ -47,6 +47,7 @@ import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens
 import { useTopPools } from '~/features/Explore/state/topPools/useTopPools'
 import { ComingSoon } from '~/terminal/components/ComingSoon'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
+import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { SparklineCell } from '~/terminal/components/SparklineCell'
 import { terminalColors, terminalFonts, terminalShadows, terminalType } from '~/terminal/theme/tokens'
 import type { PoolStat } from '~/types/explore'
@@ -389,14 +390,7 @@ function TopMovers({
   // Skeleton while the token feed is first loading.
   if (loading && movers.length === 0) {
     return (
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
-          gap: 12,
-          marginBottom: 20,
-        }}
-      >
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 12 }}>
         {Array.from({ length: 6 }, (_, i) => (
           <MoverTileSkeleton key={i} />
         ))}
@@ -404,22 +398,10 @@ function TopMovers({
     )
   }
 
-  // Honest empty / coming-soon state — a single branded strip instead of a blank grid row.
+  // Honest empty / coming-soon state (the surrounding InstrumentPanel supplies the frame).
   if (movers.length === 0) {
     return (
-      <div
-        style={{
-          border: `1px solid ${terminalColors.line}`,
-          background: terminalColors.bg,
-          borderRadius: 12,
-          padding: '18px 16px',
-          marginBottom: 20,
-          textAlign: 'center',
-          fontFamily: SANS,
-          fontSize: 12.5,
-          color: terminalColors.ink3Alt,
-        }}
-      >
+      <div style={{ textAlign: 'center', padding: '6px 0', fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt }}>
         {error ? (
           <ComingSoon variant="inline" subtext="Top movers appear as trading activity accrues." />
         ) : (
@@ -430,14 +412,7 @@ function TopMovers({
   }
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
-        gap: 12,
-        marginBottom: 20,
-      }}
-    >
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 12 }}>
       {movers.map((mover) => (
         <MoverTile key={mover.symbol} mover={mover} />
       ))}
@@ -628,33 +603,36 @@ function MarketsScreenBody(): JSX.Element {
           flexWrap: 'wrap',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-          <h1
-            style={{
-              fontFamily: DISPLAY,
-              fontSize: terminalType.sectionTitle.size,
-              fontWeight: terminalType.sectionTitle.weight,
-              letterSpacing: terminalType.sectionTitle.ls,
-              color: terminalColors.ink,
-              margin: 0,
-            }}
-          >
-            Markets
-          </h1>
-          {/* Real chain context — reflects the app's enabled networks (incl. HookSwap chains). */}
-          <span
-            style={{
-              fontFamily: MONO,
-              fontSize: 11,
-              color: terminalColors.ink3Alt,
-              background: terminalColors.panel2,
-              padding: '3px 8px',
-              borderRadius: 999,
-            }}
-            title="Live pool data across all enabled networks"
-          >
-            All networks · {chains.length}
-          </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <Eyebrow>Live pool data · v2 · v3</Eyebrow>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+            <h1
+              style={{
+                fontFamily: DISPLAY,
+                fontSize: terminalType.sectionTitle.size,
+                fontWeight: terminalType.sectionTitle.weight,
+                letterSpacing: terminalType.sectionTitle.ls,
+                color: terminalColors.ink,
+                margin: 0,
+              }}
+            >
+              Markets
+            </h1>
+            {/* Real chain context — reflects the app's enabled networks (incl. HookSwap chains). */}
+            <span
+              style={{
+                fontFamily: MONO,
+                fontSize: 11,
+                color: terminalColors.ink3Alt,
+                background: terminalColors.panel2,
+                padding: '3px 8px',
+                borderRadius: 999,
+              }}
+              title="Live pool data across all enabled networks"
+            >
+              All networks · {chains.length}
+            </span>
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {/* Client-side text filter over the loaded rows (symbol / pair). */}
@@ -692,27 +670,31 @@ function MarketsScreenBody(): JSX.Element {
       </div>
 
       {/* Top-movers heatmap (live, from the token list) */}
-      <TopMovers tokens={topTokens} loading={tokensLoading} error={tokensError} />
+      <InstrumentPanel title="Top Movers" meta={['24h']} style={{ marginBottom: 20 }}>
+        <TopMovers tokens={topTokens} loading={tokensLoading} error={tokensError} />
+      </InstrumentPanel>
 
       {/*
         Dense markets table (reused Terminal DataTable primitive). The DataTable is a
         CSS grid whose column minimums sum wider than the content area at narrow
         widths, so it scrolls horizontally INSIDE its own `.tm-table-scroll` container
         (built into DataTable) and never widens the page — header, chips, heatmap and
-        note stay put.
+        note stay put. Framed in a flush InstrumentPanel (Desk table surface).
       */}
-      <DataTable<MarketRow>
-        columns={columns}
-        rows={searchedRows}
-        rowKey={(row) => row.key}
-        onRowClick={(row) => (row.detailPath ? navigate(row.detailPath) : undefined)}
-        loading={poolsLoading}
-        comingSoon={poolsError}
-        comingSoonSubtext="Markets appear once pools have liquidity."
-        emptyMessage={emptyMessage}
-        initialSort={{ columnId: 'tvl', direction: 'desc' }}
-        skeletonRows={8}
-      />
+      <InstrumentPanel flush live title="Pools" meta={[`All networks · ${chains.length}`]} style={{ overflow: 'hidden' }}>
+        <DataTable<MarketRow>
+          columns={columns}
+          rows={searchedRows}
+          rowKey={(row) => row.key}
+          onRowClick={(row) => (row.detailPath ? navigate(row.detailPath) : undefined)}
+          loading={poolsLoading}
+          comingSoon={poolsError}
+          comingSoonSubtext="Markets appear once pools have liquidity."
+          emptyMessage={emptyMessage}
+          initialSort={{ columnId: 'tvl', direction: 'desc' }}
+          skeletonRows={8}
+        />
+      </InstrumentPanel>
 
       {/* Honest data-provenance note (visible-but-muted; no fabricated values). */}
       <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.faint, marginTop: 14, lineHeight: 1.5 }}>

@@ -49,7 +49,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { getNativeAddress } from 'uniswap/src/constants/addresses'
 import { UniverseChainId } from 'uniswap/src/features/chains/types'
-import { isUniverseChainId, toGraphQLChain } from 'uniswap/src/features/chains/utils'
+import { getChainLabel, isUniverseChainId, toGraphQLChain } from 'uniswap/src/features/chains/utils'
 import { useLocalizationContext } from 'uniswap/src/features/language/LocalizationContext'
 import { useWalletPositions } from 'uniswap/src/features/positions/hooks/useWalletPositions'
 import type { PositionInfo } from 'uniswap/src/features/positions/types'
@@ -72,6 +72,7 @@ import { serializeSwapAddressesToURLParameters } from '~/pages/Swap/Swap/state/t
 import { useAccount } from '~/hooks/useAccount'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { ComingSoon } from '~/terminal/components/ComingSoon'
+import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
@@ -904,6 +905,9 @@ function MarketDetailScreenBody(): JSX.Element {
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
           <PairLogos currency0={currency0} currency1={currency1} size={36} />
           <div style={{ minWidth: 0 }}>
+            <div style={{ marginBottom: 4 }}>
+              <Eyebrow>Market{chainId !== undefined ? ` · ${getChainLabel(chainId)}` : ''}</Eyebrow>
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 20, color: terminalColors.ink }}>
                 {symbol0} / {symbol1}
@@ -982,20 +986,19 @@ function MarketDetailScreenBody(): JSX.Element {
         </div>
       </div>
 
-      {/* Body: chart + KPIs (left) · trades / position (right).
-          Responsive: both columns wrap/stack when the content area is too narrow
+      {/* Body: chart + KPIs (left) · trades / position (right), each a Desk instrument
+          panel. Responsive: both columns wrap/stack when the content area is too narrow
           (left min 320 + right min 300 → wraps below ~640px content), so the screen
           never overflows the 226px-rail shell horizontally. */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', minHeight: 600 }}>
-        <div
-          style={{
-            flex: '1 1 360px',
-            minWidth: 320,
-            padding: '18px 20px',
-            borderRight: `1px solid ${terminalColors.line2}`,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, padding: '18px var(--tm-gutter) 28px', alignItems: 'flex-start' }}>
+        {/* Primary live panel — the price chart hero (green registration corners). */}
+        <InstrumentPanel
+          corners
+          live
+          title={`${symbol0} / ${symbol1}`}
+          meta={[timeframe.label, feeTierLabel ?? (isV2 ? 'v2' : isV3 ? 'v3' : '—')]}
+          style={{ flex: '1 1 360px', minWidth: 320 }}
+          bodyStyle={{ display: 'flex', flexDirection: 'column' }}
         >
           {/* Timeframe tabs + O/H/L/C readout */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
@@ -1061,11 +1064,17 @@ function MarketDetailScreenBody(): JSX.Element {
             <KpiTile label="24h fees" value={kpiLoading ? undefined : fiatStats(fees24h)} />
             <KpiTile label="APR" value={kpiLoading ? undefined : aprLabel} valueColor={terminalColors.greenUp} />
           </div>
-        </div>
+        </InstrumentPanel>
 
-        {/* Right column — holds ~330px at wide widths (flex-grow 0), shrinks to a
-            300px floor then wraps below the chart on narrow content areas. */}
-        <div style={{ flex: '0 1 330px', minWidth: 300, background: terminalColors.bg, display: 'flex', flexDirection: 'column' }}>
+        {/* Right column — Desk order-flow panel; holds ~330px at wide widths (flex-grow 0),
+            shrinks to a 300px floor then wraps below the chart on narrow content areas. */}
+        <InstrumentPanel
+          flush
+          title="Order Flow"
+          meta={[symbol0]}
+          style={{ flex: '0 1 330px', minWidth: 300, display: 'flex', flexDirection: 'column', minHeight: 560, overflow: 'hidden' }}
+          bodyStyle={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+        >
           <div style={{ display: 'flex', padding: '12px 16px 0', gap: 16, borderBottom: `1px solid ${terminalColors.line2}` }}>
             {(['trades', 'position'] as const).map((tab) => {
               const active = sideTab === tab
@@ -1125,7 +1134,7 @@ function MarketDetailScreenBody(): JSX.Element {
             usd0={usd0}
             usd1={usd1}
           />
-        </div>
+        </InstrumentPanel>
       </div>
     </div>
   )

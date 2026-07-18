@@ -45,6 +45,7 @@ import { useAccount } from '~/hooks/useAccount'
 import { AddLiquidityModal } from '~/terminal/pools/AddLiquidityModal'
 import { getPoolAddresses } from '~/terminal/pools/addresses'
 import { useCreateV2Pool } from '~/terminal/pools/useCreateV2Pool'
+import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { terminalColors, terminalFonts, terminalType } from '~/terminal/theme/tokens'
 import { assume0xAddress } from '~/utils/wagmi'
 
@@ -249,17 +250,6 @@ function TokenSelect({
 }
 
 /* ------------------------------------------------------------------ small pieces */
-
-function StepLabel({ index, label, note }: { index: string; label: string; note?: string }): JSX.Element {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-      <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', color: terminalColors.ink3Alt }}>
-        {index} · {label.toUpperCase()}
-      </span>
-      {note ? <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt }}>{note}</span> : null}
-    </div>
-  )
-}
 
 function SummaryRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
   return (
@@ -679,6 +669,9 @@ function PoolsScreenBody(): JSX.Element {
     <>
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
       {/* Header */}
+      <div style={{ marginBottom: 8 }}>
+        <Eyebrow>Launch · seed liquidity</Eyebrow>
+      </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
         <h1
           style={{
@@ -715,8 +708,11 @@ function PoolsScreenBody(): JSX.Element {
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* Left: pair */}
         <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Panel>
-            <StepLabel index="01" label="Pair" note={chainReady ? undefined : 'not available'} />
+          <InstrumentPanel
+            title="01 · Pair"
+            meta={chainReady ? undefined : ['not available']}
+            bodyStyle={{ padding: 18 }}
+          >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <FieldLabel>Base token</FieldLabel>
@@ -767,7 +763,7 @@ function PoolsScreenBody(): JSX.Element {
                 ) : null}
               </div>
             </div>
-          </Panel>
+          </InstrumentPanel>
 
           {/* First-LP / existing-pool / opening-price notices */}
           {chainReady && projectResolved ? (
@@ -810,8 +806,7 @@ function PoolsScreenBody(): JSX.Element {
 
         {/* Right: deposit + create */}
         <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Panel>
-            <StepLabel index="02" label="Deposit" />
+          <InstrumentPanel title="02 · Deposit" bodyStyle={{ padding: 18 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <DepositField token={resolvedBase} amount={baseAmount} onChange={setBaseAmount} usd={baseUsd} />
               <DepositField
@@ -821,9 +816,9 @@ function PoolsScreenBody(): JSX.Element {
                 balanceLabel={projectBalanceLabel}
               />
             </div>
-          </Panel>
+          </InstrumentPanel>
 
-          <Panel>
+          <InstrumentPanel title="Order Summary" bodyStyle={{ padding: 18 }}>
             <SummaryRow
               label="Deposit value"
               value={depositUsd > 0 ? convertFiatAmountFormatted(depositUsd, NumberType.PortfolioBalance) : '—'}
@@ -871,7 +866,7 @@ function PoolsScreenBody(): JSX.Element {
                   : 'Approve each token once, then create. Tokens are pulled by the v2 router (no Permit2).'}
               </div>
             ) : null}
-          </Panel>
+          </InstrumentPanel>
         </div>
       </div>
     </div>
