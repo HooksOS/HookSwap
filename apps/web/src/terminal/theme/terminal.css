@@ -315,6 +315,18 @@
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
 }
+button.tm-tape__item--btn {
+  border: 0;
+  border-right: 1px solid var(--tm-line-2);
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+  transition: background 0.12s;
+}
+button.tm-tape__item--btn:hover {
+  background: var(--tm-panel);
+}
 .tm-tape__sym {
   color: var(--tm-ink-3);
   font-weight: 600;

@@ -24,9 +24,12 @@ export interface TickerItem {
 export function TickerTape({
   items,
   emptyLabel = 'Token feed unavailable right now.',
+  onSelect,
 }: {
   items: TickerItem[]
   emptyLabel?: string
+  /** Optional: click a ticker → caller navigates (index into `items`). */
+  onSelect?: (index: number) => void
 }): JSX.Element {
   // Duplicate the list so the -50% keyframe wraps seamlessly.
   const doubled = useMemo(() => (items.length ? [...items, ...items] : []), [items])
@@ -42,15 +45,34 @@ export function TickerTape({
   return (
     <div className="tm-tape">
       <div className="tm-tape__track">
-        {doubled.map((it, i) => (
-          <span className="tm-tape__item" key={i}>
-            <span className="tm-tape__sym">{it.symbol}</span>
-            <span className="tm-tape__price">{it.price}</span>
-            <span className={it.up == null ? 'tm-tape__flat' : it.up ? 'tm-tape__up' : 'tm-tape__down'}>
-              {it.change}
+        {doubled.map((it, i) => {
+          const inner = (
+            <>
+              <span className="tm-tape__sym">{it.symbol}</span>
+              <span className="tm-tape__price">{it.price}</span>
+              <span className={it.up == null ? 'tm-tape__flat' : it.up ? 'tm-tape__up' : 'tm-tape__down'}>
+                {it.change}
+              </span>
+            </>
+          )
+          // `doubled` repeats `items` twice → map the render index back to the source item.
+          const srcIndex = i % items.length
+          return onSelect ? (
+            <button
+              type="button"
+              className="tm-tape__item tm-tape__item--btn"
+              key={i}
+              onClick={() => onSelect(srcIndex)}
+              aria-label={`Trade ${it.symbol}`}
+            >
+              {inner}
+            </button>
+          ) : (
+            <span className="tm-tape__item" key={i}>
+              {inner}
             </span>
-          </span>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

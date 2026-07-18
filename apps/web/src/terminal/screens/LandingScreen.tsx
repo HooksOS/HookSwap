@@ -76,6 +76,7 @@ import { use24hProtocolVolume, useDailyTVLWithChange } from '~/features/Explore/
 import { ExploreTablesFilterStoreContextProvider } from '~/features/Explore/state/exploreTablesFilterStore'
 import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens'
 import { useTopPools } from '~/features/Explore/state/topPools/useTopPools'
+import { serializeSwapAddressesToURLParameters } from '~/pages/Swap/Swap/state/tradeQueryParams'
 import { useAccount } from '~/hooks/useAccount'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { SparklineCell } from '~/terminal/components/SparklineCell'
@@ -1256,6 +1257,22 @@ function LandingScreenBody(): JSX.Element {
       ? 'Loading token feed…'
       : 'No token prices yet — builds as trading activity accrues.'
 
+  // Click a tape ticker → open Swap pre-filled with that token (honest fallback to bare /swap).
+  const goToTickerSwap = (ticker: Ticker | undefined): void => {
+    let path = '/swap'
+    if (ticker?.address && ticker.chainId !== undefined) {
+      try {
+        path += serializeSwapAddressesToURLParameters({
+          outputTokenAddress: ticker.address,
+          chainId: ticker.chainId as UniverseChainId,
+        })
+      } catch {
+        path = '/swap'
+      }
+    }
+    navigate(path)
+  }
+
   const navLinks: NavLink[] = [
     {
       label: 'Trade',
@@ -1306,7 +1323,11 @@ function LandingScreenBody(): JSX.Element {
       <style>{KEYFRAMES}</style>
       <div style={{ width: '100%', maxWidth: CONTENT_WIDTH, margin: '0 auto', background: terminalColors.bgApp, overflow: 'hidden' }}>
         {/* Desk ticker tape — sits above the sticky command bar, scrolls with the page. */}
-        <TickerTape items={tickerItems} emptyLabel={tickerEmptyLabel} />
+        <TickerTape
+          items={tickerItems}
+          emptyLabel={tickerEmptyLabel}
+          onSelect={(i) => goToTickerSwap(tickers[i])}
+        />
 
         <Header
           navLinks={navLinks}
