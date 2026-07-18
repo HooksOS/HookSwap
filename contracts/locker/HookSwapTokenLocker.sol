@@ -181,7 +181,9 @@ contract HookSwapTokenLocker is Ownable {
     require(address_ != address(_token), "Use 'withdraw' to withdraw the primary locked token");
 
     IERC20 theToken = IERC20(address_);
-    theToken.transfer(_owner(), theToken.balanceOf(address(this)));
+    // safeTransfer (not raw transfer) to match the rest of this contract and to recover
+    // non-standard ERC20s that don't return a bool — recovery must not silently fail.
+    theToken.safeTransfer(_owner(), theToken.balanceOf(address(this)));
   }
 
   /**
