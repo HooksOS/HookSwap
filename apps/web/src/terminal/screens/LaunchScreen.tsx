@@ -20,6 +20,7 @@ import { formatUnits } from '~/chains'
 import { serializeSwapAddressesToURLParameters } from '~/pages/Swap/Swap/state/tradeQueryParams'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { getLaunchpadAddress } from '~/terminal/launchpad/addresses'
 import {
@@ -67,19 +68,23 @@ function fmtWei(wei: bigint | undefined): string {
 
 /* ------------------------------------------------------------------ primitives */
 
-function Panel({ children, padding = 18 }: { children: React.ReactNode; padding?: number }): JSX.Element {
+function Panel({
+  title,
+  meta,
+  corners,
+  children,
+  padding = 18,
+}: {
+  title?: string
+  meta?: React.ReactNode[]
+  corners?: boolean
+  children: React.ReactNode
+  padding?: number
+}): JSX.Element {
   return (
-    <div
-      style={{
-        border: `1px solid ${terminalColors.line}`,
-        borderRadius: 14,
-        background: terminalColors.bg,
-        padding,
-        boxSizing: 'border-box',
-      }}
-    >
+    <InstrumentPanel title={title} meta={meta} corners={corners} bodyStyle={{ padding }}>
       {children}
-    </div>
+    </InstrumentPanel>
   )
 }
 
@@ -126,9 +131,9 @@ function TextField({
       style={{
         width: '100%',
         boxSizing: 'border-box',
-        border: `1px solid ${terminalColors.line}`,
+        border: `1px solid ${terminalColors.line2}`,
         borderRadius: 11,
-        background: terminalColors.bg,
+        background: terminalColors.panel,
         padding: '10px 12px',
         fontFamily: mono ? MONO : SANS,
         fontSize: 13.5,
@@ -199,15 +204,21 @@ function PrimaryButton({
       style={{
         marginTop: 12,
         width: '100%',
-        fontFamily: SANS,
-        fontSize: 14,
+        fontFamily: MONO,
+        fontSize: 13,
         fontWeight: 600,
-        color: solid ? terminalColors.btnInk : terminalColors.greenDeep,
-        background: solid ? (disabled ? terminalColors.line : terminalColors.brandGreen) : 'transparent',
-        border: solid ? 'none' : `1px solid ${terminalColors.greenBorder}`,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
         padding: '12px 0',
-        borderRadius: 12,
         cursor: disabled ? 'default' : 'pointer',
+        ...(solid
+          ? {
+              color: terminalColors.btnInk,
+              background: disabled ? terminalColors.line : terminalColors.brandGreen,
+              border: 'none',
+              borderRadius: 12,
+            }
+          : { ...terminalKeycap, borderRadius: 12 }),
       }}
     >
       {label}
@@ -321,9 +332,7 @@ function MyLaunchesPanel({ chainId, owner }: { chainId?: number; owner?: `0x${st
   const my = useMyLaunches({ chainId, owner })
 
   return (
-    <Panel>
-      <StepLabel index="04" label="My launches" note={my.isLoading ? 'loading…' : undefined} />
-
+    <Panel title="04 · My launches" meta={my.isLoading ? ['loading…'] : undefined}>
       {!owner ? (
         <Notice tone="muted">Connect your wallet to see the tokens you&apos;ve launched.</Notice>
       ) : my.isLoading ? (
@@ -443,9 +452,7 @@ function RecentLaunchesPanel({ chainId }: { chainId?: number }): JSX.Element {
   }
 
   return (
-    <Panel>
-      <StepLabel index="05" label="Recent launches" note={recent.isLoading ? 'loading…' : `${recent.launches.length} total`} />
-
+    <Panel title="05 · Recent launches" meta={[recent.isLoading ? 'loading…' : `${recent.launches.length} total`]}>
       {recent.isLoading ? (
         <Notice tone="muted">Loading recent launches…</Notice>
       ) : recent.launches.length === 0 ? (
@@ -604,6 +611,7 @@ export function LaunchScreen(): JSX.Element {
   return (
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
       {/* Header */}
+      <Eyebrow style={{ display: 'block', marginBottom: 8 }}>LaunchPad · Fair launch</Eyebrow>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
         <h1
           style={{
@@ -648,8 +656,7 @@ export function LaunchScreen(): JSX.Element {
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* Left: the launch config */}
         <div style={{ flex: '1 1 380px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Panel>
-            <StepLabel index="01" label="Token" note={deployed ? undefined : 'not deployed'} />
+          <Panel title="01 · Token" meta={deployed ? undefined : ['not deployed']}>
             {!deployed ? (
               <NotDeployedNote chainLabel={chainLabel} />
             ) : (
@@ -692,8 +699,7 @@ export function LaunchScreen(): JSX.Element {
           </Panel>
 
           {deployed ? (
-            <Panel>
-              <StepLabel index="02" label="Pool" />
+            <Panel title="02 · Pool">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>
                   <FieldLabel>DEX</FieldLabel>
@@ -751,7 +757,7 @@ export function LaunchScreen(): JSX.Element {
 
           {/* Advanced: v3 price params, salt, initial buy */}
           {deployed ? (
-            <Panel>
+            <Panel title="Advanced">
               <div
                 onClick={() => setAdvanced((a) => !a)}
                 style={{
@@ -854,7 +860,7 @@ export function LaunchScreen(): JSX.Element {
 
         {/* Right: review + launch + my launches */}
         <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Panel>
+          <Panel title="Review" corners>
             <SummaryRow label="Name" value={input.name.trim() !== '' ? input.name.trim() : '—'} />
             <SummaryRow label="Symbol" value={symbolValue} />
             <SummaryRow label="Supply (raw)" value={supplyValue} />

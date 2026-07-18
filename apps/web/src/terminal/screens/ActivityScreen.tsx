@@ -41,8 +41,10 @@ import { ExplorerDataType, getExplorerLink } from 'uniswap/src/utils/linking'
 import { NumberType } from 'utilities/src/format/types'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { NotificationRow, type NotificationCategory } from '~/terminal/components/NotificationRow'
 import { StatCard } from '~/terminal/components/StatCard'
+import '~/terminal/theme/terminal.css'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { formatRelativeTime } from '~/terminal/utils/time'
 
@@ -337,13 +339,13 @@ export function ActivityScreen(): JSX.Element {
       </div>
 
       {/* Feed card */}
-      <div
-        style={{
-          border: `1px solid ${terminalColors.line}`,
-          borderRadius: 14,
-          background: terminalColors.bg,
-          overflow: 'hidden',
-        }}
+      <InstrumentPanel
+        title="Feed"
+        corners
+        live
+        flush
+        meta={[FILTER_CHIPS.find((c) => c.id === filter)?.label ?? 'All']}
+        style={{ overflow: 'hidden' }}
       >
         {loadingFeed ? (
           <FeedSkeleton />
@@ -377,7 +379,7 @@ export function ActivityScreen(): JSX.Element {
             {filter === 'all' ? 'No transaction activity yet.' : `No ${filter} in your activity.`}
           </FeedMessage>
         )}
-      </div>
+      </InstrumentPanel>
     </div>
   )
 }
@@ -394,8 +396,10 @@ function Header({
   showRefresh?: boolean
 }): JSX.Element {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 18 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <Eyebrow>Account · transaction feed</Eyebrow>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <h1
           style={{
             fontFamily: DISPLAY,
@@ -424,20 +428,16 @@ function Header({
             {count} events
           </span>
         ) : null}
+        </div>
       </div>
       {showRefresh ? (
         <button
           type="button"
           onClick={onRefresh}
           style={{
-            fontFamily: SANS,
+            ...terminalKeycap,
             fontSize: 12.5,
-            fontWeight: 600,
-            color: terminalColors.ink,
-            background: terminalColors.bg,
-            border: `1px solid ${terminalColors.line}`,
             padding: '8px 14px',
-            borderRadius: 9,
             cursor: 'pointer',
           }}
         >
@@ -466,15 +466,10 @@ function FeedError({ onRetry }: { onRetry: () => void }): JSX.Element {
         type="button"
         onClick={onRetry}
         style={{
+          ...terminalKeycap,
           marginTop: 12,
-          fontFamily: SANS,
           fontSize: 12.5,
-          fontWeight: 600,
-          color: terminalColors.ink2,
-          background: terminalColors.bg,
-          border: `1px solid ${terminalColors.line}`,
           padding: '8px 14px',
-          borderRadius: 9,
           cursor: 'pointer',
         }}
       >

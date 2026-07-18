@@ -63,8 +63,10 @@ import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens
 import { useTopPools } from '~/features/Explore/state/topPools/useTopPools'
 import { ComingSoon } from '~/terminal/components/ComingSoon'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
+import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { SparklineCell } from '~/terminal/components/SparklineCell'
 import { StatCard, StatDelta } from '~/terminal/components/StatCard'
+import '~/terminal/theme/terminal.css'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import type { PoolStat } from '~/types/explore'
 
@@ -185,45 +187,34 @@ function Segmented<T extends string>({
 function Card({
   title,
   right,
+  meta,
+  corners,
+  live,
+  flush,
+  style,
   children,
-  padding = 18,
 }: {
   title?: string
   right?: ReactNode
+  meta?: ReactNode[]
+  corners?: boolean
+  live?: boolean
+  flush?: boolean
+  style?: React.CSSProperties
   children: ReactNode
-  padding?: number
 }): JSX.Element {
+  const nodes: ReactNode[] = [...(meta ?? []), ...(right != null ? [right] : [])]
   return (
-    <div
-      style={{
-        border: `1px solid ${terminalColors.line}`,
-        borderRadius: 14,
-        background: terminalColors.bg,
-        padding,
-        boxSizing: 'border-box',
-        minWidth: 0,
-      }}
+    <InstrumentPanel
+      title={title}
+      meta={nodes.length ? nodes : undefined}
+      corners={corners}
+      live={live}
+      flush={flush}
+      style={{ minWidth: 0, ...style }}
     >
-      {title || right ? (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            marginBottom: 14,
-          }}
-        >
-          {title ? (
-            <div style={{ fontFamily: SANS, fontSize: 14, fontWeight: 600, color: terminalColors.ink }}>{title}</div>
-          ) : (
-            <span />
-          )}
-          {right}
-        </div>
-      ) : null}
       {children}
-    </div>
+    </InstrumentPanel>
   )
 }
 
@@ -948,32 +939,30 @@ function AnalyticsScreenBody(): JSX.Element {
           flexWrap: 'wrap',
         }}
       >
-        <h1
-          style={{
-            fontFamily: DISPLAY,
-            fontSize: 24,
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
-            color: terminalColors.ink,
-            margin: 0,
-          }}
-        >
-          Analytics
-        </h1>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <Eyebrow>Protocol · live metrics</Eyebrow>
+          <h1
+            style={{
+              fontFamily: DISPLAY,
+              fontSize: 24,
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+              color: terminalColors.ink,
+              margin: 0,
+            }}
+          >
+            Analytics
+          </h1>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Segmented options={TIMEFRAMES.map((tf) => ({ id: tf, label: tf }))} value={timeframe} onChange={setTimeframe} />
           <button
             type="button"
             onClick={onExport}
             style={{
-              fontFamily: SANS,
+              ...terminalKeycap,
               fontSize: 12.5,
-              fontWeight: 600,
-              color: terminalColors.ink,
-              background: terminalColors.bg,
-              border: `1px solid ${terminalColors.line}`,
               padding: '7px 14px',
-              borderRadius: 10,
               cursor: 'pointer',
             }}
           >
@@ -1042,12 +1031,13 @@ function AnalyticsScreenBody(): JSX.Element {
       <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', marginBottom: 18, flexWrap: 'wrap' }}>
         <div style={{ flex: '1 1 560px', minWidth: 0 }}>
           <Card
-            title={undefined}
+            title={chartTitle}
+            corners
+            live
             right={<Segmented options={CHART_METRICS} value={chartMetric} onChange={setChartMetric} />}
           >
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontFamily: SANS, fontSize: 13, color: terminalColors.ink3Alt }}>{chartTitle}</div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
                 <span
                   style={{
                     fontFamily: MONO,

@@ -35,6 +35,8 @@ import { useAccount } from '~/hooks/useAccount'
 import { SendForm } from '~/pages/Swap/Send/SendForm'
 import { SendContextProvider } from '~/pages/Swap/Send/state/SendContext'
 import { MultichainContextProvider } from '~/state/multichain/MultichainContext'
+import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
+import { getChainLabel } from 'uniswap/src/features/chains/utils'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const DISPLAY = terminalFonts.display
@@ -45,8 +47,8 @@ const MODULE_WIDTH = 420
 
 /**
  * Send screen. Mounts the app's real `SendForm` provider stack (identical to the
- * global `SendFormModal`, minus the overlay) framed in Terminal chrome. Keyed on
- * the resolved chain so switching wallets re-initializes a valid native default.
+ * global `SendFormModal`, minus the overlay) framed in a Desk InstrumentPanel. Keyed
+ * on the resolved chain so switching wallets re-initializes a valid native default.
  */
 export function SendScreen(): JSX.Element {
   const account = useAccount()
@@ -56,49 +58,40 @@ export function SendScreen(): JSX.Element {
   const initialInputCurrency = useMemo(() => nativeOnChain(chainId), [chainId])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 640 }}>
-      {/* Content header — Atlas chrome, matches other Terminal screens. */}
-      <div
+    <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
+      {/* Header — Eyebrow kicker + Space Grotesk h1, matching the Desk screens. */}
+      <Eyebrow>Trade · Wallet transfer</Eyebrow>
+      <h1
         style={{
-          height: 52,
-          flexShrink: 0,
-          borderBottom: `1px solid ${terminalColors.line2}`,
-          background: terminalColors.bg,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '0 var(--tm-gutter)',
+          fontFamily: DISPLAY,
+          fontSize: 24,
+          fontWeight: 600,
+          letterSpacing: '-0.02em',
+          color: terminalColors.ink,
+          margin: '8px 0 6px',
         }}
       >
-        <span style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 15, color: terminalColors.ink }}>Send</span>
-        <span style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3Alt }}>
-          Transfer tokens to any wallet address or ENS name
-        </span>
+        Send
+      </h1>
+      <div style={{ fontFamily: SANS, fontSize: 13, color: terminalColors.ink2, marginBottom: 20, maxWidth: 560, lineHeight: 1.5 }}>
+        Transfer tokens to any wallet address or ENS name. Amounts, balances and the on-chain send are all real —
+        powered by HookSwap&apos;s own send engine.
       </div>
 
-      {/* Centered framed form — content region is viewport − rail; the fixed
-          max-width column keeps it clear of horizontal overflow. */}
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          background: terminalColors.bgApp,
-          overflowY: 'auto',
-          display: 'flex',
-          justifyContent: 'center',
-          padding: '28px var(--tm-gutter) 48px',
-        }}
-      >
+      {/* Centered framed form — the real SendForm inside a Desk instrument panel. */}
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
         <div style={{ width: '100%', maxWidth: MODULE_WIDTH }}>
-          <MultichainContextProvider key={chainId} initialChainId={chainId}>
-            <SwapAndLimitContextProvider initialInputCurrency={initialInputCurrency}>
-              <SendContextProvider>
-                <TransactionModal modalName={ModalName.Send} onClose={noop}>
-                  <SendForm />
-                </TransactionModal>
-              </SendContextProvider>
-            </SwapAndLimitContextProvider>
-          </MultichainContextProvider>
+          <InstrumentPanel title="Transfer" meta={[getChainLabel(chainId)]} corners bodyStyle={{ padding: 12 }}>
+            <MultichainContextProvider key={chainId} initialChainId={chainId}>
+              <SwapAndLimitContextProvider initialInputCurrency={initialInputCurrency}>
+                <SendContextProvider>
+                  <TransactionModal modalName={ModalName.Send} onClose={noop}>
+                    <SendForm />
+                  </TransactionModal>
+                </SendContextProvider>
+              </SwapAndLimitContextProvider>
+            </MultichainContextProvider>
+          </InstrumentPanel>
         </div>
       </div>
     </div>

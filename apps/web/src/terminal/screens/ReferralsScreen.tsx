@@ -32,6 +32,7 @@ import { getChainLabel } from 'uniswap/src/features/chains/utils'
 import { zeroAddress, type Address } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { referralRouterAbi } from '~/terminal/referral/abis'
 import { getReferralRouter } from '~/terminal/referral/addresses'
@@ -67,35 +68,8 @@ type CodeStatus = 'none' | 'available' | 'yours' | 'taken'
 
 /* ------------------------------------------------------------------ primitives */
 
-function Panel({ children, padding = 18 }: { children: React.ReactNode; padding?: number }): JSX.Element {
-  return (
-    <div
-      style={{
-        border: `1px solid ${terminalColors.line}`,
-        borderRadius: 14,
-        background: terminalColors.bg,
-        padding,
-        boxSizing: 'border-box',
-      }}
-    >
-      {children}
-    </div>
-  )
-}
-
-function StepLabel({ index, label, note }: { index: string; label: string; note?: string }): JSX.Element {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
-      <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', color: terminalColors.ink3Alt }}>
-        {index} · {label.toUpperCase()}
-      </span>
-      {note ? <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt }}>{note}</span> : null}
-    </div>
-  )
-}
-
 function FieldLabel({ children }: { children: React.ReactNode }): JSX.Element {
-  return <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt, marginBottom: 5 }}>{children}</div>
+  return <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3, marginBottom: 5 }}>{children}</div>
 }
 
 function TextField({
@@ -120,7 +94,7 @@ function TextField({
         boxSizing: 'border-box',
         border: `1px solid ${terminalColors.line}`,
         borderRadius: 11,
-        background: terminalColors.bg,
+        background: terminalColors.panel,
         padding: '10px 12px',
         fontFamily: mono ? MONO : SANS,
         fontSize: 13.5,
@@ -135,7 +109,7 @@ function TextField({
 function SummaryRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '7px 0' }}>
-      <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, whiteSpace: 'nowrap' }}>{label}</span>
+      <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3, whiteSpace: 'nowrap' }}>{label}</span>
       <span
         style={{
           fontFamily: MONO,
@@ -153,6 +127,7 @@ function SummaryRow({ label, value, valueColor }: { label: string; value: string
   )
 }
 
+/** Primary action — Desk green button, IBM Plex Mono uppercase, white ink. */
 function PrimaryButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }): JSX.Element {
   return (
     <button
@@ -162,14 +137,16 @@ function PrimaryButton({ label, onClick, disabled }: { label: string; onClick: (
       style={{
         marginTop: 14,
         width: '100%',
-        fontFamily: SANS,
-        fontSize: 14,
+        fontFamily: MONO,
+        fontSize: 13,
         fontWeight: 600,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
         color: terminalColors.btnInk,
         background: disabled ? terminalColors.line : terminalColors.brandGreen,
         border: 'none',
-        padding: '12px 0',
-        borderRadius: 12,
+        padding: '13px 0',
+        borderRadius: 10,
         cursor: disabled ? 'default' : 'pointer',
       }}
     >
@@ -185,7 +162,7 @@ function NotLiveNote({ chainLabel }: { chainLabel: string }): JSX.Element {
       style={{
         fontFamily: SANS,
         fontSize: 12.5,
-        color: terminalColors.ink3Alt,
+        color: terminalColors.ink3,
         lineHeight: 1.5,
         border: `1px dashed ${terminalColors.line}`,
         borderRadius: 11,
@@ -214,7 +191,7 @@ function ConnectWalletNote({ onConnect }: { onConnect: () => void }): JSX.Elemen
         padding: '11px 13px',
       }}
     >
-      <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, lineHeight: 1.5, marginBottom: 11 }}>
+      <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3, lineHeight: 1.5, marginBottom: 11 }}>
         Connect your wallet to reserve a referral code. Codes are registered on-chain to your connected wallet, so nothing
         loads until a wallet is connected.
       </div>
@@ -222,13 +199,15 @@ function ConnectWalletNote({ onConnect }: { onConnect: () => void }): JSX.Elemen
         type="button"
         onClick={onConnect}
         style={{
-          fontFamily: SANS,
-          fontSize: 12.5,
+          fontFamily: MONO,
+          fontSize: 12,
           fontWeight: 600,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
           color: terminalColors.btnInk,
           background: terminalColors.brandGreen,
           border: 'none',
-          padding: '9px 16px',
+          padding: '10px 16px',
           borderRadius: 10,
           cursor: 'pointer',
         }}
@@ -250,7 +229,7 @@ function RewardsNotLiveNote(): JSX.Element {
       style={{
         fontFamily: SANS,
         fontSize: 12.5,
-        color: terminalColors.ink3Alt,
+        color: terminalColors.ink3,
         lineHeight: 1.5,
         border: `1px solid ${terminalColors.greenBorder}`,
         borderRadius: 11,
@@ -472,8 +451,9 @@ export function ReferralsScreen(): JSX.Element {
 
   return (
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
+      {/* Header — Eyebrow kicker + Space Grotesk h1. */}
+      <Eyebrow>Account · On-chain referral codes</Eyebrow>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, margin: '8px 0 6px' }}>
         <h1
           style={{
             fontFamily: DISPLAY,
@@ -486,7 +466,7 @@ export function ReferralsScreen(): JSX.Element {
         >
           Referrals
         </h1>
-        <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, color: terminalColors.ink3Alt }}>
+        <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, color: terminalColors.ink3 }}>
           {feeValue && feeValue !== '—' ? `${feeValue} configured fee · payouts not live` : ''}
         </span>
       </div>
@@ -520,8 +500,10 @@ export function ReferralsScreen(): JSX.Element {
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* Your referral link + register */}
         <div style={{ flex: '1 1 340px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Panel>
-            <StepLabel index="01" label="Your referral code" note={!connected ? 'connect wallet' : deployed ? undefined : 'not live'} />
+          <InstrumentPanel
+            title="01 · Your referral code"
+            meta={!connected ? ['connect wallet'] : deployed ? undefined : ['not live']}
+          >
             {!connected ? (
               <ConnectWalletNote onConnect={onConnect} />
             ) : !deployed ? (
@@ -568,9 +550,9 @@ export function ReferralsScreen(): JSX.Element {
                 )}
               </div>
             )}
-          </Panel>
+          </InstrumentPanel>
 
-          <Panel>
+          <InstrumentPanel title="Register" corners>
             <SummaryRow label="Referral fee" value={feeValue ?? '…'} valueColor={feeValue && feeValue !== '—' ? terminalColors.ink : terminalColors.faint} />
             <SummaryRow label="Claim wallet" value={connected ? shortAddr(account.address) : 'Not connected'} />
             <SummaryRow label="Network" value={connected ? chainLabel : '—'} />
@@ -581,13 +563,12 @@ export function ReferralsScreen(): JSX.Element {
                 aren&apos;t live yet — once fee routing ships, fees accrued to the code will be withdrawable to this wallet.
               </div>
             ) : null}
-          </Panel>
+          </InstrumentPanel>
         </div>
 
         {/* Earnings / claim */}
         <div style={{ flex: '1 1 340px', minWidth: 0 }}>
-          <Panel>
-            <StepLabel index="02" label="Earnings" />
+          <InstrumentPanel title="02 · Earnings" meta={['payouts not live']}>
             {!connected ? (
               <ConnectWalletNote onConnect={onConnect} />
             ) : !deployed ? (
@@ -595,7 +576,7 @@ export function ReferralsScreen(): JSX.Element {
             ) : (
               <RewardsNotLiveNote />
             )}
-          </Panel>
+          </InstrumentPanel>
         </div>
       </div>
     </div>

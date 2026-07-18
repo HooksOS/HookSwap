@@ -23,6 +23,7 @@ import { getChainLabel } from 'uniswap/src/features/chains/utils'
 import { formatUnits } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { getTokenFactoryAddress } from '~/terminal/tokenfactory/addresses'
 import { useCreateToken } from '~/terminal/tokenfactory/useCreateToken'
@@ -41,30 +42,23 @@ function shortAddr(a?: string): string {
 
 /* ------------------------------------------------------------------ primitives */
 
-function Panel({ children, padding = 18 }: { children: React.ReactNode; padding?: number }): JSX.Element {
+function Panel({
+  title,
+  meta,
+  corners,
+  children,
+  padding = 18,
+}: {
+  title?: string
+  meta?: React.ReactNode[]
+  corners?: boolean
+  children: React.ReactNode
+  padding?: number
+}): JSX.Element {
   return (
-    <div
-      style={{
-        border: `1px solid ${terminalColors.line}`,
-        borderRadius: 14,
-        background: terminalColors.bg,
-        padding,
-        boxSizing: 'border-box',
-      }}
-    >
+    <InstrumentPanel title={title} meta={meta} corners={corners} bodyStyle={{ padding }}>
       {children}
-    </div>
-  )
-}
-
-function StepLabel({ index, label, note }: { index: string; label: string; note?: string }): JSX.Element {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-      <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', color: terminalColors.ink3Alt }}>
-        {index} · {label.toUpperCase()}
-      </span>
-      {note ? <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt }}>{note}</span> : null}
-    </div>
+    </InstrumentPanel>
   )
 }
 
@@ -98,9 +92,9 @@ function TextField({
       style={{
         width: '100%',
         boxSizing: 'border-box',
-        border: `1px solid ${terminalColors.line}`,
+        border: `1px solid ${terminalColors.line2}`,
         borderRadius: 11,
-        background: terminalColors.bg,
+        background: terminalColors.panel,
         padding: '10px 12px',
         fontFamily: mono ? MONO : SANS,
         fontSize: 13.5,
@@ -163,15 +157,21 @@ function PrimaryButton({
       style={{
         marginTop: 12,
         width: '100%',
-        fontFamily: SANS,
-        fontSize: 14,
+        fontFamily: MONO,
+        fontSize: 13,
         fontWeight: 600,
-        color: solid ? terminalColors.btnInk : terminalColors.greenDeep,
-        background: solid ? (disabled ? terminalColors.line : terminalColors.brandGreen) : 'transparent',
-        border: solid ? 'none' : `1px solid ${terminalColors.greenBorder}`,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
         padding: '12px 0',
-        borderRadius: 12,
         cursor: disabled ? 'default' : 'pointer',
+        ...(solid
+          ? {
+              color: terminalColors.btnInk,
+              background: disabled ? terminalColors.line : terminalColors.brandGreen,
+              border: 'none',
+              borderRadius: 12,
+            }
+          : { ...terminalKeycap, borderRadius: 12 }),
       }}
     >
       {label}
@@ -336,6 +336,7 @@ export function CreateTokenScreen(): JSX.Element {
   return (
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
       {/* Header */}
+      <Eyebrow style={{ display: 'block', marginBottom: 8 }}>Token Factory · Fixed supply</Eyebrow>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
         <h1 style={{ fontFamily: DISPLAY, fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', color: terminalColors.ink, margin: 0 }}>
           Create token
@@ -371,8 +372,7 @@ export function CreateTokenScreen(): JSX.Element {
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* Left: token details */}
         <div style={{ flex: '1 1 340px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Panel>
-            <StepLabel index="01" label="Token details" note={deployed ? undefined : 'not deployed'} />
+          <Panel title="01 · Token details" meta={deployed ? undefined : ['not deployed']}>
             {!deployed ? (
               <NotDeployedNote chainLabel={chainLabel} />
             ) : (
@@ -432,7 +432,7 @@ export function CreateTokenScreen(): JSX.Element {
 
         {/* Right: review + create */}
         <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Panel>
+          <Panel title="Review" corners>
             <SummaryRow label="Name" value={name.trim() !== '' ? name.trim() : '—'} />
             <SummaryRow label="Symbol" value={symbolValue} />
             <SummaryRow label="Decimals" value={decimalsValue} />

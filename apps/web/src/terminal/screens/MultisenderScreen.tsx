@@ -27,6 +27,7 @@ import { erc20Abi, formatUnits, isAddress, parseUnits, type Address } from '~/ch
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { NATIVE_CHAIN_ID } from '~/constants/tokens'
 import { useAccount } from '~/hooks/useAccount'
+import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { MAX_PER_TX, useMultisend, type MultisendEntry } from '~/terminal/multisender/useMultisend'
 import { getDisperseAddress } from '~/terminal/multisender/addresses'
@@ -116,41 +117,15 @@ function parseRecipients(text: string, decimals?: number): ParsedRow[] {
 
 /* ------------------------------------------------------------------ primitives */
 
-function Panel({ children, padding = 18 }: { children: React.ReactNode; padding?: number }): JSX.Element {
-  return (
-    <div
-      style={{
-        border: `1px solid ${terminalColors.line}`,
-        borderRadius: 14,
-        background: terminalColors.bg,
-        padding,
-        boxSizing: 'border-box',
-      }}
-    >
-      {children}
-    </div>
-  )
-}
-
-function StepLabel({ index, label, note }: { index: string; label: string; note?: string }): JSX.Element {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-      <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', color: terminalColors.ink3Alt }}>
-        {index} · {label.toUpperCase()}
-      </span>
-      {note ? <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt }}>{note}</span> : null}
-    </div>
-  )
-}
-
+/** Field caption above a form control (IBM Plex Sans, muted). */
 function FieldLabel({ children }: { children: React.ReactNode }): JSX.Element {
-  return <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt, marginBottom: 5 }}>{children}</div>
+  return <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3, marginBottom: 5 }}>{children}</div>
 }
 
 function SummaryRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0' }}>
-      <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt }}>{label}</span>
+      <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3 }}>{label}</span>
       <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 500, color: valueColor ?? terminalColors.ink }}>{value}</span>
     </div>
   )
@@ -178,6 +153,7 @@ function Notice({ tone = 'neutral', children }: { tone?: 'neutral' | 'green' | '
   )
 }
 
+/** Primary action — Desk green button, IBM Plex Mono uppercase, white ink. */
 function PrimaryButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }): JSX.Element {
   return (
     <button
@@ -187,14 +163,16 @@ function PrimaryButton({ label, onClick, disabled }: { label: string; onClick: (
       style={{
         marginTop: 12,
         width: '100%',
-        fontFamily: SANS,
-        fontSize: 14,
+        fontFamily: MONO,
+        fontSize: 13,
         fontWeight: 600,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
         color: terminalColors.btnInk,
         background: disabled ? terminalColors.line : terminalColors.brandGreen,
         border: 'none',
-        padding: '12px 0',
-        borderRadius: 12,
+        padding: '13px 0',
+        borderRadius: 10,
         cursor: disabled ? 'default' : 'pointer',
       }}
     >
@@ -210,7 +188,7 @@ function NotDeployedNote({ chainLabel }: { chainLabel: string }): JSX.Element {
       style={{
         fontFamily: SANS,
         fontSize: 12.5,
-        color: terminalColors.ink3Alt,
+        color: terminalColors.ink3,
         lineHeight: 1.5,
         border: `1px dashed ${terminalColors.line}`,
         borderRadius: 11,
@@ -295,7 +273,7 @@ function TokenSelect({
           padding: '9px 11px',
           borderRadius: 10,
           border: `1px solid ${terminalColors.line}`,
-          background: terminalColors.bg,
+          background: terminalColors.panel,
           cursor: 'pointer',
           boxSizing: 'border-box',
         }}
@@ -304,7 +282,7 @@ function TokenSelect({
         <span style={{ fontFamily: SANS, fontSize: 13.5, fontWeight: 600, color: terminalColors.ink, flex: 1, textAlign: 'left' }}>
           {value?.symbol ?? 'Select token'}
         </span>
-        <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.ink3Alt }}>▾</span>
+        <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.ink3 }}>▾</span>
       </button>
       {open ? (
         <>
@@ -531,8 +509,9 @@ export function MultisenderScreen(): JSX.Element {
 
   return (
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
+      {/* Header — Eyebrow kicker + Space Grotesk h1. */}
+      <Eyebrow>Tools · Batch transfer</Eyebrow>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, margin: '8px 0 6px' }}>
         <h1 style={{ fontFamily: DISPLAY, fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', color: terminalColors.ink, margin: 0 }}>
           Multisender
         </h1>
@@ -567,8 +546,7 @@ export function MultisenderScreen(): JSX.Element {
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* Left: token + recipients */}
         <div style={{ flex: '1 1 340px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Panel>
-            <StepLabel index="01" label="Token" note={deployed ? undefined : 'not deployed'} />
+          <InstrumentPanel title="01 · Token" meta={deployed ? undefined : ['not deployed']}>
             {!deployed ? (
               <NotDeployedNote chainLabel={chainLabel} />
             ) : (
@@ -596,7 +574,7 @@ export function MultisenderScreen(): JSX.Element {
                       boxSizing: 'border-box',
                       border: `1px solid ${terminalColors.line}`,
                       borderRadius: 11,
-                      background: terminalColors.bg,
+                      background: terminalColors.panel,
                       padding: '10px 12px',
                       fontFamily: MONO,
                       fontSize: 13.5,
@@ -608,7 +586,7 @@ export function MultisenderScreen(): JSX.Element {
                   {customAddr !== '' && !customValid ? (
                     <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.redDown, marginTop: 5 }}>Enter a valid contract address.</div>
                   ) : customValid && customMeta.isLoading ? (
-                    <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt, marginTop: 5 }}>Resolving token…</div>
+                    <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3, marginTop: 5 }}>Resolving token…</div>
                   ) : customResolveError ? (
                     <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.redDown, marginTop: 5 }}>Not an ERC-20 on this network.</div>
                   ) : customResolved ? (
@@ -619,11 +597,10 @@ export function MultisenderScreen(): JSX.Element {
                 </div>
               </div>
             )}
-          </Panel>
+          </InstrumentPanel>
 
           {deployed ? (
-            <Panel>
-              <StepLabel index="02" label="Recipients" note={`one per line · max ${MAX_PER_TX}/tx`} />
+            <InstrumentPanel title="02 · Recipients" meta={[`one per line · max ${MAX_PER_TX}/tx`]}>
               <textarea
                 value={recipientText}
                 onChange={(e) => setRecipientText(e.target.value)}
@@ -635,7 +612,7 @@ export function MultisenderScreen(): JSX.Element {
                   boxSizing: 'border-box',
                   border: `1px solid ${terminalColors.line}`,
                   borderRadius: 11,
-                  background: terminalColors.bg,
+                  background: terminalColors.panel,
                   padding: '11px 12px',
                   fontFamily: MONO,
                   fontSize: 12.5,
@@ -648,15 +625,14 @@ export function MultisenderScreen(): JSX.Element {
               <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.faint, marginTop: 6 }}>
                 Format: <code style={{ fontFamily: MONO }}>address, amount</code> — comma or space separated, one recipient per line.
               </div>
-            </Panel>
+            </InstrumentPanel>
           ) : null}
         </div>
 
         {/* Right: preview + send */}
         <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
           {deployed && parsed.length > 0 ? (
-            <Panel padding={14}>
-              <StepLabel index="03" label="Preview" />
+            <InstrumentPanel title="03 · Preview">
               <div
                 style={{
                   maxHeight: 220,
@@ -674,6 +650,7 @@ export function MultisenderScreen(): JSX.Element {
                       justifyContent: 'space-between',
                       gap: 8,
                       padding: '7px 10px',
+                      background: terminalColors.panel,
                       borderBottom: `1px solid ${terminalColors.line3}`,
                     }}
                   >
@@ -697,10 +674,10 @@ export function MultisenderScreen(): JSX.Element {
                   </Notice>
                 </div>
               ) : null}
-            </Panel>
+            </InstrumentPanel>
           ) : null}
 
-          <Panel>
+          <InstrumentPanel title="Review" corners>
             <SummaryRow label="Token" value={token?.symbol ?? '—'} />
             <SummaryRow label="Recipients" value={hasEntries ? String(validEntries.length) : '—'} />
             <SummaryRow label="Total" value={totalValue} valueColor={hasEntries ? terminalColors.ink : terminalColors.faint} />
@@ -727,7 +704,7 @@ export function MultisenderScreen(): JSX.Element {
                   : 'Approve the total once, then send. Tokens are pulled per recipient (no Permit2).'}
               </div>
             ) : null}
-          </Panel>
+          </InstrumentPanel>
         </div>
       </div>
     </div>

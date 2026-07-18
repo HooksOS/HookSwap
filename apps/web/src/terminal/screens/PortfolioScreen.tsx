@@ -50,6 +50,8 @@ import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks
 import { DoubleCurrencyLogo } from '~/components/Logo/DoubleLogo'
 import { useAccount } from '~/hooks/useAccount'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
+import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
+import '~/terminal/theme/terminal.css'
 import {
   terminalColors,
   terminalFonts,
@@ -165,7 +167,18 @@ function Kpi({ label, value, valueColor, valueSize = 22, sub, subColor, subMono,
         boxSizing: 'border-box',
       }}
     >
-      <div style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3Alt }}>{label}</div>
+      <div
+        style={{
+          fontFamily: MONO,
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: '0.11em',
+          textTransform: 'uppercase',
+          color: terminalColors.ink3,
+        }}
+      >
+        {label}
+      </div>
       {loading ? (
         <div style={{ height: valueSize, width: 96, borderRadius: 4, background: terminalColors.line2, marginTop: 8 }} />
       ) : (
@@ -400,15 +413,10 @@ function InlineError({ message, onRetry }: { message: string; onRetry?: () => vo
           type="button"
           onClick={onRetry}
           style={{
+            ...terminalKeycap,
             marginTop: 10,
-            fontFamily: SANS,
             fontSize: 12.5,
-            fontWeight: 600,
-            color: terminalColors.ink2,
-            background: terminalColors.bg,
-            border: `1px solid ${terminalColors.line}`,
             padding: '7px 13px',
-            borderRadius: 9,
             cursor: 'pointer',
           }}
         >
@@ -421,22 +429,25 @@ function InlineError({ message, onRetry }: { message: string; onRetry?: () => vo
 
 /* ------------------------------------------------------------------ card wrapper */
 
-function Card({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+function Card({
+  title,
+  meta,
+  corners,
+  live,
+  flush,
+  children,
+}: {
+  title: string
+  meta?: React.ReactNode[]
+  corners?: boolean
+  live?: boolean
+  flush?: boolean
+  children: React.ReactNode
+}): JSX.Element {
   return (
-    <div
-      style={{
-        border: `1px solid ${terminalColors.line}`,
-        borderRadius: 12,
-        background: terminalColors.bg,
-        padding: 18,
-        boxSizing: 'border-box',
-      }}
-    >
-      <div style={{ fontFamily: SANS, fontSize: 14, fontWeight: 600, color: terminalColors.ink, marginBottom: 14 }}>
-        {title}
-      </div>
+    <InstrumentPanel title={title} meta={meta} corners={corners} live={live} flush={flush}>
       {children}
-    </div>
+    </InstrumentPanel>
   )
 }
 
@@ -686,7 +697,12 @@ export function PortfolioScreen(): JSX.Element {
           content area is too narrow, instead of overflowing off-screen. */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' }}>
         <div style={{ flex: '1 1 460px', minWidth: 0 }}>
-          <Card title="Open positions">
+          <Card
+            title="Open positions"
+            corners
+            live
+            meta={[`${positions.length} ${positions.length === 1 ? 'position' : 'positions'}`]}
+          >
             {/* Wide table scrolls inside its own container (built into DataTable) so
                 its column minima never widen the page at narrow content widths. */}
             <DataTable<PositionInfo>
@@ -732,24 +748,27 @@ export function PortfolioScreen(): JSX.Element {
 
 function Header({ address }: { address: string | undefined }): JSX.Element {
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 18 }}>
-      <h1
-        style={{
-          fontFamily: DISPLAY,
-          fontSize: 24,
-          fontWeight: 600,
-          letterSpacing: '-0.02em',
-          color: terminalColors.ink,
-          margin: 0,
-        }}
-      >
-        Portfolio
-      </h1>
-      {address ? (
-        <span style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.ink3Alt }}>
-          {`${address.slice(0, 6)}…${address.slice(-4)}`}
-        </span>
-      ) : null}
+    <div style={{ marginBottom: 18 }}>
+      <Eyebrow style={{ display: 'block', marginBottom: 8 }}>Account · live holdings</Eyebrow>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+        <h1
+          style={{
+            fontFamily: DISPLAY,
+            fontSize: 24,
+            fontWeight: 600,
+            letterSpacing: '-0.02em',
+            color: terminalColors.ink,
+            margin: 0,
+          }}
+        >
+          Portfolio
+        </h1>
+        {address ? (
+          <span style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.ink3Alt }}>
+            {`${address.slice(0, 6)}…${address.slice(-4)}`}
+          </span>
+        ) : null}
+      </div>
     </div>
   )
 }

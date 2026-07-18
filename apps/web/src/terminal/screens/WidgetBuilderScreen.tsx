@@ -12,6 +12,7 @@ import { useMemo, useState } from 'react'
 import { useEnabledChains } from 'uniswap/src/features/chains/hooks/useEnabledChains'
 import { getChainLabel } from 'uniswap/src/features/chains/utils'
 import { buildEmbedQuery, type WidgetTheme } from '~/embed/embedParams'
+import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
@@ -81,10 +82,11 @@ export function WidgetBuilderScreen(): JSX.Element {
 
   return (
     <div style={{ padding: '28px var(--tm-gutter) 40px', minWidth: 0 }}>
+      <Eyebrow style={{ display: 'block', marginBottom: 8 }}>Tools · Embed widget</Eyebrow>
       <h1
         style={{
           fontFamily: DISPLAY,
-          fontSize: 26,
+          fontSize: 24,
           fontWeight: 600,
           letterSpacing: '-0.02em',
           color: terminalColors.ink,
@@ -103,14 +105,7 @@ export function WidgetBuilderScreen(): JSX.Element {
       <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         {/* Config */}
         <div style={{ flex: '1 1 320px', minWidth: 0 }}>
-          <div
-            style={{
-              border: `1px solid ${terminalColors.line}`,
-              borderRadius: 14,
-              background: terminalColors.bg,
-              padding: 18,
-            }}
-          >
+          <InstrumentPanel title="Configuration" bodyStyle={{ padding: 18 }}>
             <Field label="Chain">
               <select
                 value={chainId}
@@ -171,9 +166,11 @@ export function WidgetBuilderScreen(): JSX.Element {
                   type="button"
                   onClick={onCopy}
                   style={{
-                    fontFamily: SANS,
-                    fontSize: 12,
+                    fontFamily: MONO,
+                    fontSize: 11,
                     fontWeight: 600,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
                     color: terminalColors.btnInk,
                     background: terminalColors.brandGreen,
                     border: 'none',
@@ -203,20 +200,21 @@ export function WidgetBuilderScreen(): JSX.Element {
                 {snippet}
               </pre>
             </div>
-          </div>
+          </InstrumentPanel>
         </div>
 
         {/* Live preview */}
         <div style={{ flex: '0 0 auto', minWidth: 0 }}>
-          <div style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3Alt, marginBottom: 8 }}>Live preview</div>
-          <iframe
-            key={query}
-            src={previewSrc}
-            width={WIDGET_W}
-            height={WIDGET_H}
-            title="HookSwap swap widget preview"
-            style={{ border: `1px solid ${terminalColors.line}`, borderRadius: 18, maxWidth: '100%', background: terminalColors.bg }}
-          />
+          <InstrumentPanel title="Live preview" live meta={[getChainLabel(chainId)]} bodyStyle={{ padding: 12 }}>
+            <iframe
+              key={query}
+              src={previewSrc}
+              width={WIDGET_W}
+              height={WIDGET_H}
+              title="HookSwap swap widget preview"
+              style={{ border: 'none', borderRadius: 10, maxWidth: '100%', background: terminalColors.bg, display: 'block' }}
+            />
+          </InstrumentPanel>
         </div>
       </div>
     </div>

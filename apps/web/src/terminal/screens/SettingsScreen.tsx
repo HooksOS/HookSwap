@@ -53,6 +53,7 @@ import { useAppDispatch, useAppSelector } from '~/state/hooks'
 import { updateUserDeadline } from '~/state/user/reducer'
 import { useUserSlippageTolerance } from '~/state/user/hooks'
 import { SlippageTolerance } from '~/state/user/types'
+import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
@@ -109,7 +110,7 @@ function SettingRow({
   description,
   control,
   align = 'center',
-  last,
+  first,
   disabledNote,
 }: {
   title: string
@@ -117,7 +118,8 @@ function SettingRow({
   control: ReactNode
   /** flex-start when the control is taller than the label block (e.g. segmented). */
   align?: 'center' | 'flex-start'
-  last?: boolean
+  /** First row in a panel — suppress the top divider (the panel header supplies it). */
+  first?: boolean
   /** Honest "unavailable" tag rendered next to the title for placeholder rows. */
   disabledNote?: string
 }): JSX.Element {
@@ -129,8 +131,7 @@ function SettingRow({
         justifyContent: 'space-between',
         gap: 20,
         padding: '18px 0',
-        borderTop: `1px solid ${terminalColors.line2}`,
-        borderBottom: last ? `1px solid ${terminalColors.line2}` : undefined,
+        borderTop: first ? undefined : `1px solid ${terminalColors.line2}`,
       }}
     >
       <div style={{ maxWidth: 360 }}>
@@ -411,13 +412,14 @@ function SlippageControl({
 
 /* --------------------------------------------------------------- panels */
 
-function PanelHeading({ title, subtitle }: { title: string; subtitle: string }): JSX.Element {
+function PanelHeading({ kicker, title, subtitle }: { kicker: string; title: string; subtitle: string }): JSX.Element {
   return (
     <>
-      <div style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 19, color: terminalColors.ink, marginBottom: 4 }}>
+      <Eyebrow style={{ display: 'block', marginBottom: 8 }}>{kicker}</Eyebrow>
+      <div style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 22, letterSpacing: '-0.02em', color: terminalColors.ink, marginBottom: 4 }}>
         {title}
       </div>
-      <div style={{ fontFamily: SANS, fontSize: 13.5, color: terminalColors.ink3Alt, marginBottom: 24 }}>{subtitle}</div>
+      <div style={{ fontFamily: SANS, fontSize: 13.5, color: terminalColors.ink3Alt, marginBottom: 20 }}>{subtitle}</div>
     </>
   )
 }
@@ -436,9 +438,11 @@ function TradingPanel({
 }): JSX.Element {
   return (
     <>
-      <PanelHeading title="Trading" subtitle="Defaults applied to every swap and position." />
+      <PanelHeading kicker="Preferences" title="Trading" subtitle="Defaults applied to every swap and position." />
 
+      <InstrumentPanel title="Swap defaults" bodyStyle={{ padding: '2px 18px' }}>
       <SettingRow
+        first
         title="Default slippage"
         description="Max price movement tolerated before a swap reverts."
         align="flex-start"
@@ -472,7 +476,6 @@ function TradingPanel({
         title="Gas preference"
         description="Current base fee — gwei. Live gas oracle and a persisted speed preference are not yet wired."
         disabledNote="Unavailable"
-        last
         control={
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {/* No real gas history → a muted skeleton line, never a fabricated series. */}
@@ -499,6 +502,7 @@ function TradingPanel({
           </div>
         }
       />
+      </InstrumentPanel>
     </>
   )
 }
@@ -513,23 +517,26 @@ function TradingPanel({
 function AppearancePanel(): JSX.Element {
   return (
     <>
-      <PanelHeading title="Appearance" subtitle="How the HookSwap Terminal looks on this device." />
-      <SettingRow
-        title="Theme"
-        description="The HookSwap Terminal ships a single dark theme. A light color scheme isn't available yet."
-        disabledNote="Dark only"
-        control={
-          <Segmented<AppearanceSettingType>
-            options={[
-              { value: AppearanceSettingType.System, label: 'System' },
-              { value: AppearanceSettingType.Light, label: 'Light' },
-              { value: AppearanceSettingType.Dark, label: 'Dark' },
-            ]}
-            value={AppearanceSettingType.Dark}
-            disabled
-          />
-        }
-      />
+      <PanelHeading kicker="Display" title="Appearance" subtitle="How the HookSwap Terminal looks on this device." />
+      <InstrumentPanel title="Theme" bodyStyle={{ padding: '2px 18px' }}>
+        <SettingRow
+          first
+          title="Theme"
+          description="The HookSwap Terminal ships a single dark theme. A light color scheme isn't available yet."
+          disabledNote="Dark only"
+          control={
+            <Segmented<AppearanceSettingType>
+              options={[
+                { value: AppearanceSettingType.System, label: 'System' },
+                { value: AppearanceSettingType.Light, label: 'Light' },
+                { value: AppearanceSettingType.Dark, label: 'Dark' },
+              ]}
+              value={AppearanceSettingType.Dark}
+              disabled
+            />
+          }
+        />
+      </InstrumentPanel>
     </>
   )
 }
@@ -538,28 +545,8 @@ function NetworkPanel(): JSX.Element {
   const { chains } = useEnabledChains()
   return (
     <>
-      <PanelHeading title="Network" subtitle="Networks enabled for this app. Switch the active chain from the top bar." />
-      <div
-        style={{
-          border: `1px solid ${terminalColors.line}`,
-          borderRadius: 12,
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            padding: '11px 14px',
-            borderBottom: `1px solid ${terminalColors.line2}`,
-            background: terminalColors.panel,
-          }}
-        >
-          <span style={{ fontFamily: SANS, fontSize: 12, fontWeight: 600, color: terminalColors.ink2 }}>
-            Enabled networks
-          </span>
-          <span style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.ink3Alt }}>{chains.length}</span>
-        </div>
+      <PanelHeading kicker="Connectivity" title="Network" subtitle="Networks enabled for this app. Switch the active chain from the top bar." />
+      <InstrumentPanel title="Enabled networks" meta={[String(chains.length)]} flush>
         {chains.map((chainId, i) => (
           <div
             key={chainId}
@@ -578,30 +565,23 @@ function NetworkPanel(): JSX.Element {
             <span style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.ink3Alt }}>{chainId}</span>
           </div>
         ))}
-      </div>
+      </InstrumentPanel>
     </>
   )
 }
 
-function ComingSoonPanel({ title, subtitle }: { title: string; subtitle: string }): JSX.Element {
+function ComingSoonPanel({ kicker, title, subtitle }: { kicker: string; title: string; subtitle: string }): JSX.Element {
   return (
     <>
-      <PanelHeading title={title} subtitle={subtitle} />
-      <div
-        style={{
-          border: `1px dashed ${terminalColors.line}`,
-          borderRadius: 12,
-          padding: '40px 20px',
-          textAlign: 'center',
-        }}
-      >
+      <PanelHeading kicker={kicker} title={title} subtitle={subtitle} />
+      <InstrumentPanel title={title} bodyStyle={{ padding: '40px 20px', textAlign: 'center' }}>
         <div style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 15, color: terminalColors.ink2 }}>
           Coming soon
         </div>
         <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, marginTop: 6 }}>
           No settings are wired here yet.
         </div>
-      </div>
+      </InstrumentPanel>
     </>
   )
 }
@@ -695,14 +675,11 @@ export function SettingsScreen(): JSX.Element {
             disabled={!isDirty}
             title="Discard unsaved changes"
             style={{
-              fontFamily: SANS,
-              fontSize: 12.5,
-              fontWeight: 600,
-              color: terminalColors.ink2,
-              background: terminalColors.bg,
-              border: `1px solid ${terminalColors.line}`,
+              ...terminalKeycap,
+              fontSize: 11.5,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
               padding: '8px 16px',
-              borderRadius: 9,
               cursor: isDirty ? 'pointer' : 'not-allowed',
               opacity: isDirty ? 1 : 0.5,
             }}
@@ -714,9 +691,11 @@ export function SettingsScreen(): JSX.Element {
             onClick={onSave}
             disabled={!isDirty}
             style={{
-              fontFamily: SANS,
-              fontSize: 12.5,
+              fontFamily: MONO,
+              fontSize: 11.5,
               fontWeight: 600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
               color: isDirty ? terminalColors.btnInk : terminalColors.ink3,
               background: isDirty ? terminalColors.brandGreen : terminalColors.panel2,
               border: 'none',
@@ -787,13 +766,13 @@ export function SettingsScreen(): JSX.Element {
           {panel === 'appearance' && <AppearancePanel />}
           {panel === 'network' && <NetworkPanel />}
           {panel === 'notifications' && (
-            <ComingSoonPanel title="Notifications" subtitle="Choose which alerts reach you and where." />
+            <ComingSoonPanel kicker="Alerts" title="Notifications" subtitle="Choose which alerts reach you and where." />
           )}
           {panel === 'security' && (
-            <ComingSoonPanel title="Security" subtitle="Session, spending-limit and confirmation controls." />
+            <ComingSoonPanel kicker="Safety" title="Security" subtitle="Session, spending-limit and confirmation controls." />
           )}
           {panel === 'connected' && (
-            <ComingSoonPanel title="Connected apps" subtitle="Review dapps and sessions connected to your wallet." />
+            <ComingSoonPanel kicker="Sessions" title="Connected apps" subtitle="Review dapps and sessions connected to your wallet." />
           )}
         </div>
       </div>

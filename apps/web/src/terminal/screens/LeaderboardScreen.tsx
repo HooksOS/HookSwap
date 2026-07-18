@@ -17,7 +17,9 @@
  */
 import { ReactNode, useMemo, useState } from 'react'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
+import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
+import '~/terminal/theme/terminal.css'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import {
   LeaderboardMetric,
@@ -215,18 +217,21 @@ export function LeaderboardScreen(): JSX.Element {
           flexWrap: 'wrap',
         }}
       >
-        <h1
-          style={{
-            fontFamily: DISPLAY,
-            fontSize: 24,
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
-            color: terminalColors.ink,
-            margin: 0,
-          }}
-        >
-          Leaderboard
-        </h1>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <Eyebrow>Robinhood · trader ranking</Eyebrow>
+          <h1
+            style={{
+              fontFamily: DISPLAY,
+              fontSize: 24,
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+              color: terminalColors.ink,
+              margin: 0,
+            }}
+          >
+            Leaderboard
+          </h1>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <Segmented options={METRIC_OPTIONS} value={metric} onChange={setMetric} />
           <Segmented options={WINDOW_OPTIONS} value={window} onChange={setWindow} />
@@ -256,15 +261,12 @@ export function LeaderboardScreen(): JSX.Element {
       </div>
 
       {/* Table */}
-      <div
-        style={{
-          border: `1px solid ${terminalColors.line}`,
-          borderRadius: 14,
-          background: terminalColors.bg,
-          padding: 18,
-          boxSizing: 'border-box',
-          minWidth: 0,
-        }}
+      <InstrumentPanel
+        title="Rankings"
+        corners
+        live
+        meta={[`${metric[0].toUpperCase()}${metric.slice(1)}`, window.toUpperCase()]}
+        style={{ minWidth: 0 }}
       >
         <DataTable<LeaderboardRow>
           columns={columns}
@@ -277,7 +279,7 @@ export function LeaderboardScreen(): JSX.Element {
           skeletonRows={8}
           minWidth={560}
         />
-      </div>
+      </InstrumentPanel>
 
       {/* USD-anchor gate note (honest — no fabricated USD ranking) */}
       {!usdAnchored ? (

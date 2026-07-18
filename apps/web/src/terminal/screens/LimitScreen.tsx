@@ -16,7 +16,7 @@
  *
  * HookSwap ships v2 + v3 only (no Uniswap v4 / hooks — LOCKED decision).
  */
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router'
 import { USDC, nativeOnChain } from 'uniswap/src/constants/tokens'
 import { LIMIT_SUPPORTED_CHAINS } from 'uniswap/src/features/chains/chainInfo'
@@ -32,32 +32,37 @@ import { useAccount } from '~/hooks/useAccount'
 import { LimitFormWrapper } from '~/pages/Swap/Limit/LimitForm'
 import { MultichainContextProvider } from '~/state/multichain/MultichainContext'
 import { ComingSoon } from '~/terminal/components/ComingSoon'
+import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const DISPLAY = terminalFonts.display
+const MONO = terminalFonts.mono
 const SANS = terminalFonts.sans
 
 /** Fixed width of the framed order module — matches the legacy swap module (480px). */
 const MODULE_WIDTH = 480
 
-/** Content header — Atlas chrome, matches other Terminal screens. */
+/** Desk page header — Eyebrow kicker + Space Grotesk h1 + subtitle, matching the Terminal screens. */
 function LimitHeader({ subtitle }: { subtitle: string }): JSX.Element {
   return (
-    <div
-      style={{
-        height: 52,
-        flexShrink: 0,
-        borderBottom: `1px solid ${terminalColors.line2}`,
-        background: terminalColors.bg,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 var(--tm-gutter)',
-      }}
-    >
-      <span style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 15, color: terminalColors.ink }}>Limit</span>
-      <span style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3Alt }}>{subtitle}</span>
-    </div>
+    <>
+      <Eyebrow>Trade · Limit orders</Eyebrow>
+      <h1
+        style={{
+          fontFamily: DISPLAY,
+          fontSize: 24,
+          fontWeight: 600,
+          letterSpacing: '-0.02em',
+          color: terminalColors.ink,
+          margin: '8px 0 6px',
+        }}
+      >
+        Limit
+      </h1>
+      <div style={{ fontFamily: SANS, fontSize: 13, color: terminalColors.ink2, marginBottom: 20, maxWidth: 560, lineHeight: 1.5 }}>
+        {subtitle}
+      </div>
+    </>
   )
 }
 
@@ -68,43 +73,38 @@ function LimitHeader({ subtitle }: { subtitle: string }): JSX.Element {
 function LimitUnavailable(): JSX.Element {
   const navigate = useNavigate()
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 640 }}>
-      <LimitHeader subtitle="Not available on this network" />
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          background: terminalColors.bgApp,
-          overflowY: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '28px var(--tm-gutter) 48px',
-        }}
-      >
-        <ComingSoon
-          label="NOT AVAILABLE"
-          subtext="Limit orders aren't available on Robinhood — use Market swap instead."
-        />
-        <button
-          type="button"
-          onClick={() => navigate('/swap')}
-          style={{
-            marginTop: 6,
-            background: terminalColors.brandGreen,
-            color: terminalColors.btnInk,
-            fontFamily: SANS,
-            fontWeight: 600,
-            fontSize: 14,
-            padding: '11px 20px',
-            borderRadius: 10,
-            border: 'none',
-            cursor: 'pointer',
-          }}
-        >
-          Go to Market swap
-        </button>
+    <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
+      <LimitHeader subtitle="Limit orders aren't available on HookSwap's networks — HookSwap ships v2 + v3 only. Use Market swap instead." />
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
+        <div style={{ width: '100%', maxWidth: MODULE_WIDTH }}>
+          <InstrumentPanel title="Not available" meta={['v2 · v3 only']} corners>
+            <ComingSoon
+              label="NOT AVAILABLE"
+              subtext="Limit orders aren't available on Robinhood — use Market swap instead."
+            />
+            <button
+              type="button"
+              onClick={() => navigate('/swap')}
+              style={{
+                width: '100%',
+                marginTop: 4,
+                background: terminalColors.brandGreen,
+                color: terminalColors.btnInk,
+                fontFamily: MONO,
+                fontWeight: 600,
+                fontSize: 13,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                padding: '13px 0',
+                borderRadius: 10,
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              Go to Market swap
+            </button>
+          </InstrumentPanel>
+        </div>
       </div>
     </div>
   )
@@ -128,34 +128,25 @@ function LimitFormFrame(): JSX.Element {
   })
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: 640 }}>
-      <LimitHeader subtitle="Set a price · order fills when the market reaches it" />
-      {/* Centered framed form — content region is viewport − 226px rail; the
-          fixed max-width column keeps it clear of horizontal overflow. */}
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          background: terminalColors.bgApp,
-          overflowY: 'auto',
-          display: 'flex',
-          justifyContent: 'center',
-          padding: '28px var(--tm-gutter) 48px',
-        }}
-      >
+    <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
+      <LimitHeader subtitle="Set a price · order fills when the market reaches it." />
+      {/* Centered framed form inside a Desk instrument panel. */}
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
         <div style={{ width: '100%', maxWidth: MODULE_WIDTH }}>
-          <MultichainContextProvider initialChainId={UniverseChainId.Mainnet}>
-            <SwapTransactionSettingsStoreContextProvider>
-              <SwapAndLimitContextProvider
-                initialInputCurrency={initialInputCurrency}
-                initialOutputCurrency={initialOutputCurrency}
-              >
-                <SwapFormStoreContextProvider prefilledState={prefilledState}>
-                  <LimitFormWrapper />
-                </SwapFormStoreContextProvider>
-              </SwapAndLimitContextProvider>
-            </SwapTransactionSettingsStoreContextProvider>
-          </MultichainContextProvider>
+          <InstrumentPanel title="Limit order" corners bodyStyle={{ padding: 12 }}>
+            <MultichainContextProvider initialChainId={UniverseChainId.Mainnet}>
+              <SwapTransactionSettingsStoreContextProvider>
+                <SwapAndLimitContextProvider
+                  initialInputCurrency={initialInputCurrency}
+                  initialOutputCurrency={initialOutputCurrency}
+                >
+                  <SwapFormStoreContextProvider prefilledState={prefilledState}>
+                    <LimitFormWrapper />
+                  </SwapFormStoreContextProvider>
+                </SwapAndLimitContextProvider>
+              </SwapTransactionSettingsStoreContextProvider>
+            </MultichainContextProvider>
+          </InstrumentPanel>
         </div>
       </div>
     </div>
