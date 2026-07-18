@@ -1403,11 +1403,11 @@ function LandingScreenBody(): JSX.Element {
                 margin: 0,
               }}
             >
-              HookSwap.
-              <br />A DEX in <span style={{ color: terminalColors.brandGreen }}>terminal</span> form.
+              Trade on-chain
+              <br />like a <span style={{ color: terminalColors.brandGreen }}>desk</span>, not a form.
             </h1>
             <p style={{ fontFamily: SANS, fontSize: 16, color: terminalColors.ink2, lineHeight: 1.55, margin: '20px 0 0', maxWidth: 460 }}>
-              Depth charts, live routing, and concentrated liquidity across every HookSwap chain — pro tooling wired into
+              Depth, live routing and concentrated liquidity across every HookSwap chain — pro execution wired into
               HookSwap&apos;s own v2 + v3 deployments.
             </p>
             <div style={{ display: 'flex', gap: 12, marginTop: 26, flexWrap: 'wrap' }}>
