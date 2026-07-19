@@ -26,8 +26,8 @@
  *   - Token.market's project.markets price (TokenSpotPrice / UniswapPrices)
  */
 
-import { getChainByEnum, resolveSubgraphUrl, type ChainConfig } from './chains'
-import { querySubgraph } from './subgraphClient'
+import { getChainByEnum, resolveRpcUrl, resolveSubgraphUrl, type ChainConfig } from './chains'
+import { fetchChainHeadBlock, querySubgraph } from './subgraphClient'
 import {
   buildTokenMarket,
   durationToWindow,
@@ -217,6 +217,17 @@ function requireChain(chainEnum: string): { chain: ChainConfig; url: string } {
     throw new Error(`No SUBGRAPH_URL configured for chain ${chainEnum} (${chain.subgraphEnvVar}).`)
   }
   return { chain, url }
+}
+
+/** Native-asset sentinels the interface may send for a chain's native token: null/empty, the zero
+ * address, or the 0xEeee… placeholder. The v3-subgraph has no native entity, so these map to the
+ * chain's wrapped-native address (see chains.ts `wrappedNative`). */
+function isNativeAddress(address: string | null | undefined): boolean {
+  if (!address) {
+    return true
+  }
+  const a = address.toLowerCase()
+  return a === '0x0000000000000000000000000000000000000000' || a === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
 }
 
 /** TokenSortableField (gateway) -> subgraph Token_orderBy field. MARKET_CAP has no circulating-supply
@@ -416,15 +427,18 @@ export const resolvers = {
     // --- TokenSpotPrice / TokenWeb / TokenPrice / charts / Token*Transactions ---
     async token(_root: unknown, args: { chain: string; address?: string | null }): Promise<GwToken | null> {
       const { chain, url } = requireChain(args.chain)
-      if (!args.address) {
-        // Native token: the subgraph keys by wrapped-native address. Serving native spot price needs
-        // the per-chain wrapped-native mapping (see trading-api-adapter/src/chains.ts). TODO.
+      // Native token (null/zero/0xEeee… address): the v3-subgraph has no native entity, so resolve the
+      // chain's WRAPPED-native token (same USD price). Chains without a wrapped-native (e.g. Tempo,
+      // gas paid in pathUSD) have no `wrappedNative` -> honest `null`.
+      const address = isNativeAddress(args.address) ? chain.wrappedNative : args.address?.toLowerCase()
+      if (!address) {
         return null
       }
       const data = await querySubgraph<{ token: SgToken | null; bundle: SgBundle | null }>(url, TOKEN_QUERY, {
-        id: args.address.toLowerCase(),
+        id: address.toLowerCase(),
       })
       if (!data.token) {
+        // Wrapped-native (or requested token) not yet indexed by the subgraph -> honest null, not faked.
         return null
       }
       return toGwToken(data.token, chain.gatewayChain, tokenPriceUSD(data.token, data.bundle), url)
@@ -493,11 +507,32 @@ export const resolvers = {
 
     // --- isV3SubgraphStale ----------------------------------------------
     async isV3SubgraphStale(_root: unknown, args: { chain: string }): Promise<boolean | null> {
-      const { url } = requireChain(args.chain)
-      const data = await querySubgraph<{ _meta: { hasIndexingErrors: boolean } | null }>(url, META_QUERY)
-      // "Stale" here == subgraph reported indexing errors. A block-lag comparison could be added if
-      // the interface needs a freshness threshold (would require the chain head from an RPC). TODO.
-      return data._meta ? Boolean(data._meta.hasIndexingErrors) : null
+      const { chain, url } = requireChain(args.chain)
+      const data = await querySubgraph<{
+        _meta: { hasIndexingErrors: boolean; block: { number: number } | null } | null
+      }>(url, META_QUERY)
+      if (!data._meta) {
+        return null // subgraph didn't report _meta -> unknown, not "fresh" (never fabricate false)
+      }
+      // Primary signal: the subgraph's own indexing-error flag.
+      if (data._meta.hasIndexingErrors) {
+        return true
+      }
+      // Secondary signal (only when an RPC is configured for this chain): compare the subgraph's
+      // indexed head to the chain head. Stale if the subgraph lags by more than SUBGRAPH_STALE_BLOCK_LAG
+      // blocks (default 300; operator-tunable because block times differ per chain and there is no
+      // per-chain block-time source here). If no RPC is configured OR the head can't be read, we have
+      // no head signal and fall back to the indexing-errors result above (honest — we don't guess).
+      const rpcUrl = resolveRpcUrl(chain)
+      const subgraphBlock = data._meta.block?.number
+      if (rpcUrl && typeof subgraphBlock === 'number') {
+        const head = await fetchChainHeadBlock(rpcUrl)
+        if (head !== null) {
+          const maxLag = Number(process.env.SUBGRAPH_STALE_BLOCK_LAG || 300)
+          return head - subgraphBlock > maxLag
+        }
+      }
+      return false
     },
   },
 

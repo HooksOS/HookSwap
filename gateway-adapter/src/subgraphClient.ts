@@ -69,3 +69,36 @@ export async function querySubgraph<T>(
   }
   return json.data
 }
+
+/**
+ * Read an EVM chain head via `eth_blockNumber` JSON-RPC. Returns the block number, or `null` on ANY
+ * failure (unreachable RPC, timeout, malformed reply) — the caller must treat `null` as "no head
+ * signal available" and NOT fabricate a value. Kept minimal (no retries) since it only backstops the
+ * subgraph's own `_meta.block.number` staleness check.
+ */
+export async function fetchChainHeadBlock(rpcUrl: string): Promise<number | null> {
+  const timeoutMs = Number(process.env.RPC_TIMEOUT_MS || 4000)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }),
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      return null
+    }
+    const json = (await res.json()) as { result?: string }
+    if (typeof json.result !== 'string') {
+      return null
+    }
+    const n = Number.parseInt(json.result, 16)
+    return Number.isFinite(n) ? n : null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}

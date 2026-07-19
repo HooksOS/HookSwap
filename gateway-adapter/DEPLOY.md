@@ -139,9 +139,10 @@ bump), re-copy it:
 ```bash
 cp ../packages/api/src/clients/graphql/schema.graphql ./schema.graphql
 ```
-Then re-run `npm run build`. (One caveat: if HyperEVM (999) queries flow through this gateway path,
-add `HYPEREVM` to the served schema's `enum Chain` — it is not in the committed enum yet; see
-`src/chains.ts` note.)
+Then re-run `npm run build`. (Note: `HYPEREVM` has been added to this dir's `schema.graphql`
+`enum Chain` so HyperEVM (999) queries validate locally. Uniswap's upstream enum does not include
+it, so if you re-copy the schema from `packages/api/...` re-add `HYPEREVM` to the enum, or HyperEVM
+queries will fail validation and fall through to the upstream proxy.)
 
 ## 8. Extension point — implement a new subgraph-backed operation
 

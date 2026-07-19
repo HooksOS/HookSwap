@@ -34,23 +34,30 @@ export interface ChainConfig {
   subgraphSlug: string
   /** env var carrying this chain's subgraph GraphQL URL. */
   subgraphEnvVar: string
+  /**
+   * Wrapped-native ERC-20 address (lowercase) for this chain. The v3-subgraph keys tokens by their
+   * ERC-20 address and has NO entity for the native asset, so a native-token request is resolved
+   * against the wrapped-native token (its USD price equals the native's). Undefined for chains with
+   * no wrapped-native (e.g. Tempo, whose gas is paid in pathUSD) — native there stays `null`.
+   * Sources: HookSwap/CLAUDE.md deploy table + trading-api-adapter/src/chains.ts.
+   */
+  wrappedNative?: string
+  /**
+   * Optional env var carrying an EVM JSON-RPC URL for this chain. Only used by `isV3SubgraphStale`
+   * to read the chain head (`eth_blockNumber`) and compare it to the subgraph's indexed block. Left
+   * unset means the staleness check degrades to `_meta.hasIndexingErrors` only (no head-lag signal).
+   */
+  rpcEnvVar: string
 }
 
-/**
- * NOTE: `HYPEREVM` is not yet a member of the committed `enum Chain` in schema.graphql (that enum
- * lists XLAYER/MEGAETH/TEMPO/ROBINHOOD but not HyperEVM — HyperEVM was added interface-side as a
- * UniverseChainId only). If/when HyperEVM (999) queries flow through the gateway path, add
- * `HYPEREVM` to the served schema.graphql `enum Chain` too, or those queries will fail validation
- * and fall through to the upstream proxy. Kept here so the mapping is complete and ready.
- */
 export const CHAINS: ChainConfig[] = [
-  { chainId: 11155111, gatewayChain: 'ETHEREUM_SEPOLIA', subgraphSlug: 'sepolia', subgraphEnvVar: 'SUBGRAPH_URL_11155111' },
-  { chainId: 57073, gatewayChain: 'INK', subgraphSlug: 'ink', subgraphEnvVar: 'SUBGRAPH_URL_57073' },
-  { chainId: 4326, gatewayChain: 'MEGAETH', subgraphSlug: 'megaeth', subgraphEnvVar: 'SUBGRAPH_URL_4326' },
-  { chainId: 4663, gatewayChain: 'ROBINHOOD', subgraphSlug: 'robinhood', subgraphEnvVar: 'SUBGRAPH_URL_4663' },
-  { chainId: 196, gatewayChain: 'XLAYER', subgraphSlug: 'xlayer', subgraphEnvVar: 'SUBGRAPH_URL_196' },
-  { chainId: 999, gatewayChain: 'HYPEREVM', subgraphSlug: 'hyperevm', subgraphEnvVar: 'SUBGRAPH_URL_999' },
-  { chainId: 4217, gatewayChain: 'TEMPO', subgraphSlug: 'tempo', subgraphEnvVar: 'SUBGRAPH_URL_4217' },
+  { chainId: 11155111, gatewayChain: 'ETHEREUM_SEPOLIA', subgraphSlug: 'sepolia', subgraphEnvVar: 'SUBGRAPH_URL_11155111', rpcEnvVar: 'RPC_URL_11155111', wrappedNative: '0xfff9976782d46cc05630d1f6ebab18b2324d6b14' },
+  { chainId: 57073, gatewayChain: 'INK', subgraphSlug: 'ink', subgraphEnvVar: 'SUBGRAPH_URL_57073', rpcEnvVar: 'RPC_URL_57073', wrappedNative: '0x4200000000000000000000000000000000000006' },
+  { chainId: 4326, gatewayChain: 'MEGAETH', subgraphSlug: 'megaeth', subgraphEnvVar: 'SUBGRAPH_URL_4326', rpcEnvVar: 'RPC_URL_4326', wrappedNative: '0x4200000000000000000000000000000000000006' },
+  { chainId: 4663, gatewayChain: 'ROBINHOOD', subgraphSlug: 'robinhood', subgraphEnvVar: 'SUBGRAPH_URL_4663', rpcEnvVar: 'RPC_URL_4663', wrappedNative: '0x4200000000000000000000000000000000000006' },
+  { chainId: 196, gatewayChain: 'XLAYER', subgraphSlug: 'xlayer', subgraphEnvVar: 'SUBGRAPH_URL_196', rpcEnvVar: 'RPC_URL_196', wrappedNative: '0xe538905cf8410324e03a5a23c1c177a474d59b2b' },
+  { chainId: 999, gatewayChain: 'HYPEREVM', subgraphSlug: 'hyperevm', subgraphEnvVar: 'SUBGRAPH_URL_999', rpcEnvVar: 'RPC_URL_999', wrappedNative: '0x5555555555555555555555555555555555555555' },
+  { chainId: 4217, gatewayChain: 'TEMPO', subgraphSlug: 'tempo', subgraphEnvVar: 'SUBGRAPH_URL_4217', rpcEnvVar: 'RPC_URL_4217' },
 ]
 
 const BY_CHAIN_ENUM = new Map<string, ChainConfig>(CHAINS.map((c) => [c.gatewayChain, c]))
@@ -73,6 +80,16 @@ export function getChainById(chainId: number): ChainConfig | undefined {
  */
 export function resolveSubgraphUrl(chain: ChainConfig): string | undefined {
   const url = process.env[chain.subgraphEnvVar]
+  return url && url.trim().length > 0 ? url.trim() : undefined
+}
+
+/**
+ * Resolve the EVM JSON-RPC URL for a chain from env, or undefined if none is configured. Used only
+ * by the `isV3SubgraphStale` head-lag check; when undefined the check degrades to indexing-errors
+ * only (never fabricates a head block).
+ */
+export function resolveRpcUrl(chain: ChainConfig): string | undefined {
+  const url = process.env[chain.rpcEnvVar]
   return url && url.trim().length > 0 ? url.trim() : undefined
 }
 
