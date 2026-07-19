@@ -1016,15 +1016,16 @@ export function SwapScreen(): JSX.Element {
           urlOutputCurrency ?? resolveDefaultOutput(resolvedChain) ?? (THOOK_ROBINHOOD as Currency),
       }
     }
-    // Disconnected, or already on Robinhood → the seeded ETH → tHOOK pair. Robinhood
-    // is the only chain the Terminal offers for live trading right now (see
-    // TERMINAL_LIVE_CHAIN_IDS in TerminalApp.tsx) — it's the correct default, not
-    // USDG (resolveDefaultOutput's canonical-stablecoin pick), which has no pool.
+    // Disconnected, or already on Robinhood → the real ETH → USDG stablecoin pair. The
+    // WETH/USDG anchor pool now has liquidity, so USDG (resolveDefaultOutput's canonical
+    // stablecoin pick) is the correct default; tHOOK is a test/seed token and is no
+    // longer surfaced. Falls back to tHOOK only if the stablecoin can't be resolved.
+    // Robinhood is the only chain the Terminal offers for live trading right now.
     if (activeChainId === undefined || activeChainId === UniverseChainId.Robinhood) {
       return {
         chainId: UniverseChainId.Robinhood,
         initialInputCurrency: nativeOnChain(UniverseChainId.Robinhood),
-        initialOutputCurrency: THOOK_ROBINHOOD as Currency,
+        initialOutputCurrency: resolveDefaultOutput(UniverseChainId.Robinhood) ?? (THOOK_ROBINHOOD as Currency),
       }
     }
     // Connected on X Layer → keep its seeded OKB → HKT test pair.
