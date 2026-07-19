@@ -2,6 +2,9 @@
 
 > Living scratchpad so we stay on track. Update as decisions land. This is a **fork of the Uniswap interface monorepo** (Uniswap Labs front-end: web + mobile + extension). We are rebranding it to **HookSwap** and shipping on new chains.
 
+## ⛔ MANDATORY RULE — ALWAYS DEPLOY + TEST CONTRACTS ON SEPOLIA FIRST (from Reggie, 2026-07-19, indefinite)
+- Every contract (HookSwap DEX, self-service suite, **HookSwapPerps**, oracle adapters, etc.) MUST be deployed AND tested on **Sepolia (11155111)** before any other chain / mainnet. Sepolia is the canonical validation chain (free faucet + canonical Uniswap stack already wired). No contract ships to a production chain until it's proven on Sepolia.
+
 ## ⛔ MANDATORY WORKING RULE — FACTS ONLY, NEVER GUESS (from Reggie, indefinite)
 - **Do not guess, infer, assume, or say "probably/likely/should be."** Every claim about the code, data, routing, deploys, or state MUST be verified by reading the actual file/route/query/output FIRST, then stated as a fact with the source.
 - If something is not yet verified, say **"not verified yet"** and go verify it — do not fill the gap with a plausible-sounding answer.
