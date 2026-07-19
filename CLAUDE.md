@@ -63,7 +63,7 @@ nx spawns bare `vite`/`typechain`/`openapi` but bun only makes `.bunx` shims the
 - ✅ Forked 15 repos into HooksOS org (see FORK-LIST.md).
 - ✅ Full v2+v3+UR stack deployed on Robinhood (see `contracts/deployments/robinhood.json`).
 - ✅ Self-service contracts deployed + verified on Robinhood (blockscout): TokenFactory, Vesting, Farms, Airdrop, Multisender — all wired in UI, no more "COMING SOON".
-- ⛔ NO token-launch / LaunchPad feature (Reggie, 2026-07-18). HookSwap does NOT ship a launchpad or token-creation product. Any prior "LaunchPad / HookOSV3Launcher / create-token / `/launch`" claim is VOID. Nav/route entries still present in `apps/web/src/terminal/config/screens.ts` (`launchpad` id, `/launch` path, `create-token`) are to be removed — do not reference or build on them.
+- ✅ LaunchPad: KEPT feature (Reggie confirmed 2026-07-18). HookOSV3Launcher (`0x9B8d…`) + HookOSV3FeeVault (`0x2974…`) integrated — DEX/pair selector, vault fee collection, route at `/launch`; nav entry `launchpad` + `create-token` tool live in `apps/web/src/terminal/config/screens.ts`.
 - ✅ WETH/USDG anchor pool seeded (`0xF7ddC383…`, $1877.65/ETH) — USD pricing active across all data-api handlers.
 - ✅ Referral swap routing: single-hop v3 ERC-20 swaps route through ReferralRouter with on-chain allowance check (graceful UR fallback).
 - ✅ Data-api: all handlers implemented (listTokens, listTopPools, listPools, getPosition, getPortfolio, listPositions, listTransactions, searchTokens, getWalletBalances). All V2Endpoints feature flags forced ON.
