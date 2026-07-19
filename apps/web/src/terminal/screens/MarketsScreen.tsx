@@ -48,6 +48,7 @@ import { useTopPools } from '~/features/Explore/state/topPools/useTopPools'
 import { ComingSoon } from '~/terminal/components/ComingSoon'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
+import { isHiddenTokenSymbol, pairHasHiddenToken } from '~/terminal/utils/hiddenTokens'
 import { SparklineCell } from '~/terminal/components/SparklineCell'
 import { terminalColors, terminalFonts, terminalShadows, terminalType } from '~/terminal/theme/tokens'
 import type { PoolStat } from '~/types/explore'
@@ -459,7 +460,7 @@ function MarketsScreenBody(): JSX.Element {
 
   // Real pool data (all enabled networks; ExploreContext defaults to all-networks).
   const {
-    topPools,
+    topPools: rawPools,
     isLoading: poolsLoading,
     isError: poolsError,
   } = useTopPools({
@@ -467,7 +468,14 @@ function MarketsScreenBody(): JSX.Element {
   })
 
   // Real token list — feeds the price/24H/sparkline join + the top-movers heatmap.
-  const { topTokens, isLoading: tokensLoading, isError: tokensError } = useListTokens(undefined)
+  const { topTokens: rawTokens, isLoading: tokensLoading, isError: tokensError } = useListTokens(undefined)
+
+  // Hide test/seed tokens (tHOOK etc.) so only real assets surface in pools + movers.
+  const topPools = useMemo(
+    () => rawPools?.filter((p) => !pairHasHiddenToken(p.token0?.symbol, p.token1?.symbol)),
+    [rawPools],
+  )
+  const topTokens = useMemo(() => (rawTokens ?? []).filter((t) => !isHiddenTokenSymbol(t.symbol)), [rawTokens])
 
   const metricMaps = useMemo(() => buildTokenMetrics(topTokens), [topTokens])
   const rows = useMemo(() => buildRows(topPools, metricMaps), [topPools, metricMaps])

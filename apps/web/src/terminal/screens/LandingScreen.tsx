@@ -84,6 +84,7 @@ import { TerminalCommandPalette } from '~/terminal/components/TerminalCommandPal
 import { TickerTape, type TickerItem } from '~/terminal/components/TickerTape'
 import { HOOKSWAP_LINKS } from '~/terminal/config/screens'
 import { useCaptureRef } from '~/terminal/referral/useCaptureRef'
+import { isHiddenTokenSymbol, pairHasHiddenToken } from '~/terminal/utils/hiddenTokens'
 import '~/terminal/theme/terminal.css'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { formatRelativeTime } from '~/terminal/utils/time'
@@ -1154,12 +1155,19 @@ function LandingScreenBody(): JSX.Element {
   }, [])
 
   /* -------- live data -------- */
-  const { topTokens, isLoading: tokensLoading, isError: tokensError } = useListTokens(undefined)
+  const { topTokens: rawTokens, isLoading: tokensLoading, isError: tokensError } = useListTokens(undefined)
   const {
-    topPools,
+    topPools: rawPools,
     isLoading: poolsLoading,
     isError: poolsError,
   } = useTopPools({ sortState: { sortBy: PoolSortFields.Volume24h, sortDirection: OrderDirection.Desc } })
+  // Hide test/seed tokens (tHOOK etc.) from every downstream surface — ticker, featured
+  // card, market rows, pool count — so only real assets (ETH, USDG, …) ever show.
+  const topTokens = useMemo(() => (rawTokens ?? []).filter((t) => !isHiddenTokenSymbol(t.symbol)), [rawTokens])
+  const topPools = useMemo(
+    () => rawPools?.filter((p) => !pairHasHiddenToken(p.token0?.symbol, p.token1?.symbol)),
+    [rawPools],
+  )
   const tvlStats = useDailyTVLWithChange()
   const volumeStats = use24hProtocolVolume()
   const protocolStats = useProtocolStats()

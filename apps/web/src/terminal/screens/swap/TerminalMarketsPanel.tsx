@@ -29,6 +29,7 @@ import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens
 import type { UseListTokensOptions } from '~/features/Explore/state/listTokens/types'
 import { multichainTokenToDisplayToken } from '~/features/Explore/state/listTokens/utils/multichainTokenToDisplayToken'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
+import { isHiddenTokenSymbol } from '~/terminal/utils/hiddenTokens'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
@@ -206,6 +207,9 @@ export function TerminalMarketsPanel({
   const rows = useMemo<MarketRow[]>(() => {
     const out: MarketRow[] = []
     for (const token of topTokens) {
+      if (isHiddenTokenSymbol(token.symbol)) {
+        continue // hide test/seed tokens (tHOOK etc.)
+      }
       const row = toRow(token, chainId)
       if (row) {
         out.push(row)
