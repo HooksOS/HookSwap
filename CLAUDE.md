@@ -252,3 +252,11 @@ The deployed Robinhood Universal Router `0x3D30133F4d4A80684F02d8310faF572E3dc19
 - 2026-07-03: Removed `tools/uniswap-nx` workspace entry to unblock install.
 - 2026-07-03: v4 excluded; HyperEVM+Robinhood+Sepolia targeted; self-host routing; brand existing swap UI.
 - 2026-07-03: Documented Windows/bun localhost bring-up bypass.
+
+## HookSwap Perps (new workstream, 2026-07-19)
+Self-hosted perpetuals for HookSwap, sourced from `~/Downloads/meme-perp-dex-main` — a full perps DEX (Foundry `contracts/` + Go `backend/` + Next.js `frontend/` + `docs/` + `PERPVAULT_AUDIT_REPORT.md`). Plan: deep-analyze → production plan → **rebrand contracts for HookSwap** → build perps UI into the Terminal → **3 design options** for the perps UI. Building with subagents.
+- **⛔ DEX-integration requirement (from Reggie, 2026-07-19 — LOCKED):** the perps contracts MUST work against ALL of these spot/liquidity venues, so the DEX legs (oracle/TWAP, spot price, liquidity, settlement) must be **multi-protocol adapter-based, NOT hardcoded to one DEX/version**:
+  - **HookSwap v2 + v3** on ALL HookSwap chains (MegaETH 4326 / Robinhood 4663 / Ink 57073 / XLayer 196 / HyperEVM 999 / Tempo 4217 / Sepolia).
+  - **PancakeSwap v2 + v3 + v4** on BSC.
+  - **Uniswap v2 + v3 + v4** on ALL chains.
+  Implication: need per-protocol AMM adapters (v2 constant-product, v3 concentrated, v4 hooks/singleton) behind a common interface; the perps engine consumes prices/liquidity through the adapter layer, chain- and DEX-agnostic.
