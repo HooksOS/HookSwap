@@ -60,6 +60,9 @@ function activeScreenIdFromPath(pathname: string): TerminalNavId | undefined {
   if (pathname === '/markets' || pathname.startsWith('/markets/')) {
     return 'markets'
   }
+  if (pathname === '/perps/launch') {
+    return 'create-perp-market'
+  }
   if (pathname === '/perps' || pathname.startsWith('/perps/')) {
     return 'perps'
   }
@@ -124,6 +127,9 @@ function activeScreenIdFromPath(pathname: string): TerminalNavId | undefined {
   }
   if (rest.startsWith('/markets')) {
     return 'markets'
+  }
+  if (rest.startsWith('/perps/launch')) {
+    return 'create-perp-market'
   }
   if (rest.startsWith('/perps')) {
     return 'perps'
@@ -466,6 +472,7 @@ export default function TerminalApp(): JSX.Element {
         <Route path="markets" element={<Navigate to="/markets" replace />} />
         <Route path="markets/:poolId" element={<MarketDetailRedirect />} />
         <Route path="perps" element={<Navigate to="/perps" replace />} />
+        <Route path="perps/launch" element={<Navigate to="/perps/launch" replace />} />
         <Route path="pools/new" element={<Navigate to="/pools/new" replace />} />
         <Route path="pools" element={<Navigate to="/pools" replace />} />
         <Route path="positions" element={<Navigate to="/positions" replace />} />

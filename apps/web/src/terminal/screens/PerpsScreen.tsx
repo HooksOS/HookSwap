@@ -16,6 +16,7 @@
  *   static configuration, not fabricated market data. See ./perps/perpsCatalog.ts.
  */
 import { useState } from 'react'
+import { useNavigate } from 'react-router'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
@@ -32,6 +33,7 @@ import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 export function PerpsScreen(): JSX.Element {
   const account = useAccount()
   const accountDrawer = useAccountDrawer()
+  const navigate = useNavigate()
   const connected = Boolean(account.address)
 
   const [instrument, setInstrument] = useState<PerpInstrument>(PERP_INSTRUMENTS[0])
@@ -42,6 +44,27 @@ export function PerpsScreen(): JSX.Element {
       <MarketStatBar instrument={instrument} />
 
       <div style={{ padding: '14px var(--tm-gutter) 40px' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+          <button
+            type="button"
+            onClick={() => navigate('/perps/launch')}
+            style={{
+              fontFamily: terminalFonts.mono,
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: '0.03em',
+              textTransform: 'uppercase',
+              color: terminalColors.greenDeep,
+              background: terminalColors.greenBg,
+              border: `1px solid ${terminalColors.greenBorder}`,
+              borderRadius: 8,
+              padding: '6px 14px',
+              cursor: 'pointer',
+            }}
+          >
+            Launch a market →
+          </button>
+        </div>
         <div
           style={{
             display: 'grid',

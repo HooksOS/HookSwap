@@ -27,6 +27,7 @@ import { isBrowserRouterEnabled } from '~/utils/env'
 // namespace below, kept only as a compatibility redirect for old bookmarked links).
 const TerminalMarketsPage = lazy(() => import('~/terminal/TerminalMarketsPage'))
 const TerminalPerpsPage = lazy(() => import('~/terminal/TerminalPerpsPage'))
+const TerminalCreatePerpMarketPage = lazy(() => import('~/terminal/TerminalCreatePerpMarketPage'))
 const TerminalMarketDetailPage = lazy(() => import('~/terminal/TerminalMarketDetailPage'))
 const TerminalPoolsPage = lazy(() => import('~/terminal/TerminalPoolsPage'))
 const TerminalPositionsPage = lazy(() => import('~/terminal/TerminalPositionsPage'))
@@ -351,6 +352,16 @@ export const routes: RouteDefinition[] = [
     getElement: () => (
       <Suspense fallback={null}>
         <TerminalPerpsPage />
+      </Suspense>
+    ),
+  }),
+  createRouteDefinition({
+    path: '/perps/launch',
+    getTitle: () => 'HookSwap Launch Perp Market',
+    getDescription: () => StaticTitlesAndDescriptions.SwapDescription,
+    getElement: () => (
+      <Suspense fallback={null}>
+        <TerminalCreatePerpMarketPage />
       </Suspense>
     ),
   }),

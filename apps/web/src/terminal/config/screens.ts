@@ -16,6 +16,7 @@ export type TerminalScreenId =
   | 'swap' // B2
   | 'markets' // B3
   | 'perps' // Perps — HookSwapPerps "Pro Desk" perpetuals terminal
+  | 'create-perp-market' // Perps/Tools — self-service perp market launch (PerpMarketFactory)
   | 'create-position' // B4
   | 'locker' // Tools — lock LP/tokens + v3 positions
   | 'multisender' // Tools — batch-send a token / native to many addresses (Disperse)
@@ -41,6 +42,7 @@ export type TerminalNavIcon =
   | 'limit'
   | 'markets'
   | 'perps'
+  | 'perp-market'
   | 'pools'
   | 'positions'
   | 'locker'
@@ -103,6 +105,13 @@ export const terminalScreens: Record<TerminalScreenId, TerminalScreen> = {
   swap: { id: 'swap', code: 'B2', title: 'Swap', path: `${TERMINAL_BASE}/swap`, kind: 'page' },
   markets: { id: 'markets', code: 'B3', title: 'Markets', path: `${TERMINAL_BASE}/markets`, kind: 'page' },
   perps: { id: 'perps', code: 'PX', title: 'Perps', path: `${TERMINAL_BASE}/perps`, kind: 'page' },
+  'create-perp-market': {
+    id: 'create-perp-market',
+    code: 'PM',
+    title: 'Launch perp market',
+    path: `${TERMINAL_BASE}/perps/launch`,
+    kind: 'page',
+  },
   'create-position': {
     id: 'create-position',
     code: 'B4',
@@ -201,6 +210,8 @@ export const terminalTradeNav: TerminalNavItem[] = [
 export const terminalToolsNav: TerminalNavItem[] = [
   // Direct-to-v3 fair launch (HookOSV3Launcher) — the flagship tool.
   { id: 'launchpad', label: 'LaunchPad', icon: 'launchpad', path: '/launch' },
+  // Self-service perp market launch (PerpMarketFactory) — list an isolated perpetual.
+  { id: 'create-perp-market', label: 'Launch perp', icon: 'perp-market', path: '/perps/launch' },
   // Launch a fixed-supply ERC-20 (HookSwapTokenFactory), then hand off to pool creation.
   { id: 'create-token', label: 'Create token', icon: 'token', path: '/token/new' },
   // Lock LP/tokens + v3 positions (HookSwap locker contracts).

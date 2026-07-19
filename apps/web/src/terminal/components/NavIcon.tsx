@@ -52,6 +52,15 @@ export function NavIcon({ name, stroke, size = 18 }: NavIconProps): JSX.Element 
           <rect x={14.5} y={9} width={5} height={8} rx={1} />
         </svg>
       )
+    case 'perp-market':
+      // Launch a perp market — candlestick with a "+" (list a new perpetual).
+      return (
+        <svg {...common} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 4v3M6 14v6" />
+          <rect x={3.5} y={7} width={5} height={7} rx={1} />
+          <path d="M16 11v8M12 15h8" />
+        </svg>
+      )
     case 'pools':
       return (
         <svg {...common} strokeLinecap="round" strokeLinejoin="round">
