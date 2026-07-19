@@ -28,6 +28,7 @@ import { useAccount } from '~/hooks/useAccount'
 import { useSelectChain } from '~/hooks/useSelectChain'
 import { TerminalCommandPalette } from '~/terminal/components/TerminalCommandPalette'
 import { TerminalShell } from '~/terminal/components/TerminalShell'
+import { TerminalTopStrip } from '~/terminal/components/TerminalTopStrip'
 import { TerminalNavId } from '~/terminal/config/screens'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { LimitScreen } from '~/terminal/screens/LimitScreen'
@@ -58,6 +59,9 @@ function activeScreenIdFromPath(pathname: string): TerminalNavId | undefined {
   }
   if (pathname === '/markets' || pathname.startsWith('/markets/')) {
     return 'markets'
+  }
+  if (pathname === '/perps' || pathname.startsWith('/perps/')) {
+    return 'perps'
   }
   if (pathname === '/pools' || pathname === '/pools/new') {
     return 'create-position'
@@ -120,6 +124,9 @@ function activeScreenIdFromPath(pathname: string): TerminalNavId | undefined {
   }
   if (rest.startsWith('/markets')) {
     return 'markets'
+  }
+  if (rest.startsWith('/perps')) {
+    return 'perps'
   }
   if (rest.startsWith('/pools')) {
     return 'create-position'
@@ -423,6 +430,7 @@ export function TerminalChrome({
             />
           ) : undefined,
         }}
+        subBar={<TerminalTopStrip />}
       >
         {children}
       </TerminalShell>
@@ -457,6 +465,7 @@ export default function TerminalApp(): JSX.Element {
             `/terminal/*` bookmarks/links there instead of rendering a second copy. */}
         <Route path="markets" element={<Navigate to="/markets" replace />} />
         <Route path="markets/:poolId" element={<MarketDetailRedirect />} />
+        <Route path="perps" element={<Navigate to="/perps" replace />} />
         <Route path="pools/new" element={<Navigate to="/pools/new" replace />} />
         <Route path="pools" element={<Navigate to="/pools" replace />} />
         <Route path="positions" element={<Navigate to="/positions" replace />} />

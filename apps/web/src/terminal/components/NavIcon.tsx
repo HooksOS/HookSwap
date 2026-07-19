@@ -43,6 +43,15 @@ export function NavIcon({ name, stroke, size = 18 }: NavIconProps): JSX.Element 
           <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
         </svg>
       )
+    case 'perps':
+      // Perpetuals — candlesticks (a wick + body pair).
+      return (
+        <svg {...common} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M7 3v4M7 15v6M17 3v6M17 17v4" />
+          <rect x={4.5} y={7} width={5} height={8} rx={1} />
+          <rect x={14.5} y={9} width={5} height={8} rx={1} />
+        </svg>
+      )
     case 'pools':
       return (
         <svg {...common} strokeLinecap="round" strokeLinejoin="round">

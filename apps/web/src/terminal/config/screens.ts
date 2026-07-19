@@ -15,6 +15,7 @@ export type TerminalScreenId =
   | 'landing' // B1
   | 'swap' // B2
   | 'markets' // B3
+  | 'perps' // Perps — HookSwapPerps "Pro Desk" perpetuals terminal
   | 'create-position' // B4
   | 'locker' // Tools — lock LP/tokens + v3 positions
   | 'multisender' // Tools — batch-send a token / native to many addresses (Disperse)
@@ -39,6 +40,7 @@ export type TerminalNavIcon =
   | 'swap'
   | 'limit'
   | 'markets'
+  | 'perps'
   | 'pools'
   | 'positions'
   | 'locker'
@@ -100,6 +102,7 @@ export const terminalScreens: Record<TerminalScreenId, TerminalScreen> = {
   landing: { id: 'landing', code: 'B1', title: 'Landing', path: `${TERMINAL_BASE}`, kind: 'page' },
   swap: { id: 'swap', code: 'B2', title: 'Swap', path: `${TERMINAL_BASE}/swap`, kind: 'page' },
   markets: { id: 'markets', code: 'B3', title: 'Markets', path: `${TERMINAL_BASE}/markets`, kind: 'page' },
+  perps: { id: 'perps', code: 'PX', title: 'Perps', path: `${TERMINAL_BASE}/perps`, kind: 'page' },
   'create-position': {
     id: 'create-position',
     code: 'B4',
@@ -183,6 +186,7 @@ export interface TerminalNavItem {
 export const terminalTradeNav: TerminalNavItem[] = [
   { id: 'swap', label: 'Swap', icon: 'swap', path: '/swap' },
   { id: 'markets', label: 'Markets', icon: 'markets', path: '/markets' },
+  { id: 'perps', label: 'Perps', icon: 'perps', path: '/perps' },
   { id: 'create-position', label: 'Pools', icon: 'pools', path: '/pools/new' },
   { id: 'positions', label: 'Positions', icon: 'positions', path: '/positions' },
   { id: 'analytics', label: 'Analytics', icon: 'analytics', path: '/analytics' },

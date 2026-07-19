@@ -26,6 +26,7 @@ import { isBrowserRouterEnabled } from '~/utils/env'
 // (each mounts its own TerminalChrome, mirroring TerminalSwapPage; see the `/terminal/*`
 // namespace below, kept only as a compatibility redirect for old bookmarked links).
 const TerminalMarketsPage = lazy(() => import('~/terminal/TerminalMarketsPage'))
+const TerminalPerpsPage = lazy(() => import('~/terminal/TerminalPerpsPage'))
 const TerminalMarketDetailPage = lazy(() => import('~/terminal/TerminalMarketDetailPage'))
 const TerminalPoolsPage = lazy(() => import('~/terminal/TerminalPoolsPage'))
 const TerminalPositionsPage = lazy(() => import('~/terminal/TerminalPositionsPage'))
@@ -340,6 +341,16 @@ export const routes: RouteDefinition[] = [
     getElement: () => (
       <Suspense fallback={null}>
         <TerminalMarketsPage />
+      </Suspense>
+    ),
+  }),
+  createRouteDefinition({
+    path: '/perps',
+    getTitle: () => 'HookSwap Perps',
+    getDescription: () => StaticTitlesAndDescriptions.SwapDescription,
+    getElement: () => (
+      <Suspense fallback={null}>
+        <TerminalPerpsPage />
       </Suspense>
     ),
   }),
