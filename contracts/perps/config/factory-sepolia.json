@@ -1,0 +1,51 @@
+{
+  "_note": "HookSwapPerps SELF-SERVICE FACTORY stack — LIVE + on-chain-tested on Sepolia (11155111) 2026-07-19. EIP-1167 minimal-proxy clones of an initializable PerpMarket. Deployed from isolated key 0x46B7fC4978D74c6Eda6b4573E5bE2C9675846adc. Design: contracts/perps/SELF_SERVICE_SPEC.md. Deps: openzeppelin-contracts-upgradeable@v5.0.2 (matches openzeppelin-contracts 5.0.2). NOT production-wired (throwaway platformAdmin/matcher/treasury = deployer; Sepolia only; full audit required before mainnet).",
+  "chainId": 11155111,
+  "network": "sepolia",
+  "deployer": "0x46B7fC4978D74c6Eda6b4573E5bE2C9675846adc",
+  "weth9": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
+
+  "contracts": {
+    "perpMarketImplementation": "0xc42F92908998631a60338E91d0397AfAe2Af5202",
+    "feeRouter": "0x493A120cB92d7834dA98A8F1aE1ECF762a9d1A2f",
+    "marketRegistry": "0xEDE278469694e951676973B7b9e193a98463DAC2",
+    "perpMarketFactory": "0x5F3803B0EFdA11b19193Fa93b14435639a05E9ed"
+  },
+
+  "feeSplit": {
+    "_note": "FeeRouter split of every market's per-side trading fee. Platform floor protects HookSwap revenue; creator share incentivizes launches; insurance keeps each market solvent.",
+    "platformShareBps": 5000,
+    "platformFloorBps": 4000,
+    "creatorShareBps": 4000,
+    "insuranceShareBps": 1000,
+    "marketFeeBounds": { "minBps": 2, "maxBps": 15 },
+    "platformMaxLeverage": "20x (stored/emitted; PerpMarket core still enforces its 100x constant — per-market on-chain cap is a v2 ParamGuard item)"
+  },
+
+  "testMarkets": {
+    "_note": "Two isolated markets created via factory.createMarket in the on-chain proof. marketA != marketB (distinct clones).",
+    "marketA": "0xF5AaB45b6C6f83324be68B73159fc41c90Fb002A",
+    "marketB": "0x2130363998EC43623AE644a5e7F988F72285EDe3"
+  },
+
+  "onChainProof": {
+    "_note": "18 txs, all status 0x1. Assertions verified by reading live chain state.",
+    "isolation": "marketB.balances(feeRouter)=(0,0), marketB.nextPairId=1 (untouched) while marketA traded (nextPairId=2)",
+    "feeAccrued": "2e13 (perSideFee 1e13 x2) to FeeRouter in marketA; collect() returned 2e13",
+    "platformShare": "1e13 (50%, >=40% floor) claimable to treasury",
+    "creatorShare": "8e12 (40%) -> WETH.balanceOf(creatorA) after claim",
+    "creatorBIsolation": "claimable(creatorB, WETH) = 0 (earns nothing from marketA volume)",
+    "insuranceShare": "2e12 (10%) claimable to insuranceHub",
+    "nonBypassable": "marketA.feeReceiver=FeeRouter, marketA.owner=platformAdmin (creator has no control)",
+    "keyTxs": {
+      "perpMarketImplDeploy": "0xe7902a9b9a2c3092c977fdd88aaf8da2e577d55a037ab28b3203e8b60bb643e2",
+      "factoryDeploy": "0x84bc259977c4a5eed5ad017f8d7392691833b6234a76a5298e3087a9537d3c15",
+      "createMarketA": "0xe707d7a35d081438b86a797759c4011d7634bcc6800911217ed632b066dbb752",
+      "createMarketB": "0xbfd6a5ce68c355aee4d79c1030257b7dc3786f9d2e55b637590b4c660b814bdc",
+      "settleBatchA": "0x78d5a9cc7823879a0aab3c6a018f2c0be27326a390248e9b6745ba6eb1e38f5e",
+      "feeRouterCollect": "0x6e5d4354aca0c960d1ffa72499834506a2a63f218e1f9cc4d74a345d5119b152",
+      "claimTreasury": "0xee3436975d12ffe62b12f7b2a5846ab656b8d0e95ffefeedd9e62e53df439388",
+      "claimCreatorA": "0xcd9d20d5f08164a80b918079cc849f0706594191ce3070a69906a016b6f62003"
+    }
+  }
+}
