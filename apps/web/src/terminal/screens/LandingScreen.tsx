@@ -95,6 +95,17 @@ const SANS = terminalFonts.sans
 
 const CONTENT_WIDTH = 1360
 
+/** "LIVE ON N CHAINS" badges: 2-letter code + brand-token colour per chain (Desk proposal). */
+const CHAIN_BADGE: Record<number, { code: string; color: string }> = {
+  4663: { code: 'RH', color: terminalColors.brandGreen }, // Robinhood
+  999: { code: 'HE', color: terminalColors.ink }, // HyperEVM
+  57073: { code: 'IK', color: terminalColors.accentIndigo }, // Ink
+  4326: { code: 'ME', color: terminalColors.accentBlue }, // MegaETH
+  196: { code: 'XL', color: terminalColors.warn }, // XLayer
+  4217: { code: 'TE', color: terminalColors.ink3 }, // Tempo
+  11155111: { code: 'SE', color: terminalColors.faint }, // Sepolia
+}
+
 /**
  * ONE uniform column track shared by EVERY feature card grid (TRADE / EARN / TRACK
  * groups + the "Why HookSwap" band). `auto-fill` (not `auto-fit`) keeps the column
@@ -951,19 +962,36 @@ function PriceChart({
     return (
       <div
         style={{
+          position: 'relative',
           height: 250,
           background: terminalColors.panel,
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          textAlign: 'center',
-          padding: '0 24px',
-          fontFamily: MONO,
-          fontSize: 12,
-          color: terminalColors.faint,
+          gap: 6,
+          overflow: 'hidden',
         }}
       >
-        No price history yet — builds as trades occur.
+        {/* Faint baseline grid so the empty chart reads as a chart well, not a blank void. */}
+        <svg
+          width="100%"
+          height={250}
+          viewBox="0 0 640 240"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+          style={{ position: 'absolute', inset: 0, display: 'block' }}
+        >
+          <line x1="0" y1="60" x2="640" y2="60" stroke={terminalColors.line2} strokeWidth="1" />
+          <line x1="0" y1="120" x2="640" y2="120" stroke={terminalColors.line2} strokeWidth="1" />
+          <line x1="0" y1="180" x2="640" y2="180" stroke={terminalColors.line2} strokeWidth="1" />
+        </svg>
+        <div style={{ position: 'relative', fontFamily: MONO, fontSize: 12.5, fontWeight: 600, color: terminalColors.ink3 }}>
+          No price history yet
+        </div>
+        <div style={{ position: 'relative', fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
+          Builds as trades occur.
+        </div>
       </div>
     )
   }
@@ -1434,7 +1462,7 @@ function LandingScreenBody(): JSX.Element {
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={terminalColors.btnInk} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M7 4v14M7 18l-3-3M7 18l3-3M17 20V6M17 6l-3 3M17 6l3 3" />
                 </svg>
-                Open terminal
+                Open the desk
               </button>
               <button
                 type="button"
@@ -1457,14 +1485,35 @@ function LandingScreenBody(): JSX.Element {
                   LIVE ON {chains.length} {chains.length === 1 ? 'CHAIN' : 'CHAINS'}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
-                  {chains.slice(0, 8).map((c, i) => (
-                    <span
-                      key={c}
-                      style={{ marginLeft: i === 0 ? 0 : -6, display: 'flex', padding: 2, borderRadius: '50%', background: terminalColors.bg }}
-                    >
-                      <ChainLogo chainId={c} size={20} />
-                    </span>
-                  ))}
+                  {chains.slice(0, 8).map((c, i) => {
+                    const b = CHAIN_BADGE[c as number] ?? {
+                      code: getChainLabel(c).slice(0, 2).toUpperCase(),
+                      color: terminalColors.ink3,
+                    }
+                    return (
+                      <span
+                        key={c}
+                        title={getChainLabel(c)}
+                        style={{
+                          marginLeft: i === 0 ? 0 : -6,
+                          width: 26,
+                          height: 26,
+                          borderRadius: '50%',
+                          border: `1.5px solid ${terminalColors.bg}`,
+                          background: b.color,
+                          display: 'grid',
+                          placeItems: 'center',
+                          fontFamily: MONO,
+                          fontSize: 9.5,
+                          fontWeight: 600,
+                          color: '#fff',
+                          letterSpacing: '0.02em',
+                        }}
+                      >
+                        {b.code}
+                      </span>
+                    )
+                  })}
                 </div>
               </div>
             ) : null}
@@ -1477,7 +1526,7 @@ function LandingScreenBody(): JSX.Element {
             corners
             meta={featuredRow ? [getChainLabel(account.chainId ?? displayChainId), '1D'] : ['1D']}
             flush
-            style={{ width: 468, flexShrink: 0, maxWidth: '100%', overflow: 'hidden' }}
+            style={{ width: 468, flexShrink: 0, maxWidth: '100%', overflow: 'hidden', boxShadow: terminalShadows.screenFrame }}
           >
             {/* Price + real close-series chart (native shape, USD tag only on a real USD spot) */}
             <div style={{ padding: 16 }}>
@@ -1537,7 +1586,7 @@ function LandingScreenBody(): JSX.Element {
         <div style={{ padding: `2px ${padX}px 10px` }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
             <StatCard
-              label="TVL"
+              label="Total TVL"
               value={tvlStats.totalTVL !== undefined && tvlStats.totalTVL > 0 ? fiatStats(tvlStats.totalTVL) : undefined}
               delta={
                 tvlStats.totalChangePercent !== undefined && !Number.isNaN(tvlStats.totalChangePercent) && tvlStats.totalChangePercent !== 0
@@ -1559,7 +1608,7 @@ function LandingScreenBody(): JSX.Element {
               loading={volumeStats.isLoading}
             />
             <StatCard
-              label="Pools"
+              label="Live pools"
               value={topPools ? topPools.length.toLocaleString('en-US') : undefined}
               loading={poolsLoading && !topPools}
             />

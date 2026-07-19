@@ -262,7 +262,7 @@
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--tm-ink-2);
+  color: var(--tm-ink);
 }
 .tm-panel__meta {
   margin-left: auto;
@@ -270,7 +270,7 @@
   gap: 14px;
   font-family: var(--tm-font-mono);
   font-size: 11px;
-  color: var(--tm-ink-3);
+  color: var(--tm-ink-2);
 }
 
 /* ---- ticker tape ---- */
@@ -328,11 +328,12 @@ button.tm-tape__item--btn:hover {
   background: var(--tm-panel);
 }
 .tm-tape__sym {
-  color: var(--tm-ink-3);
+  color: var(--tm-ink-2);
   font-weight: 600;
 }
 .tm-tape__price {
   color: var(--tm-ink);
+  font-weight: 500;
 }
 .tm-tape__up {
   color: var(--tm-green-up);
