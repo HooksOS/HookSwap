@@ -1,0 +1,188 @@
+// viem clients + on-chain reads (MarketRegistry enumeration, nonces, balances,
+// positions) and the matcher wallet used for settleBatch.
+
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  type Account,
+  type PublicClient,
+  type WalletClient,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { ENV, normalizedMatcherKey } from "./env.js";
+import { MARKET_REGISTRY_ABI, PERP_MARKET_ABI } from "./abis.js";
+import type { MarketMeta, Order } from "./types.js";
+
+export const publicClient: PublicClient = createPublicClient({
+  transport: http(ENV.rpcUrl),
+});
+
+const key = normalizedMatcherKey();
+export const matcherAccount: Account | null = key ? privateKeyToAccount(key) : null;
+
+export const walletClient: WalletClient | null = matcherAccount
+  ? createWalletClient({ account: matcherAccount, transport: http(ENV.rpcUrl) })
+  : null;
+
+/** Enumerate all markets from the registry (paginated read). */
+export async function fetchMarkets(): Promise<MarketMeta[]> {
+  const count = (await publicClient.readContract({
+    address: ENV.marketRegistry,
+    abi: MARKET_REGISTRY_ABI,
+    functionName: "marketCount",
+  })) as bigint;
+
+  if (count === 0n) return [];
+
+  const rows = (await publicClient.readContract({
+    address: ENV.marketRegistry,
+    abi: MARKET_REGISTRY_ABI,
+    functionName: "getMarkets",
+    args: [0n, count],
+  })) as ReadonlyArray<{
+    market: `0x${string}`;
+    creator: `0x${string}`;
+    collateral: `0x${string}`;
+    marketId: `0x${string}`;
+    tier: number;
+    status: number;
+    createdAt: bigint;
+  }>;
+
+  const out: MarketMeta[] = [];
+  for (const r of rows) {
+    let marketMaxLeverage = 0n;
+    let maxLeverageAbs = 100n * 10_000n; // MAX_LEVERAGE fallback (100x * 1e4)
+    try {
+      [marketMaxLeverage, maxLeverageAbs] = (await Promise.all([
+        publicClient.readContract({
+          address: r.market,
+          abi: PERP_MARKET_ABI,
+          functionName: "marketMaxLeverage",
+        }),
+        publicClient.readContract({
+          address: r.market,
+          abi: PERP_MARKET_ABI,
+          functionName: "MAX_LEVERAGE",
+        }),
+      ])) as [bigint, bigint];
+    } catch {
+      /* keep fallbacks if a clone predates these getters */
+    }
+    out.push({
+      market: r.market,
+      marketId: r.marketId,
+      collateral: r.collateral,
+      tier: r.tier,
+      status: r.status,
+      marketMaxLeverage,
+      maxLeverageAbs,
+    });
+  }
+  return out;
+}
+
+/** On-chain sequential nonce for a trader on a market (settle reverts on mismatch). */
+export async function onchainNonce(
+  market: `0x${string}`,
+  trader: `0x${string}`,
+): Promise<bigint> {
+  return (await publicClient.readContract({
+    address: market,
+    abi: PERP_MARKET_ABI,
+    functionName: "nonces",
+    args: [trader],
+  })) as bigint;
+}
+
+export async function userBalance(
+  market: `0x${string}`,
+  trader: `0x${string}`,
+): Promise<{ available: bigint; locked: bigint }> {
+  const [available, locked] = (await publicClient.readContract({
+    address: market,
+    abi: PERP_MARKET_ABI,
+    functionName: "getUserBalance",
+    args: [trader],
+  })) as [bigint, bigint];
+  return { available, locked };
+}
+
+export async function isAuthorizedMatcher(
+  market: `0x${string}`,
+  who: `0x${string}`,
+): Promise<boolean> {
+  return (await publicClient.readContract({
+    address: market,
+    abi: PERP_MARKET_ABI,
+    functionName: "authorizedMatchers",
+    args: [who],
+  })) as boolean;
+}
+
+export interface OnchainPosition {
+  pairId: string;
+  longTrader: `0x${string}`;
+  shortTrader: `0x${string}`;
+  token: `0x${string}`;
+  size: string;
+  entryPrice: string;
+  longCollateral: string;
+  shortCollateral: string;
+  longLeverage: string;
+  shortLeverage: string;
+  openTime: string;
+  status: number; // 0 ACTIVE, 1 CLOSED, 2 LIQUIDATED
+}
+
+/** Read a trader's on-chain PairedPositions from a market. */
+export async function fetchPositions(
+  market: `0x${string}`,
+  trader: `0x${string}`,
+): Promise<OnchainPosition[]> {
+  const pairIds = (await publicClient.readContract({
+    address: market,
+    abi: PERP_MARKET_ABI,
+    functionName: "getUserPairIds",
+    args: [trader],
+  })) as bigint[];
+
+  const positions = await Promise.all(
+    pairIds.map((id) =>
+      publicClient.readContract({
+        address: market,
+        abi: PERP_MARKET_ABI,
+        functionName: "getPairedPosition",
+        args: [id],
+      }),
+    ),
+  );
+
+  return positions.map((p: any) => ({
+    pairId: p.pairId.toString(),
+    longTrader: p.longTrader,
+    shortTrader: p.shortTrader,
+    token: p.token,
+    size: p.size.toString(),
+    entryPrice: p.entryPrice.toString(),
+    longCollateral: p.longCollateral.toString(),
+    shortCollateral: p.shortCollateral.toString(),
+    longLeverage: p.longLeverage.toString(),
+    shortLeverage: p.shortLeverage.toString(),
+    openTime: p.openTime.toString(),
+    status: Number(p.status),
+  }));
+}
+
+export async function orderHashOnchain(
+  market: `0x${string}`,
+  order: Order,
+): Promise<`0x${string}`> {
+  return (await publicClient.readContract({
+    address: market,
+    abi: PERP_MARKET_ABI,
+    functionName: "getOrderHash",
+    args: [order as any],
+  })) as `0x${string}`;
+}

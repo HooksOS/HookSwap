@@ -12,5 +12,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["oracle/**/*.ts"]
+  "include": ["oracle/**/*.ts", "src/**/*.ts"]
 }
