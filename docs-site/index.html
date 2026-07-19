@@ -6,7 +6,7 @@
 <title>HookSwap Docs</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-<meta name="theme-color" content="#0B0F14" />
+<meta name="theme-color" content="#F2F4EC" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="HookSwap" />
 <meta property="og:title" content="HookSwap Docs" />
@@ -27,10 +27,11 @@
 
   /* ------------------------------------------------------ signal palette */
   :root{
-    --ink:#E7ECF2; --slate:#9AA4B2; --faint:#7C8698;
-    --mist:#0B0F14; --panel:#0E141B; --line:#232B36; --line2:#1C232D; --white:#12181F;
-    --green:#2FE07E; --green-deep:#2FE07E; --up:#2FE07E; --down:#EF4E4A;
-    --green-bg:#0B2418; --green-border:#12502F; --btn-ink:#0B0F14;
+    /* Daylight "Desk" light scheme — matches the app landing (apps/web terminal tokens). */
+    --ink:#12160F; --slate:#69705F; --faint:#98A08C;
+    --mist:#F2F4EC; --panel:#EEF1EA; --line:#DFE2D8; --line2:#E6E8DF; --white:#FFFFFF;
+    --green:#0C8A42; --green-deep:#0C8A42; --up:#0C8A42; --down:#C0291F;
+    --green-bg:#E9F7EF; --green-border:#BFE6CD; --btn-ink:#FFFFFF;
     --sans:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
     --display:'Space Grotesk',var(--sans);
     --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -79,12 +80,12 @@
   main img{max-width:100%}
 
   /* --------------------------------------------------------------- code */
-  main pre{position:relative;background:#0E141B;color:#E6E9EE;padding:15px 16px;border-radius:12px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.55}
+  main pre{position:relative;background:var(--panel);color:var(--ink);border:1px solid var(--line);padding:15px 16px;border-radius:12px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.55}
   main code{font-family:var(--mono);font-size:.88em;background:var(--panel);color:var(--ink);padding:2px 6px;border-radius:6px}
   main pre code{background:none;padding:0;color:inherit}
   main a code{color:var(--green-deep)}
-  main pre .copy-btn{position:absolute;top:9px;right:9px;background:#161B22;color:#B0B7C0;border:1px solid #2A313B;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--mono)}
-  main pre .copy-btn:hover{background:#222932;color:#fff}
+  main pre .copy-btn{position:absolute;top:9px;right:9px;background:var(--white);color:var(--slate);border:1px solid var(--line);border-radius:8px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--mono)}
+  main pre .copy-btn:hover{background:var(--mist);color:var(--ink)}
   main pre .copy-btn.ok{color:var(--green);border-color:var(--green-deep)}
 
   /* --------------------------------------------------------------- tables */
@@ -110,7 +111,7 @@
   .btn:hover{border-color:var(--green);text-decoration:none}
   .btn svg{width:15px;height:15px}
   .btn.primary{background:var(--green);color:var(--btn-ink);border-color:var(--green)}
-  .btn.primary:hover{background:#25c96e;border-color:#25c96e}
+  .btn.primary:hover{background:#0A7538;border-color:#0A7538}
 
   /* -------------------------------------------------------- contracts page */
   .cx-lead{color:var(--slate);font-size:15px;max-width:760px;margin:0 0 20px}
@@ -195,14 +196,14 @@ function setText(el, s){ el.textContent = s; }
 function heroHTML(){
   return ''+
   '<section class="hero">'+
-    '<svg class="hero-bg" viewBox="0 0 260 220" fill="none" stroke="#2FE07E" stroke-width="1.4" aria-hidden="true">'+
+    '<svg class="hero-bg" viewBox="0 0 260 220" fill="none" stroke="#0C8A42" stroke-width="1.4" aria-hidden="true">'+
       '<path d="M60 20 90 37 90 71 60 88 30 71 30 37Z"/>'+
       '<path d="M120 55 150 72 150 106 120 123 90 106 90 72Z"/>'+
       '<path d="M180 20 210 37 210 71 180 88 150 71 150 37Z"/>'+
       '<path d="M180 90 210 107 210 141 180 158 150 141 150 107Z"/>'+
     '</svg>'+
     '<div class="hero-top">'+
-      '<svg class="hero-logo" viewBox="0 0 48 48" fill="none"><path d="M24 3.5 L41.8 13.75 L41.8 34.25 L24 44.5 L6.2 34.25 L6.2 13.75 Z" stroke="#FFFFFF" stroke-width="2.4" stroke-linejoin="round"/><circle cx="24" cy="25" r="7.2" fill="none" stroke="#2FE07E" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="33 13" transform="rotate(118 24 25)"/></svg>'+
+      '<svg class="hero-logo" viewBox="0 0 48 48" fill="none"><path d="M24 3.5 L41.8 13.75 L41.8 34.25 L24 44.5 L6.2 34.25 L6.2 13.75 Z" stroke="#12160F" stroke-width="2.4" stroke-linejoin="round"/><circle cx="24" cy="25" r="7.2" fill="none" stroke="#0C8A42" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="33 13" transform="rotate(118 24 25)"/></svg>'+
       '<div><h1>Hook<span class="s">Swap</span> Documentation</h1>'+
       '<p class="tag">Self-hosted v2 + v3 DEX with an on-chain launchpad, token lockers, and referrals — deployed across 7 chains.</p></div>'+
     '</div>'+
