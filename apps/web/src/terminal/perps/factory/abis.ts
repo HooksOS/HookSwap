@@ -210,9 +210,9 @@ export interface PerpsFactoryDeployment {
  */
 export const PERPS_FACTORY_ADDRESSES: Partial<Record<UniverseChainId, PerpsFactoryDeployment>> = {
   [UniverseChainId.Sepolia]: {
-    // Factory v3 (bond escrow) + FeeRouter v2 (per-market insurance). See
-    // contracts/perps/config/factory-sepolia.json → productionHardening.
-    factory: '0xa6A4272e5b5162c944cbF09eEb8BAda13eC5161A',
+    // Factory v4 (guards WIRED into settle: oracle breaker + limit price + insurance
+    // coverage) — SECURITY_REVIEW H-1/H-2/M-1 fix. See factory-sepolia.json → guardWiring.
+    factory: '0xa1A8C5A2D5527abfD2E46F4FaCebC6BC00C1a79a',
     registry: '0xEDE278469694e951676973B7b9e193a98463DAC2',
     feeRouter: '0xfA91D73B30b719491109Ae1C3993620c813393A4',
     oracleGuard: '0x3d2ee857ae129688fa43e378dae85b60803bffd1',

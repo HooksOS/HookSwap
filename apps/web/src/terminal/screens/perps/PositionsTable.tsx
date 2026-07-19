@@ -25,9 +25,13 @@ const COLUMNS = ['Market', 'Side', 'Size', 'Entry', 'Mark', 'Liq.', 'uPnL', 'Mar
 export function PositionsTable({
   positions = [],
   connected,
+  loading = false,
+  onClose,
 }: {
   positions?: PerpPosition[]
   connected: boolean
+  loading?: boolean
+  onClose?: (position: PerpPosition) => void
 }): JSX.Element {
   const th = {
     fontFamily: MONO,
@@ -82,6 +86,7 @@ export function PositionsTable({
               <td style={cell('right')}>
                 <button
                   type="button"
+                  onClick={onClose ? () => onClose(p) : undefined}
                   style={{
                     fontFamily: MONO,
                     fontSize: 10,
@@ -90,7 +95,7 @@ export function PositionsTable({
                     borderRadius: 6,
                     padding: '3px 9px',
                     background: terminalColors.bg,
-                    cursor: 'pointer',
+                    cursor: onClose ? 'pointer' : 'default',
                   }}
                 >
                   Close
@@ -101,7 +106,7 @@ export function PositionsTable({
         ) : (
           <tr>
             <td colSpan={COLUMNS.length} style={{ padding: '26px 14px', textAlign: 'center', fontSize: 11, color: terminalColors.faint }}>
-              {connected ? 'No open positions' : 'Connect wallet to trade'}
+              {!connected ? 'Connect wallet to trade' : loading ? 'Loading positions…' : 'No open positions'}
             </td>
           </tr>
         )}

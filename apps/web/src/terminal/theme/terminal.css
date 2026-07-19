@@ -402,7 +402,7 @@ button.tm-tape__item--btn:hover {
   color: var(--tm-red-down);
 }
 .tm-tape__flat {
-  color: var(--tm-ink-2);
+  color: var(--tm-ink);
 }
 
 @media (prefers-reduced-motion: reduce) {

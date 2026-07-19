@@ -6,19 +6,29 @@
  *   [ Markets watchlist | chart + OHLC | OrderBook / Trades stack | Order Ticket ]
  * and a Positions panel spanning the full width beneath.
  *
- * DATA POLICY (no mock data — handoff hard rule):
- *   The HookSwapPerps matching-engine backend is NOT deployed yet. Every live
- *   surface — price, 24h change, mark/index, funding, OI, volume, candles, order
- *   book, trades, positions, and the order-ticket receipt — renders an HONEST
- *   empty / loading / '—' state ("No price history yet", "Order book unavailable",
- *   "No trades yet", "No open positions", "Connect wallet to trade"). Only the
- *   instrument *catalog* (pair label + max leverage + venue) is shown, which is
- *   static configuration, not fabricated market data. See ./perps/perpsCatalog.ts.
+ * DATA WIRING (no mock data — handoff hard rule):
+ *   Every live surface binds to the HookSwapPerps matching engine + chain:
+ *     • market directory  → useMarkets (engine GET /markets, on-chain registry fallback)
+ *     • order book        → useOrderbook (poll + WS)
+ *     • trades / mark      → useTrades (poll + WS; last price = mark proxy)
+ *     • positions         → usePositions (on-chain PairedPositions for the wallet)
+ *     • order ticket      → usePlaceOrder (EIP-712 sign → POST /orders)
+ *   When the engine is unreachable, or a wallet isn't connected / is on the wrong chain,
+ *   the panels render honest loading / empty / offline / connect / switch states — nothing
+ *   is fabricated. The engine base URL is the single `PERPS_ENGINE_URL` constant in
+ *   ./perps/engine/client.ts (env `PERPS_ENGINE_URL`).
+ *
+ * KNOWN FEED GAP (honest): the FIXED engine contract exposes no dedicated ticker endpoint,
+ * so 24h change / index / funding / open interest / 24h volume, per-row watchlist prices,
+ * and candles render '—' (never guessed). Mark price is derived from the last trade / book
+ * mid. Adding those requires a ticker/candles endpoint on the engine (noted to backend).
  */
-import { useState } from 'react'
+import { ReactNode, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { useSelectChain } from '~/hooks/useSelectChain'
+import type { Address } from '~/chains'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { MarketStatBar } from '~/terminal/screens/perps/MarketStatBar'
 import { OrderBook } from '~/terminal/screens/perps/OrderBook'
@@ -27,24 +37,78 @@ import { PerpsChart } from '~/terminal/screens/perps/PerpsChart'
 import { PerpsWatchlist } from '~/terminal/screens/perps/PerpsWatchlist'
 import { PositionsTable } from '~/terminal/screens/perps/PositionsTable'
 import { TradesFeed } from '~/terminal/screens/perps/TradesFeed'
-import { PERP_INSTRUMENTS, PerpInstrument } from '~/terminal/screens/perps/perpsCatalog'
+import { PERPS_FACTORY_HOME_CHAIN } from '~/terminal/perps/factory/abis'
+import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
+import { useMarkets } from '~/terminal/perps/engine/useMarkets'
+import { useOrderbook } from '~/terminal/perps/engine/useOrderbook'
+import { usePositions } from '~/terminal/perps/engine/usePositions'
+import { useTrades } from '~/terminal/perps/engine/useTrades'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+
+/** HookSwapPerps is deployed + validated on Sepolia (the domain chainId is 11155111). */
+const PERPS_CHAIN = PERPS_FACTORY_HOME_CHAIN
 
 export function PerpsScreen(): JSX.Element {
   const account = useAccount()
   const accountDrawer = useAccountDrawer()
+  const selectChain = useSelectChain()
   const navigate = useNavigate()
-  const connected = Boolean(account.address)
 
-  const [instrument, setInstrument] = useState<PerpInstrument>(PERP_INSTRUMENTS[0])
+  const connected = Boolean(account.address)
+  const trader = account.address as Address | undefined
+  const wrongChain = connected && account.chainId !== PERPS_CHAIN
+
+  const marketsQuery = useMarkets({ chainId: PERPS_CHAIN })
+  const markets = marketsQuery.markets
+
+  // Selected market — default to the first, kept stable while the address still exists.
+  const [selectedAddr, setSelectedAddr] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    if (!markets || markets.length === 0) {
+      return
+    }
+    if (!selectedAddr || !markets.some((m) => m.address.toLowerCase() === selectedAddr.toLowerCase())) {
+      setSelectedAddr(markets[0].address)
+    }
+  }, [markets, selectedAddr])
+
+  const selected: PerpMarketView | undefined = useMemo(
+    () => markets?.find((m) => m.address.toLowerCase() === selectedAddr?.toLowerCase()),
+    [markets, selectedAddr],
+  )
+
+  const orderbook = useOrderbook({ market: selected?.address })
+  const trades = useTrades({ market: selected?.address })
+  const positions = usePositions({
+    market: selected?.address,
+    collateral: selected?.collateral,
+    trader,
+    chainId: PERPS_CHAIN,
+  })
+
+  const markPrice = trades.lastPrice ?? orderbook.mid
+  const spread = orderbook.asks.length && orderbook.bids.length ? orderbook.asks[0].price - orderbook.bids[0].price : undefined
+
+  const noMarkets = markets !== undefined && markets.length === 0
+  const marketsLoading = markets === undefined && marketsQuery.isLoading
 
   return (
     <div>
       {/* Full-bleed market stat bar */}
-      <MarketStatBar instrument={instrument} />
+      <MarketStatBar market={selected} markPrice={markPrice} maxLeverageX={selected?.catalogMaxLeverage} />
 
       <div style={{ padding: '14px var(--tm-gutter) 40px' }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 10 }}>
+          {/* Engine status — honest offline/fallback indicator */}
+          <div style={{ fontFamily: terminalFonts.mono, fontSize: 10.5, color: terminalColors.ink3 }}>
+            {marketsQuery.engineUnreachable ? (
+              <span style={{ color: terminalColors.warn }}>
+                ● Matching engine offline{marketsQuery.source === 'chain' ? ' — showing on-chain markets' : ''}
+              </span>
+            ) : marketsQuery.source === 'engine' ? (
+              <span style={{ color: terminalColors.greenDeep }}>● Engine connected</span>
+            ) : null}
+          </div>
           <button
             type="button"
             onClick={() => navigate('/perps/launch')}
@@ -65,58 +129,128 @@ export function PerpsScreen(): JSX.Element {
             Launch a market →
           </button>
         </div>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '210px minmax(0, 1fr) 240px 300px',
-            gap: 12,
-            alignItems: 'start',
-          }}
-        >
-          {/* 1 — Markets watchlist */}
-          <InstrumentPanel title="Markets" flush>
-            <PerpsWatchlist selected={instrument.symbol} onSelect={setInstrument} />
-          </InstrumentPanel>
 
-          {/* 2 — Chart + OHLC */}
-          <InstrumentPanel
-            title={`${instrument.symbol} · 1H`}
-            live
-            corners
-            meta={['TWAP · ' + instrument.venue]}
-            bodyStyle={{ padding: 10 }}
+        {noMarkets ? (
+          <NoMarkets onLaunch={() => navigate('/perps/launch')} />
+        ) : (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '210px minmax(0, 1fr) 240px 300px',
+              gap: 12,
+              alignItems: 'start',
+            }}
           >
-            <PerpsChart height={360} />
-          </InstrumentPanel>
+            {/* 1 — Markets watchlist */}
+            <InstrumentPanel title="Markets" flush>
+              {marketsLoading ? (
+                <PanelNote>Loading markets…</PanelNote>
+              ) : marketsQuery.error ? (
+                <PanelNote>Markets unavailable</PanelNote>
+              ) : markets ? (
+                <PerpsWatchlist markets={markets} selected={selected?.address} onSelect={(m) => setSelectedAddr(m.address)} />
+              ) : (
+                <PanelNote>Loading markets…</PanelNote>
+              )}
+            </InstrumentPanel>
 
-          {/* 3 — Order Book + Trades stacked */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <InstrumentPanel title="Order Book" flush>
-              <OrderBook />
+            {/* 2 — Chart + OHLC */}
+            <InstrumentPanel
+              title={`${selected?.label ?? 'Perp'} · 1H`}
+              live={orderbook.status === 'live' || trades.status === 'live'}
+              corners
+              meta={[selected ? `Mark · ${selected.source === 'engine' ? 'engine' : 'chain'}` : '—']}
+              bodyStyle={{ padding: 10 }}
+            >
+              <PerpsChart height={360} />
             </InstrumentPanel>
-            <InstrumentPanel title="Trades" flush>
-              <TradesFeed />
+
+            {/* 3 — Order Book + Trades stacked */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <InstrumentPanel title="Order Book" flush>
+                <OrderBook bids={orderbook.bids} asks={orderbook.asks} status={orderbook.status} spread={spread} />
+              </InstrumentPanel>
+              <InstrumentPanel title="Trades" flush>
+                <TradesFeed trades={trades.trades} status={trades.status} />
+              </InstrumentPanel>
+            </div>
+
+            {/* 4 — Order Ticket */}
+            <InstrumentPanel title="Order Ticket" meta={['Isolated']} flush>
+              <OrderTicket
+                market={selected}
+                trader={trader}
+                chainId={PERPS_CHAIN}
+                connected={connected}
+                wrongChain={wrongChain}
+                markPrice={markPrice}
+                onConnect={() => accountDrawer.open()}
+                onSwitchChain={() => void selectChain(PERPS_CHAIN)}
+              />
             </InstrumentPanel>
+
+            {/* Bottom — Positions (spans all columns) */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <InstrumentPanel title="Positions" flush>
+                <PositionsTable positions={positions.positions} connected={connected} loading={positions.isLoading} />
+              </InstrumentPanel>
+            </div>
           </div>
-
-          {/* 4 — Order Ticket */}
-          <InstrumentPanel title="Order Ticket" meta={['Isolated']} flush>
-            <OrderTicket instrument={instrument} connected={connected} onConnect={() => accountDrawer.open()} />
-          </InstrumentPanel>
-
-          {/* Bottom — Positions (spans all columns) */}
-          <div style={{ gridColumn: '1 / -1' }}>
-            <InstrumentPanel title="Positions" flush>
-              <PositionsTable connected={connected} />
-            </InstrumentPanel>
-          </div>
-        </div>
+        )}
 
         <div style={{ fontFamily: terminalFonts.sans, fontSize: 11, color: terminalColors.faint, marginTop: 14, lineHeight: 1.5 }}>
-          HookSwapPerps · P2P settlement · up to 100× · funding 1h. Live orderbook, mark price, and positions bind to the
-          matching-engine feed once deployed — no mock data.
+          HookSwapPerps · P2P settlement · isolated margin · funding 1h. Order book, mark price, and positions bind to the
+          matching-engine feed + on-chain state — no mock data.
         </div>
       </div>
+    </div>
+  )
+}
+
+function PanelNote({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <div style={{ padding: 16, textAlign: 'center', fontFamily: terminalFonts.mono, fontSize: 10.5, color: terminalColors.faint }}>
+      {children}
+    </div>
+  )
+}
+
+function NoMarkets({ onLaunch }: { onLaunch: () => void }): JSX.Element {
+  return (
+    <div
+      style={{
+        border: `1px solid ${terminalColors.line}`,
+        borderRadius: 12,
+        background: terminalColors.bg,
+        padding: '48px 24px',
+        textAlign: 'center',
+      }}
+    >
+      <div style={{ fontFamily: terminalFonts.display, fontSize: 20, fontWeight: 600, color: terminalColors.ink, marginBottom: 8 }}>
+        No markets yet
+      </div>
+      <div style={{ fontFamily: terminalFonts.sans, fontSize: 13, color: terminalColors.ink3, marginBottom: 18 }}>
+        The HookSwapPerps registry has no live markets. Launch the first one to start trading.
+      </div>
+      <button
+        type="button"
+        onClick={onLaunch}
+        style={{
+          fontFamily: terminalFonts.mono,
+          fontSize: 12,
+          fontWeight: 600,
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+          color: terminalColors.btnInk,
+          background: terminalColors.brandGreen,
+          border: 'none',
+          borderRadius: 9,
+          padding: '10px 20px',
+          cursor: 'pointer',
+        }}
+      >
+        Launch a market →
+      </button>
     </div>
   )
 }

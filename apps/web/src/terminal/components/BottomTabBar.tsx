@@ -38,7 +38,7 @@ function pick(items: TerminalNavItem[], id: TerminalNavId): TerminalNavItem | un
 const PRIMARY_TABS: TerminalNavItem[] = [
   pick(terminalTradeNav, 'swap'),
   pick(terminalTradeNav, 'markets'),
-  pick(terminalTradeNav, 'create-position'),
+  pick(terminalTradeNav, 'perps'),
   pick(terminalAccountNav, 'portfolio'),
 ].filter((item): item is TerminalNavItem => item !== undefined)
 

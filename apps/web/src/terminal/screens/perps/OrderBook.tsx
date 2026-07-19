@@ -52,12 +52,38 @@ function LevelRow({ level, side, total, max }: { level: BookLevel; side: 'bid' |
   )
 }
 
+/** Coarse feed state driving the honest empty message. */
+export type OrderBookStatus = 'idle' | 'loading' | 'live' | 'polling' | 'unavailable'
+
+function emptyMessage(status: OrderBookStatus): string {
+  switch (status) {
+    case 'idle':
+      return 'Select a market'
+    case 'loading':
+      return 'Loading order book…'
+    case 'unavailable':
+      return 'Order book unavailable'
+    default:
+      return 'No resting orders'
+  }
+}
+
 /**
  * Order book — bids (green) / asks (red) with depth bars and a mid spread row.
- * With no feed (current honest state) renders the column header + an
- * "Order book unavailable" note. Never invents levels.
+ * Binds to the engine feed via useOrderbook. With no levels it renders the column
+ * header + an honest status note (loading / unavailable / empty). Never invents levels.
  */
-export function OrderBook({ bids = [], asks = [] }: { bids?: BookLevel[]; asks?: BookLevel[] }): JSX.Element {
+export function OrderBook({
+  bids = [],
+  asks = [],
+  status = 'idle',
+  spread,
+}: {
+  bids?: BookLevel[]
+  asks?: BookLevel[]
+  status?: OrderBookStatus
+  spread?: number
+}): JSX.Element {
   const empty = !bids.length && !asks.length
   const max = Math.max(1, ...bids.map((b) => b.size), ...asks.map((a) => a.size))
 
@@ -66,7 +92,7 @@ export function OrderBook({ bids = [], asks = [] }: { bids?: BookLevel[]; asks?:
       <HeadRow />
       {empty ? (
         <div style={{ padding: 14, textAlign: 'center', fontSize: 10.5, color: terminalColors.faint }}>
-          Order book unavailable
+          {emptyMessage(status)}
         </div>
       ) : (
         <>
@@ -91,7 +117,9 @@ export function OrderBook({ bids = [], asks = [] }: { bids?: BookLevel[]; asks?:
               fontWeight: 600,
             }}
           >
-            <span style={{ color: terminalColors.ink3, fontSize: 10 }}>SPREAD {EMPTY}</span>
+            <span style={{ color: terminalColors.ink3, fontSize: 10 }}>
+              SPREAD {spread !== undefined ? spread.toLocaleString('en-US', { maximumFractionDigits: 2 }) : EMPTY}
+            </span>
           </div>
           {(() => {
             let running = 0

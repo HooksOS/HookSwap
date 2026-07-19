@@ -1,37 +1,107 @@
-import { ReactNode, useState } from 'react'
+import { ReactNode, useMemo, useState } from 'react'
+import type { Address } from '~/chains'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
-import { EMPTY, PerpInstrument } from '~/terminal/screens/perps/perpsCatalog'
+import { EMPTY } from '~/terminal/screens/perps/perpsCatalog'
+import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
+import { usePlaceOrder } from '~/terminal/perps/engine/usePlaceOrder'
 
 const MONO = terminalFonts.mono
 
 type Side = 'long' | 'short'
-type OrderType = 'Market' | 'Limit' | 'Stop'
+type OrderType = 'Market' | 'Limit'
 
 /**
- * Order ticket — Long/Short toggle (green/short-red), Market/Limit/Stop segment,
- * size, a live LEVERAGE slider, TP/SL, and a settlement receipt (entry / liq /
- * margin / fees·funding). The control surfaces are interactive; every derived
- * *value* (avail balance, entry, liq price, margin, fees) renders an honest '—'
- * because the matching engine isn't live. The submit button reflects real wallet
- * state: disconnected → "Connect wallet to trade" (opens the drawer); connected →
- * disabled (engine offline). No quote is ever fabricated.
+ * Order ticket — Long/Short toggle, Market/Limit segment, size, leverage slider, an
+ * optional limit price, and a settlement receipt (entry-mark / est. margin / liq / fees).
+ *
+ * Wired to the LIVE flow via usePlaceOrder: reads the trader's deposited collateral,
+ * nonce, and the market's on-chain leverage cap; on submit it builds the exact EIP-712
+ * `Order`, signs it against the market's ("HookSwapPerps","1") domain, and POSTs it to the
+ * matching engine. Honest gating: disconnected → connect; wrong chain → switch to Sepolia;
+ * no market → disabled; 0 collateral → deposit guard; engine offline → error on submit.
+ * Derived values are real (live mark) or honest '—' — no fabricated fill/quote.
  */
 export function OrderTicket({
-  instrument,
+  market,
+  trader,
+  chainId,
   connected,
+  wrongChain,
+  markPrice,
   onConnect,
+  onSwitchChain,
 }: {
-  instrument: PerpInstrument
+  market?: PerpMarketView
+  trader?: Address
+  chainId?: number
   connected: boolean
+  wrongChain: boolean
+  markPrice?: number
   onConnect: () => void
+  onSwitchChain: () => void
 }): JSX.Element {
   const [side, setSide] = useState<Side>('long')
   const [orderType, setOrderType] = useState<OrderType>('Market')
   const [leverage, setLeverage] = useState(10)
   const [size, setSize] = useState('')
+  const [limitPrice, setLimitPrice] = useState('')
 
+  const placeOrder = usePlaceOrder({ market, trader, chainId })
+  const base = market?.base ?? 'BASE'
+  const maxLev = placeOrder.maxLeverageX
   const accent = side === 'long' ? terminalColors.brandGreen : terminalColors.redDown
-  const pct = ((leverage - 1) / (instrument.maxLeverage - 1)) * 100
+  const effLev = Math.min(leverage, maxLev)
+  const pct = maxLev > 1 ? ((effLev - 1) / (maxLev - 1)) * 100 : 0
+
+  // Receipt estimates from live mark + user inputs (client-side estimate, not a quote).
+  const priceForEst = orderType === 'Limit' ? Number(limitPrice) : markPrice
+  const sizeNum = Number(size)
+  const notional = Number.isFinite(priceForEst) && Number.isFinite(sizeNum) && priceForEst ? priceForEst * sizeNum : undefined
+  const marginEst = notional !== undefined && effLev > 0 ? notional / effLev : undefined
+
+  const sizeValid = sizeNum > 0
+  const limitValid = orderType === 'Market' || Number(limitPrice) > 0
+  const inputsOk = sizeValid && limitValid
+  const busy = placeOrder.status === 'signing' || placeOrder.status === 'submitting'
+
+  const submitLabel = useMemo(() => {
+    if (!connected) {
+      return 'Connect wallet to trade'
+    }
+    if (wrongChain) {
+      return 'Switch to Sepolia'
+    }
+    if (!market) {
+      return 'No market selected'
+    }
+    if (placeOrder.status === 'signing') {
+      return 'Sign order…'
+    }
+    if (placeOrder.status === 'submitting') {
+      return 'Placing order…'
+    }
+    if (!placeOrder.hasCollateral && placeOrder.nonce !== undefined) {
+      return 'Deposit collateral to trade'
+    }
+    return side === 'long' ? `Long ${base}` : `Short ${base}`
+  }, [connected, wrongChain, market, placeOrder.status, placeOrder.hasCollateral, placeOrder.nonce, side, base])
+
+  const canClick =
+    !connected || wrongChain ? true : Boolean(market) && placeOrder.canSubmit && inputsOk && !busy
+
+  const onSubmit = (): void => {
+    if (!connected) {
+      onConnect()
+      return
+    }
+    if (wrongChain) {
+      onSwitchChain()
+      return
+    }
+    void placeOrder.submit({ side, orderType, sizeStr: size, leverage: effLev, limitPriceStr: limitPrice })
+  }
+
+  const fmtUsd = (v?: number): string => (v !== undefined ? v.toLocaleString('en-US', { maximumFractionDigits: 2 }) : EMPTY)
 
   return (
     <div style={{ padding: 12, fontFamily: MONO }}>
@@ -65,9 +135,9 @@ export function OrderTicket({
         })}
       </div>
 
-      {/* Market / Limit / Stop */}
+      {/* Market / Limit */}
       <div style={{ display: 'flex', background: terminalColors.panel2, borderRadius: 8, padding: 3, gap: 2, marginBottom: 10 }}>
-        {(['Market', 'Limit', 'Stop'] as const).map((o) => {
+        {(['Market', 'Limit'] as const).map((o) => {
           const on = orderType === o
           return (
             <button
@@ -94,7 +164,7 @@ export function OrderTicket({
       </div>
 
       {/* Size */}
-      <Field top={['Size', `Avail ${EMPTY}`]}>
+      <Field top={['Size', `Avail ${placeOrder.availableFormatted ?? EMPTY}`]}>
         <input
           value={size}
           onChange={(e) => setSize(e.target.value.replace(/[^0-9.]/g, ''))}
@@ -112,8 +182,32 @@ export function OrderTicket({
             minWidth: 0,
           }}
         />
-        <span style={{ fontSize: 11, color: terminalColors.ink3 }}>{instrument.base}</span>
+        <span style={{ fontSize: 11, color: terminalColors.ink3 }}>{base}</span>
       </Field>
+
+      {/* Limit price (Limit only) */}
+      {orderType === 'Limit' ? (
+        <Field top={['Limit price', market?.label ?? '']}>
+          <input
+            value={limitPrice}
+            onChange={(e) => setLimitPrice(e.target.value.replace(/[^0-9.]/g, ''))}
+            placeholder="0.00"
+            inputMode="decimal"
+            style={{
+              flex: 1,
+              border: 'none',
+              outline: 'none',
+              background: 'transparent',
+              fontFamily: MONO,
+              fontSize: 16,
+              fontWeight: 600,
+              color: terminalColors.ink,
+              minWidth: 0,
+            }}
+          />
+          <span style={{ fontSize: 11, color: terminalColors.ink3 }}>USD</span>
+        </Field>
+      ) : null}
 
       {/* Leverage */}
       <div style={{ margin: '4px 0 12px' }}>
@@ -129,7 +223,7 @@ export function OrderTicket({
           }}
         >
           <span>Leverage</span>
-          <b style={{ color: accent, fontSize: 13 }}>{leverage}×</b>
+          <b style={{ color: accent, fontSize: 13 }}>{effLev}×</b>
         </div>
         <div style={{ position: 'relative', height: 14 }}>
           <div style={{ position: 'absolute', top: 5, left: 0, right: 0, height: 5, background: terminalColors.panel2, borderRadius: 3 }}>
@@ -151,89 +245,71 @@ export function OrderTicket({
           <input
             type="range"
             min={1}
-            max={instrument.maxLeverage}
+            max={maxLev}
             step={1}
-            value={leverage}
+            value={effLev}
             onChange={(e) => setLeverage(Number(e.target.value))}
             aria-label="Leverage"
             style={{ position: 'absolute', inset: 0, width: '100%', margin: 0, opacity: 0, cursor: 'pointer' }}
           />
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: terminalColors.faint, marginTop: 6 }}>
-          {[1, Math.round(instrument.maxLeverage * 0.25), Math.round(instrument.maxLeverage * 0.5), Math.round(instrument.maxLeverage * 0.75), instrument.maxLeverage].map(
-            (t, i) => (
-              <span key={i}>{t}×</span>
-            ),
-          )}
+          {[1, Math.round(maxLev * 0.25), Math.round(maxLev * 0.5), Math.round(maxLev * 0.75), maxLev].map((t, i) => (
+            <span key={i}>{t}×</span>
+          ))}
         </div>
       </div>
 
-      {/* TP / SL */}
-      <Field top={['TP / SL', 'optional']}>
-        <span style={{ fontSize: 13, color: terminalColors.ink3 }}>{EMPTY}</span>
-        <span style={{ fontSize: 13, color: terminalColors.ink3 }}>{EMPTY}</span>
-      </Field>
-
       {/* Receipt */}
       <div style={{ borderTop: `1px dashed ${terminalColors.line}`, marginTop: 4, paddingTop: 8 }}>
-        <ReceiptRow k="Entry (mark)" v={EMPTY} />
+        <ReceiptRow k="Entry (mark)" v={fmtUsd(markPrice)} />
+        <ReceiptRow k="Notional" v={fmtUsd(notional)} />
+        <ReceiptRow k="Margin (est.)" v={fmtUsd(marginEst)} />
         <ReceiptRow k="Liq. price" v={EMPTY} valueColor={terminalColors.ink3} />
-        <ReceiptRow k="Margin (isolated)" v={EMPTY} />
         <ReceiptRow k="Fees · funding" v={EMPTY} />
       </div>
 
       {/* Submit */}
-      {connected ? (
-        <button
-          type="button"
-          disabled
-          title="HookSwapPerps matching engine is not live yet"
-          style={{
-            width: '100%',
-            height: 44,
-            borderRadius: 9,
-            marginTop: 10,
-            border: 'none',
-            fontFamily: MONO,
-            fontSize: 13,
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
-            color: terminalColors.btnInk,
-            background: accent,
-            opacity: 0.5,
-            cursor: 'not-allowed',
-          }}
-        >
-          {side === 'long' ? `Long ${instrument.base}` : `Short ${instrument.base}`}
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={onConnect}
-          style={{
-            width: '100%',
-            height: 44,
-            borderRadius: 9,
-            marginTop: 10,
-            border: 'none',
-            fontFamily: MONO,
-            fontSize: 13,
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
-            color: terminalColors.btnInk,
-            background: accent,
-            cursor: 'pointer',
-          }}
-        >
-          Connect wallet to trade
-        </button>
-      )}
-      {connected ? (
-        <div style={{ marginTop: 8, textAlign: 'center', fontSize: 10, color: terminalColors.faint }}>
-          Matching engine not live yet
+      <button
+        type="button"
+        onClick={onSubmit}
+        disabled={!canClick}
+        style={{
+          width: '100%',
+          height: 44,
+          borderRadius: 9,
+          marginTop: 10,
+          border: 'none',
+          fontFamily: MONO,
+          fontSize: 13,
+          fontWeight: 600,
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+          color: terminalColors.btnInk,
+          background: wrongChain ? terminalColors.warn : accent,
+          opacity: canClick ? 1 : 0.5,
+          cursor: canClick ? 'pointer' : 'not-allowed',
+        }}
+      >
+        {submitLabel}
+      </button>
+
+      {/* Status line — real order result / error, never fabricated. */}
+      {placeOrder.status === 'submitted' && placeOrder.result ? (
+        <div style={{ marginTop: 8, textAlign: 'center', fontSize: 10.5, color: terminalColors.greenDeep }}>
+          Order {placeOrder.result.status} · {placeOrder.result.orderId.slice(0, 10)}
+          {placeOrder.result.txHash ? ` · ${placeOrder.result.txHash.slice(0, 10)}…` : ''}
         </div>
+      ) : placeOrder.error ? (
+        <div style={{ marginTop: 8, textAlign: 'center', fontSize: 10.5, color: terminalColors.redDown }}>{placeOrder.error}</div>
+      ) : !connected ? null : wrongChain ? (
+        <div style={{ marginTop: 8, textAlign: 'center', fontSize: 10, color: terminalColors.faint }}>
+          HookSwapPerps is live on Sepolia
+        </div>
+      ) : !market ? (
+        <div style={{ marginTop: 8, textAlign: 'center', fontSize: 10, color: terminalColors.faint }}>Select a market to trade</div>
+      ) : placeOrder.disabledReason && placeOrder.disabledReason !== 'Submitting…' ? (
+        <div style={{ marginTop: 8, textAlign: 'center', fontSize: 10, color: terminalColors.faint }}>{placeOrder.disabledReason}</div>
       ) : null}
     </div>
   )

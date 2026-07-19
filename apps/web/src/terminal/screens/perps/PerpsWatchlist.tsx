@@ -1,30 +1,37 @@
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
-import { EMPTY, PERP_INSTRUMENTS, PerpInstrument } from '~/terminal/screens/perps/perpsCatalog'
+import { EMPTY } from '~/terminal/screens/perps/perpsCatalog'
+import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
 
 const MONO = terminalFonts.mono
 
 /**
- * Markets watchlist — the perp instrument catalog (symbol + max-lev·venue
- * subrow). Price / 24h change render an honest '—' until the live feed exists;
- * the row identity is static config, not fabricated market data. Selecting a row
- * drives the rest of the desk.
+ * Markets watchlist — the live market directory (engine `GET /markets`, on-chain registry
+ * fallback). Each row = symbol + tier/lev subrow. Per-row price / 24h change render an
+ * honest '—' (the fixed engine contract has no per-market ticker endpoint yet — see the
+ * PerpsScreen note); the row identity is REAL on-chain/engine data, never fabricated.
+ * Selecting a row drives the rest of the desk.
  */
 export function PerpsWatchlist({
+  markets,
   selected,
   onSelect,
 }: {
-  selected: string
-  onSelect: (instrument: PerpInstrument) => void
+  markets: PerpMarketView[]
+  selected?: string
+  onSelect: (market: PerpMarketView) => void
 }): JSX.Element {
   return (
     <div style={{ fontFamily: MONO }}>
-      {PERP_INSTRUMENTS.map((inst) => {
-        const on = inst.symbol === selected
+      {markets.map((m) => {
+        const on = m.address.toLowerCase() === selected?.toLowerCase()
+        const sub = [m.catalogMaxLeverage ? `${m.catalogMaxLeverage}×` : undefined, m.tier === 1 ? 'perm' : m.tier === 0 ? 'curated' : undefined]
+          .filter(Boolean)
+          .join(' · ')
         return (
           <button
-            key={inst.symbol}
+            key={m.address}
             type="button"
-            onClick={() => onSelect(inst)}
+            onClick={() => onSelect(m)}
             style={{
               display: 'flex',
               width: '100%',
@@ -39,10 +46,8 @@ export function PerpsWatchlist({
             }}
           >
             <div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: terminalColors.ink }}>{inst.symbol}</div>
-              <div style={{ fontSize: 9.5, color: terminalColors.ink3 }}>
-                {inst.maxLeverage}× · {inst.venue}
-              </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: terminalColors.ink }}>{m.label}</div>
+              <div style={{ fontSize: 9.5, color: terminalColors.ink3 }}>{sub || '—'}</div>
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 12, color: terminalColors.ink3 }}>{EMPTY}</div>

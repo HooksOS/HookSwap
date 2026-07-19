@@ -58,6 +58,16 @@ const NAV_SECTIONS: NavSection[] = [
   },
   { label: 'Markets', path: '/markets', navId: 'markets', activeIds: ['markets'] },
   {
+    label: 'Perps',
+    path: '/perps',
+    navId: 'perps',
+    activeIds: ['perps', 'create-perp-market'],
+    children: [
+      { label: 'Trade perps', path: '/perps', navId: 'perps' },
+      { label: 'Launch a market', path: '/perps/launch', navId: 'create-perp-market' },
+    ],
+  },
+  {
     label: 'Earn',
     path: '/pools/new',
     navId: 'create-position',

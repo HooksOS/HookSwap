@@ -10,11 +10,28 @@ export interface Trade {
   side: 'buy' | 'sell'
 }
 
+/** Coarse feed state driving the honest empty message. */
+export type TradesStatus = 'idle' | 'loading' | 'live' | 'polling' | 'unavailable'
+
+function emptyMessage(status: TradesStatus): string {
+  switch (status) {
+    case 'idle':
+      return 'Select a market'
+    case 'loading':
+      return 'Loading trades…'
+    case 'unavailable':
+      return 'Trades unavailable'
+    default:
+      return 'No trades yet'
+  }
+}
+
 /**
- * Trades feed — recent prints (green buy / red sell). With no feed (current
- * honest state) renders the header + a "No trades yet" note. Never invents fills.
+ * Trades feed — recent prints (green buy / red sell). Binds to the engine feed via
+ * useTrades. With no prints it renders the header + an honest status note. Never
+ * invents fills.
  */
-export function TradesFeed({ trades = [] }: { trades?: Trade[] }): JSX.Element {
+export function TradesFeed({ trades = [], status = 'idle' }: { trades?: Trade[]; status?: TradesStatus }): JSX.Element {
   return (
     <div style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.ink }}>
       <div
@@ -44,7 +61,7 @@ export function TradesFeed({ trades = [] }: { trades?: Trade[] }): JSX.Element {
           </div>
         ))
       ) : (
-        <div style={{ padding: 14, textAlign: 'center', fontSize: 10.5, color: terminalColors.faint }}>No trades yet</div>
+        <div style={{ padding: 14, textAlign: 'center', fontSize: 10.5, color: terminalColors.faint }}>{emptyMessage(status)}</div>
       )}
     </div>
   )
