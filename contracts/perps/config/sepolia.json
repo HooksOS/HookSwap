@@ -21,10 +21,11 @@
   "_supportedTokensNote": "Collateral tokens registered via addSupportedToken. Sepolia ships WETH only. Add USDC/USDT test stables here if desired; DeployPerps will register each.",
 
   "deployed": {
-    "_note": "FILLED IN AFTER a real broadcast (Reggie's funded key). Left null in the kit — do NOT fabricate addresses.",
-    "settlement": null,
-    "sessionKeyManager": null,
-    "contractRegistry": null,
-    "insuranceFund": null
+    "_note": "LIVE on Sepolia 2026-07-19. Broadcast from isolated deployer 0x46B7fC4978D74c6Eda6b4573E5bE2C9675846adc (throwaway key, funded 0.1 ETH from 0xDD68; NOT the MM key — used to avoid nonce contention). owner+matcher+feeReceiver all defaulted to this deployer. Bytecode verified on-chain; 13 deploy+wiring txs (deployer nonce=13). Live depositETH tx 0x2eda5d6f531a460f5e282bf26d8501a246c4dd2697788c840f12c05fcb3422ae (status 0x1). FOR PRODUCTION: redeploy or transferOwnership to a persistent owner + set the REAL perps-engine matcher.",
+    "settlement": "0xc07acb918a8f862382bcaac452a12bac34610696",
+    "sessionKeyManager": "0xa66f4b4ed776a6b20715dafe952b50b4a16f429f",
+    "contractRegistry": "0x093f085a3ded3ae33e3c9fc32f18dbb011237b0b",
+    "insuranceFund": "0x88415a9e5378fe7fe2e6f5802f67b3f0f3cd3f97",
+    "deployer": "0x46B7fC4978D74c6Eda6b4573E5bE2C9675846adc"
   }
 }
