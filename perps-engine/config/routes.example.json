@@ -1,0 +1,40 @@
+{
+  "_note": "HookSwapPerps oracle routes — one entry per perp market. Copy to routes.json and fill in REAL pool addresses. quoteToken picks the numeraire (the OTHER token is the base the perp tracks); orientation vs token0/token1 is auto-derived. twapWindow (seconds) applies to v3/v4 only. Per the DEX-integration requirement, protocol may be any of hookswap-v2/v3, uniswap-v2/v3, pancake-v2/v3 (v4 = documented stub). Placeholder addresses below MUST be replaced; the loader validates shape, not on-chain existence.",
+  "routes": [
+    {
+      "_comment": "REAL, on-chain-verified HookSwap v2 pair on XLayer (196): WOKB/SeedTestToken seeded pool (CLAUDE.md 2026-07-08). quoteToken = WOKB. Illustrative — not a production market.",
+      "market": "STT-PERP",
+      "chainId": 196,
+      "protocol": "hookswap-v2",
+      "poolAddress": "0x1a95898916c7872f4712c92a1b665e54414728bd",
+      "quoteToken": "0xe538905cf8410324e03A5A23C1c177a474D59b2b"
+    },
+    {
+      "_comment": "PLACEHOLDER — Sepolia (11155111) uses the CANONICAL Uniswap stack (CLAUDE.md), so Sepolia perps price off a canonical Uniswap v3 pool. Fill poolAddress with the real WETH/USDC v3 pool; quoteToken = USDC (Sepolia).",
+      "market": "ETH-PERP",
+      "chainId": 11155111,
+      "protocol": "uniswap-v3",
+      "poolAddress": "0x0000000000000000000000000000000000000000",
+      "quoteToken": "0x0000000000000000000000000000000000000000",
+      "twapWindow": 1800
+    },
+    {
+      "_comment": "PLACEHOLDER — HookSwap v3 on Robinhood (4663). Fill poolAddress with a real HookSwap v3 pool (v3Factory 0xAa1f5B… in contracts/deployments/robinhood.json); quoteToken = the stable/WETH leg. WETH9 = 0x0Bd7D308…EAcAD73.",
+      "market": "HOOK-PERP",
+      "chainId": 4663,
+      "protocol": "hookswap-v3",
+      "poolAddress": "0x0000000000000000000000000000000000000000",
+      "quoteToken": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "twapWindow": 1800
+    },
+    {
+      "_comment": "PLACEHOLDER — PancakeSwap v3 on BSC (56). Fill with a real Pancake v3 pool; quoteToken = USDT/BUSD leg.",
+      "market": "BNB-PERP",
+      "chainId": 56,
+      "protocol": "pancake-v3",
+      "poolAddress": "0x0000000000000000000000000000000000000000",
+      "quoteToken": "0x0000000000000000000000000000000000000000",
+      "twapWindow": 1800
+    }
+  ]
+}

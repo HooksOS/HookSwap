@@ -1,0 +1,19 @@
+{
+  "name": "hookswap-perps-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HookSwapPerps off-chain matching-engine support — multi-DEX oracle adapter (scalar mark price from v2 reserves / v3 tick-TWAP / v4 stub).",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "oracle:demo": "node --loader ts-node/esm oracle/demo.ts"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "ts-node": "^10.9.2",
+    "@types/node": "^22.0.0"
+  }
+}

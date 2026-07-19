@@ -1,0 +1,30 @@
+{
+  "_note": "HookSwapPerps deploy config for SEPOLIA (chainId 11155111) — the MANDATORY first target. Per HookSwap CLAUDE.md every contract must be proven on Sepolia before any production chain. Addresses below are INPUTS to the deploy (WETH, matcher, feeReceiver); the deployed contract addresses are written by DeployPerps into broadcast/ receipts and should be recorded back here under `deployed` after a successful (non-dry) run with Reggie's funded key.",
+  "chainId": 11155111,
+  "network": "sepolia",
+
+  "weth9": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
+  "_wethNote": "Canonical Sepolia WETH9 (reused, not deployed — matches HookSwap CLAUDE.md deploy table). Used as the 18-decimal ETH-denominated collateral and for Settlement.depositETH() auto-wrap.",
+
+  "matcher": "0x0000000000000000000000000000000000000000",
+  "_matcherNote": "REQUIRED before live use. Public address of the off-chain matching-engine relayer (perps-engine) authorized via setAuthorizedMatcher. address(0) => DeployPerps defaults it to the deployer (fine for a Sepolia smoke test, NOT for production). This is a PUBLIC address only — never a private key.",
+
+  "feeReceiver": "0x0000000000000000000000000000000000000000",
+  "_feeReceiverNote": "address(0) => DeployPerps defaults it to the deployer.",
+
+  "feeRate": 10,
+  "_feeRateNote": "Per-side trading fee in basis-point-hundredths as used by Settlement (feeRate/10000). 10 = 0.10%. Default from upstream; tune before production.",
+
+  "supportedTokens": [
+    { "address": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14", "decimals": 18, "symbol": "WETH" }
+  ],
+  "_supportedTokensNote": "Collateral tokens registered via addSupportedToken. Sepolia ships WETH only. Add USDC/USDT test stables here if desired; DeployPerps will register each.",
+
+  "deployed": {
+    "_note": "FILLED IN AFTER a real broadcast (Reggie's funded key). Left null in the kit — do NOT fabricate addresses.",
+    "settlement": null,
+    "sessionKeyManager": null,
+    "contractRegistry": null,
+    "insuranceFund": null
+  }
+}
