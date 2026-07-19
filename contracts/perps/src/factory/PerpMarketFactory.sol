@@ -6,6 +6,8 @@ import "@openzeppelin/contracts/proxy/Clones.sol";
 import "./PerpMarket.sol";
 import "./FeeRouter.sol";
 import "./MarketRegistry.sol";
+import "./OracleGuard.sol";
+import "./ParamGuard.sol";
 
 /**
  * @title PerpMarketFactory
@@ -32,16 +34,20 @@ contract PerpMarketFactory is Ownable {
     address public registry;
     address public treasury; // listing-fee sink
     uint256 public listingFee; // creation fee forwarded to treasury (2nd revenue line)
+    address public oracleGuard; // on-chain oracle safety layer (spec §6)
+    address public paramGuard; // governance param bounds (spec §8)
 
     // ---- parameter bounds (ParamGuard, spec §8) ----
     // feeRate is per-side, in Settlement `feeRate` units (bps of matchSize / 10_000).
     uint256 public constant MIN_FEE = 2; // 2 bps floor
     uint256 public constant MAX_FEE = 15; // 15 bps ceiling
-    // Global leverage ceiling. Stored + emitted; enforced off-chain by the matcher
-    // (the PerpMarket core validates leverage <= its own MAX_LEVERAGE constant on settle).
+    // Global leverage ceiling. The clamped value is now ALSO written to each market's
+    // on-chain `marketMaxLeverage` (PerpMarket enforces leverage <= cap in _validateOrder).
+    // When paramGuard is set it governs the clamp; PLATFORM_MAX_LEVERAGE is the fallback.
     uint256 public PLATFORM_MAX_LEVERAGE = 20 * 1e4; // 20x (LEVERAGE_PRECISION = 1e4)
 
     event ImplementationSet(address indexed implementation);
+    event GuardsSet(address indexed oracleGuard, address indexed paramGuard);
     event PlatformWiringSet(
         address weth,
         address platformMatcher,
@@ -74,7 +80,9 @@ contract PerpMarketFactory is Ownable {
         address _feeRouter,
         address _registry,
         address _treasury,
-        uint256 _listingFee
+        uint256 _listingFee,
+        address _oracleGuard,
+        address _paramGuard
     ) Ownable(msg.sender) {
         if (
             _implementation == address(0) ||
@@ -83,7 +91,9 @@ contract PerpMarketFactory is Ownable {
             _platformAdmin == address(0) ||
             _feeRouter == address(0) ||
             _registry == address(0) ||
-            _treasury == address(0)
+            _treasury == address(0) ||
+            _oracleGuard == address(0) ||
+            _paramGuard == address(0)
         ) revert ZeroAddress();
         implementation = _implementation;
         weth = _weth;
@@ -93,6 +103,8 @@ contract PerpMarketFactory is Ownable {
         registry = _registry;
         treasury = _treasury;
         listingFee = _listingFee;
+        oracleGuard = _oracleGuard;
+        paramGuard = _paramGuard;
     }
 
     // ============================================================
@@ -137,6 +149,13 @@ contract PerpMarketFactory is Ownable {
         emit PlatformMaxLeverageSet(_maxLeverage);
     }
 
+    function setGuards(address _oracleGuard, address _paramGuard) external onlyOwner {
+        if (_oracleGuard == address(0) || _paramGuard == address(0)) revert ZeroAddress();
+        oracleGuard = _oracleGuard;
+        paramGuard = _paramGuard;
+        emit GuardsSet(_oracleGuard, _paramGuard);
+    }
+
     // ============================================================
     // Create
     // ============================================================
@@ -150,6 +169,7 @@ contract PerpMarketFactory is Ownable {
      * @param maxLeverage requested market leverage cap; clamped to PLATFORM_MAX_LEVERAGE (advisory/off-chain)
      * @param marketId    human label, e.g. keccak256("BTC-PERP")
      * @param tier        MarketRegistry.Tier (0 = CURATED, 1 = PERMISSIONLESS)
+     * @param oracleCfg   the market's oracle source config (validated + registered on-chain)
      * @return market     the deployed clone address
      */
     function createMarket(
@@ -159,7 +179,8 @@ contract PerpMarketFactory is Ownable {
         uint256 feeRate,
         uint256 maxLeverage,
         bytes32 marketId,
-        uint8 tier
+        uint8 tier,
+        OracleGuard.OracleConfig calldata oracleCfg
     ) external payable returns (address market) {
         if (collateral == address(0) || creator == address(0)) revert ZeroAddress();
         if (msg.value < listingFee) revert InsufficientListingFee();
@@ -170,9 +191,15 @@ contract PerpMarketFactory is Ownable {
             if (!ok) revert TreasuryTransferFailed();
         }
 
-        // Clamp params to platform bounds (ParamGuard, spec §8).
-        uint256 clampedFee = feeRate < MIN_FEE ? MIN_FEE : (feeRate > MAX_FEE ? MAX_FEE : feeRate);
+        // Oracle safety gate (spec §6): venue allowlisted, deviation band sane, and the
+        // PERMISSIONLESS tier forced dual-source + reference feed. Reverts on violation.
+        OracleGuard(oracleGuard).validateConfig(oracleCfg, tier);
+
+        // Clamp params to platform bounds (ParamGuard, spec §8). ParamGuard governs the
+        // bounds; PLATFORM_MAX_LEVERAGE / MIN_FEE / MAX_FEE remain the fallback.
+        uint256 clampedFee = ParamGuard(paramGuard).clampFee(feeRate);
         uint256 clampedLev = maxLeverage > PLATFORM_MAX_LEVERAGE ? PLATFORM_MAX_LEVERAGE : maxLeverage;
+        clampedLev = ParamGuard(paramGuard).clampLeverage(clampedLev);
 
         // Deploy an isolated market clone; factory is temporary owner so it can configure.
         market = implementation.clone();
@@ -187,6 +214,8 @@ contract PerpMarketFactory is Ownable {
         m.setAuthorizedMatcher(platformMatcher, true);
         m.setFeeRate(clampedFee);
         m.setFeeReceiver(feeRouter); // all fees → platform-floored split, non-bypassable
+        // Enforce the per-market leverage cap ON-CHAIN (spec §8) before handing off control.
+        m.setMarketMaxLeverage(clampedLev);
 
         // Platform keeps operational control; creator only earns fees.
         m.transferOwnership(platformAdmin);
@@ -194,6 +223,7 @@ contract PerpMarketFactory is Ownable {
         // Register with shared PlatformCore.
         FeeRouter(feeRouter).registerMarket(market, creator, collateral);
         MarketRegistry(registry).register(market, creator, collateral, marketId, MarketRegistry.Tier(tier));
+        OracleGuard(oracleGuard).registerMarket(market, oracleCfg);
 
         emit MarketCreated(market, creator, collateral, marketId, tier, clampedFee, clampedLev);
     }

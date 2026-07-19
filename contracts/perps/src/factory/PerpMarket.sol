@@ -168,6 +168,14 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     uint256 public totalLockedMargin;
 
     // ============================================================
+    // Per-market leverage cap (SELF_SERVICE_SPEC.md §8 — fixes the v1 100x-constant gap)
+    // ============================================================
+    // Set by the factory at createMarket to the platform-clamped value. 0 = unset →
+    // falls back to the MAX_LEVERAGE constant (preserves original behavior). Enforced
+    // ON-CHAIN in _validateOrder, IN ADDITION to the absolute MAX_LEVERAGE ceiling.
+    uint256 public marketMaxLeverage;
+
+    // ============================================================
     // Events
     // ============================================================
 
@@ -191,6 +199,7 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     event InsuranceInjected(uint256 amount, uint256 timestamp);
     event EmergencyPaused(address indexed by, string reason);
     event EmergencyUnpaused(address indexed by);
+    event MarketMaxLeverageSet(uint256 maxLeverage);
 
     // ============================================================
     // Errors
@@ -482,6 +491,14 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
     function setFeeReceiver(address _feeReceiver) external onlyOwner {
         feeReceiver = _feeReceiver;
+    }
+
+    /// @notice Set the per-market leverage cap (LEVERAGE_PRECISION = 1e4 units).
+    ///         0 = unset → the MAX_LEVERAGE constant applies. Cannot exceed MAX_LEVERAGE.
+    function setMarketMaxLeverage(uint256 _maxLeverage) external onlyOwner {
+        require(_maxLeverage <= MAX_LEVERAGE, "Exceeds MAX_LEVERAGE");
+        marketMaxLeverage = _maxLeverage;
+        emit MarketMaxLeverageSet(_maxLeverage);
     }
 
     function setLegacyPositionManager(address _legacy) external onlyOwner {
@@ -958,6 +975,10 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         if (!verifyOrder(order, sig)) revert InvalidSignature();
         if (filledAmounts[getOrderHash(order)] >= order.size) revert OrderAlreadyUsed();
         if (order.leverage == 0 || order.leverage > MAX_LEVERAGE) revert InvalidMatch();
+        // Per-market cap (spec §8). Enforced IN ADDITION to the absolute MAX_LEVERAGE
+        // ceiling above. 0 = unset → MAX_LEVERAGE applies (original behavior preserved).
+        uint256 cap = marketMaxLeverage == 0 ? MAX_LEVERAGE : marketMaxLeverage;
+        if (order.leverage > cap) revert LeverageTooHigh();
     }
 
     function _validateContractSpec(MatchedPair calldata pair) internal view {

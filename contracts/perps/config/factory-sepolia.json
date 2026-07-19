@@ -6,10 +6,32 @@
   "weth9": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
 
   "contracts": {
-    "perpMarketImplementation": "0xc42F92908998631a60338E91d0397AfAe2Af5202",
+    "_note": "HARDENED v2 stack (2026-07-19). Factory + impl redeployed to wire OracleGuard + ParamGuard; FeeRouter + MarketRegistry reused (setFactory repointed to v2 factory). The v1 factory 0x5F3803B0EFdA11b19193Fa93b14435639a05E9ed / impl 0xc42F92908998631a60338E91d0397AfAe2Af5202 are SUPERSEDED (fee-split proof still valid).",
+    "perpMarketImplementation": "0xCc6605183a70a04f7b0b255A826BbA251E3A5f3e",
+    "perpMarketFactory": "0x26c719a0d24A7B373F9482292A43199a49ac378E",
     "feeRouter": "0x493A120cB92d7834dA98A8F1aE1ECF762a9d1A2f",
     "marketRegistry": "0xEDE278469694e951676973B7b9e193a98463DAC2",
-    "perpMarketFactory": "0x5F3803B0EFdA11b19193Fa93b14435639a05E9ed"
+    "oracleGuard": "0x3D2ee857AE129688fA43E378dAE85b60803bfFD1",
+    "paramGuard": "0xA9bA33018a1238bf3A59f5cF6f25e7538B9A2d33"
+  },
+
+  "hardening": {
+    "_note": "OracleGuard (spec §6) + ParamGuard + per-market on-chain leverage (spec §8) — deployed + on-chain tested 2026-07-19. 15/15 deploy txs status 0x1; every safety branch proven against live Sepolia Chainlink ETH/USD (0x694AA1769357215DE4FAC081bf1f309aDC325306).",
+    "sepoliaEthUsdRefFeed": "0x694AA1769357215DE4FAC081bf1f309aDC325306",
+    "assertions": {
+      "leveragePass10x": "settle @10x tx 0xbad8d314…a9ef4a status 0x1, pair ACTIVE",
+      "leverageRevert20x": "settleBatch @20x reverts LeverageTooHigh (0x0a4f5a07); mined tx 0xf1d67971…917afdc status 0x0",
+      "oracleDeviationPass": "checkDeviation(market, ref) returns (no revert)",
+      "oracleDeviationRevert": "checkDeviation(market, ref*1.5) reverts PriceDeviationTooLarge (0x5f54a302)",
+      "stalenessRevert": "checkDeviation(staleMarket[1s], ref) reverts StalePrice (0x19abf40e)",
+      "venueAllowlistPass": "validateConfig(allowlisted feed, tier) returns",
+      "venueAllowlistRevert": "validateConfig(random venue) reverts VenueNotAllowed (0x44ba6b8d)",
+      "wiring": "factory.oracleGuard/paramGuard set; feeRouter/registry/oracleGuard .factory() = 0x26c719a0…"
+    },
+    "testMarketsV2": {
+      "levMarket_10x": "0x6513375EAd88c1f6635159F63281852D3c41db76",
+      "staleMarket_1s": "0x373f4e0458E90BCB1187796d4a492835541223d3"
+    }
   },
 
   "feeSplit": {
