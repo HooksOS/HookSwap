@@ -1,15 +1,16 @@
-// Per-market oracle route loading + validation.
+// Legacy flat AMM route loading + validation (the pre-registry config shape).
 //
-// Routes come from a JSON file (default: ../config/routes.json). Each entry is
-// an OracleRoute. HookSwap chains can reference pools by explicit poolAddress, or
-// a route-builder can derive a HookSwap v2 pair via computeHookSwapV2Pair() using
-// the factory/init-code-hash in contracts/deployments/*.json.
+// Retained for back-compat: `loadRoutes` reads a JSON array of flat OracleRoute
+// entries (config/routes.json), and `routeToMarket` lifts one to a MarketConfig
+// (assetClass:"crypto", AMM oracle). New configs should use config/markets.json
+// + loadMarkets() (config.ts). HookSwap chains can still derive a v2 pair via
+// computeHookSwapV2Pair() (deployments.ts) instead of a literal poolAddress.
 
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { getAddress } from "viem";
-import type { OracleProtocol, OracleRoute } from "./types";
+import type { MarketConfig, OracleProtocol, OracleRoute } from "./types";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROUTES_PATH = join(__dirname, "..", "config", "routes.json");
@@ -42,10 +43,25 @@ function validate(r: any, i: number): OracleRoute {
   };
 }
 
-/** Load + validate routes from a JSON array file. */
+/** Load + validate legacy flat routes from a JSON array (or { routes: [...] }). */
 export function loadRoutes(path: string = DEFAULT_ROUTES_PATH): OracleRoute[] {
   const raw = JSON.parse(readFileSync(path, "utf8"));
   const arr = Array.isArray(raw) ? raw : raw.routes;
   if (!Array.isArray(arr)) throw new Error("routes file must be an array or { routes: [...] }");
   return arr.map(validate);
+}
+
+/** Lift a legacy flat AMM route into the richer MarketConfig shape. */
+export function routeToMarket(route: OracleRoute): MarketConfig {
+  return {
+    market: route.market,
+    assetClass: "crypto",
+    oracle: {
+      sourceType: route.protocol,
+      chainId: route.chainId,
+      poolAddress: route.poolAddress,
+      quoteToken: route.quoteToken,
+      twapWindow: route.twapWindow,
+    },
+  };
 }

@@ -1,38 +1,40 @@
-// v3 sub-adapter — concentrated-liquidity price.
+// v3 source adapter — concentrated-liquidity price.
 // Default: arithmetic-mean-tick TWAP over [twapWindow, 0] via observe(),
 // converted through the canonical TickMath port (1.0001^tick). Falls back to
 // slot0 spot if the pool lacks TWAP history (observe reverts / cardinality 1).
 // Covers hookswap-v3, uniswap-v3, pancake-v3 (identical UniswapV3Pool ABI).
+// Registered in the AdapterRegistry under its AMM sourceType.
 
 import { getAddress } from "viem";
-import type { ISubAdapter, MarkPrice, OracleProtocol, OracleRoute } from "./types";
+import type { AmmSourceType, AmmSource, ISourceAdapter, MarkPrice, OracleSource } from "./types";
 import { V3_POOL_ABI, ERC20_ABI } from "./abis";
 import { clientFor } from "./rpc";
 import { sqrtPriceX96ToPrice1e18, getSqrtRatioAtTick, meanTick } from "./math";
 
 const DEFAULT_TWAP_WINDOW = 1800; // 30 min
 
-export class V3Adapter implements ISubAdapter {
-  constructor(public readonly protocol: OracleProtocol) {}
+export class V3Adapter implements ISourceAdapter {
+  constructor(public readonly sourceType: AmmSourceType) {}
 
-  async price(route: OracleRoute): Promise<MarkPrice> {
-    const window = route.twapWindow ?? DEFAULT_TWAP_WINDOW;
-    const source = `${route.protocol}:${route.poolAddress} twap=${window}s`;
+  async getMarkPrice(source: OracleSource): Promise<MarkPrice> {
+    const s = source as AmmSource;
+    const window = s.twapWindow ?? DEFAULT_TWAP_WINDOW;
+    const debug = `${s.sourceType}:${s.poolAddress} twap=${window}s`;
     try {
-      const client = clientFor(route.chainId);
-      const pool = { address: route.poolAddress, abi: V3_POOL_ABI } as const;
+      const client = clientFor(s.chainId);
+      const pool = { address: s.poolAddress, abi: V3_POOL_ABI } as const;
 
       const [token0, token1] = await Promise.all([
         client.readContract({ ...pool, functionName: "token0" }),
         client.readContract({ ...pool, functionName: "token1" }),
       ]);
 
-      const quote = getAddress(route.quoteToken);
+      const quote = getAddress(s.quoteToken);
       const t0 = getAddress(token0 as `0x${string}`);
       const t1 = getAddress(token1 as `0x${string}`);
       const quoteIsToken1 = quote === t1;
       if (!quoteIsToken1 && quote !== t0) {
-        return { price1e18: 0n, ok: false, source, reason: "QUOTE_NOT_IN_POOL" };
+        return { price1e18: 0n, ok: false, source: debug, reason: "QUOTE_NOT_IN_POOL" };
       }
 
       const [dec0, dec1] = await Promise.all([
@@ -62,14 +64,14 @@ export class V3Adapter implements ISubAdapter {
       }
 
       if (sqrtPriceX96 === 0n) {
-        return { price1e18: 0n, ok: false, source, reason: "NO_LIQUIDITY" };
+        return { price1e18: 0n, ok: false, source: debug, reason: "NO_LIQUIDITY" };
       }
 
       const price1e18 = sqrtPriceX96ToPrice1e18(sqrtPriceX96, Number(dec0), Number(dec1), quoteIsToken1);
-      if (price1e18 === 0n) return { price1e18: 0n, ok: false, source, reason: "ZERO_PRICE" };
-      return { price1e18, ok: true, source: `${source} (${mode})` };
+      if (price1e18 === 0n) return { price1e18: 0n, ok: false, source: debug, reason: "ZERO_PRICE" };
+      return { price1e18, ok: true, source: `${debug} (${mode})` };
     } catch (err) {
-      return { price1e18: 0n, ok: false, source, reason: `RPC_ERROR:${(err as Error).message}` };
+      return { price1e18: 0n, ok: false, source: debug, reason: `RPC_ERROR:${(err as Error).message}` };
     }
   }
 }

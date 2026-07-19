@@ -2,7 +2,7 @@
   "name": "hookswap-perps-engine",
   "version": "0.1.0",
   "private": true,
-  "description": "HookSwapPerps off-chain matching-engine support — multi-DEX oracle adapter (scalar mark price from v2 reserves / v3 tick-TWAP / v4 stub).",
+  "description": "HookSwapPerps off-chain matching-engine support — pluggable oracle registry (scalar mark price from AMM v2/v3/v4 + external Chainlink/Pyth/API feeds for RWA/stocks). Add markets/venues by config + adapter module, no Settlement redeploy.",
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -16,6 +16,24 @@ export function mulDiv(a: bigint, b: bigint, c: bigint): bigint {
 }
 
 /**
+ * Scale a raw integer with `decimals` implied decimal places to a 1e18 fixed
+ * point. e.g. a Chainlink answer 178_50000000 with 8 decimals → 178.5e18.
+ * Used by the external-feed adapters (Chainlink/Pyth/API). No floats.
+ */
+export function scaleToE18(value: bigint, decimals: number): bigint {
+  if (value <= 0n) return 0n;
+  if (decimals === 18) return value;
+  if (decimals < 18) return value * pow10(18 - decimals);
+  return value / pow10(decimals - 18);
+}
+
+/** Reciprocal of a 1e18 price (base-per-quote → quote-per-base). 0 stays 0. */
+export function invert1e18(price1e18: bigint): bigint {
+  if (price1e18 <= 0n) return 0n;
+  return (ONE_1E18 * ONE_1E18) / price1e18;
+}
+
+/**
  * v2 constant-product spot price, decimal-normalized to 1e18 (quote per base).
  * @param reserve0/reserve1 raw reserves of token0/token1
  * @param dec0/dec1 token decimals

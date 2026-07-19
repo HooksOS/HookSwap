@@ -51,3 +51,47 @@ export const V3_POOL_ABI = [
     ],
   },
 ] as const;
+
+// Chainlink AggregatorV3Interface (external price feed — RWA/stocks/fx).
+export const CHAINLINK_AGGREGATOR_ABI = [
+  { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
+  {
+    type: "function",
+    name: "latestRoundData",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { name: "roundId", type: "uint80" },
+      { name: "answer", type: "int256" },
+      { name: "startedAt", type: "uint256" },
+      { name: "updatedAt", type: "uint256" },
+      { name: "answeredInRound", type: "uint80" },
+    ],
+  },
+] as const;
+
+// Pyth receiver (IPyth) — on-chain pull oracle. getPriceNoOlderThan reverts if
+// no fresh on-chain price exists (prices are posted via updatePriceFeeds/Hermes).
+export const PYTH_ABI = [
+  {
+    type: "function",
+    name: "getPriceNoOlderThan",
+    stateMutability: "view",
+    inputs: [
+      { name: "id", type: "bytes32" },
+      { name: "age", type: "uint256" },
+    ],
+    outputs: [
+      {
+        name: "price",
+        type: "tuple",
+        components: [
+          { name: "price", type: "int64" },
+          { name: "conf", type: "uint64" },
+          { name: "expo", type: "int32" },
+          { name: "publishTime", type: "uint256" },
+        ],
+      },
+    ],
+  },
+] as const;

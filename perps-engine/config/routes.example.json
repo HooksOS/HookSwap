@@ -1,5 +1,5 @@
 {
-  "_note": "HookSwapPerps oracle routes — one entry per perp market. Copy to routes.json and fill in REAL pool addresses. quoteToken picks the numeraire (the OTHER token is the base the perp tracks); orientation vs token0/token1 is auto-derived. twapWindow (seconds) applies to v3/v4 only. Per the DEX-integration requirement, protocol may be any of hookswap-v2/v3, uniswap-v2/v3, pancake-v2/v3 (v4 = documented stub). Placeholder addresses below MUST be replaced; the loader validates shape, not on-chain existence.",
+  "_note": "LEGACY flat-route schema (pre-registry). Still loadable — loadMarkets()/loadRoutes() lift each entry to a crypto MarketConfig. NEW configs should use config/markets.example.json (richer: assetClass + oracle{sourceType} + external Chainlink/Pyth/API feeds for RWA/stocks). One entry per perp market: quoteToken picks the numeraire (the OTHER token is the base); orientation vs token0/token1 is auto-derived; twapWindow (seconds) applies to v3/v4 only. protocol ∈ hookswap-v2/v3, uniswap-v2/v3, pancake-v2/v3 (v4 = documented stub). Placeholder addresses MUST be replaced; the loader validates shape, not on-chain existence.",
   "routes": [
     {
       "_comment": "REAL, on-chain-verified HookSwap v2 pair on XLayer (196): WOKB/SeedTestToken seeded pool (CLAUDE.md 2026-07-08). quoteToken = WOKB. Illustrative — not a production market.",

@@ -1,0 +1,113 @@
+{
+  "_note": "HookSwapPerps market registry — one entry per perp market, FULLY described by config. Copy to markets.json and fill in REAL addresses/feeds. A market = { market, assetClass, oracle:{sourceType,…}, collateralToken?, maxLeverage? }. The oracle.sourceType selects an off-chain adapter from the registry (registry.ts) — adding a venue/feed type is a new adapter MODULE, not a config-schema change and NEVER a Settlement redeploy. Adding a market is just a new entry here (+ an on-chain admin addSupportedToken only if it introduces a NEW collateral token). See EXTENSIBILITY.md. The loader validates SHAPE per sourceType, not on-chain existence. maxLeverage must be <= the on-chain Settlement.MAX_LEVERAGE (100x). Addresses are lowercase placeholders unless marked REAL; replace before use.",
+  "markets": [
+    {
+      "_comment": "REAL, on-chain-verified HookSwap v2 pair on XLayer (196): WOKB/SeedTestToken seeded pool (CLAUDE.md 2026-07-08). quoteToken = WOKB. Illustrative crypto market — proves the AMM path end-to-end.",
+      "market": "STT-PERP",
+      "assetClass": "crypto",
+      "oracle": {
+        "sourceType": "hookswap-v2",
+        "chainId": 196,
+        "poolAddress": "0x1a95898916c7872f4712c92a1b665e54414728bd",
+        "quoteToken": "0xe538905cf8410324e03a5a23c1c177a474d59b2b"
+      },
+      "collateralToken": "0xe538905cf8410324e03a5a23c1c177a474d59b2b",
+      "maxLeverage": 25
+    },
+    {
+      "_comment": "EXAMPLE — HookSwap v3 crypto market on Robinhood (4663). Fill poolAddress with a real HookSwap v3 pool (v3Factory 0xAa1f5B… in contracts/deployments/robinhood.json); quoteToken = the stable/WETH leg. WETH9 = 0x0Bd7D308…EAcAD73.",
+      "market": "HOOK-PERP",
+      "assetClass": "crypto",
+      "oracle": {
+        "sourceType": "hookswap-v3",
+        "chainId": 4663,
+        "poolAddress": "0x0000000000000000000000000000000000000000",
+        "quoteToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "twapWindow": 1800
+      },
+      "maxLeverage": 25
+    },
+    {
+      "_comment": "EXAMPLE — Uniswap v3 crypto market on Sepolia (11155111, canonical Uniswap stack). Fill poolAddress with the real WETH/USDC v3 pool; quoteToken = USDC.",
+      "market": "ETH-PERP",
+      "assetClass": "crypto",
+      "oracle": {
+        "sourceType": "uniswap-v3",
+        "chainId": 11155111,
+        "poolAddress": "0x0000000000000000000000000000000000000000",
+        "quoteToken": "0x0000000000000000000000000000000000000000",
+        "twapWindow": 1800
+      },
+      "maxLeverage": 25
+    },
+    {
+      "_comment": "EXAMPLE — TOKENIZED STOCK. AAPL-PERP priced from a Chainlink AAPL/USD AggregatorV3 feed (external, NOT AMM). feed = the aggregator proxy address (8 decimals typical). This is the RWA/stocks path: NO AMM pool, NO Settlement change — the mark comes from latestRoundData(). Replace `feed` with a real AAPL/USD proxy; collateral = a supported stable.",
+      "market": "AAPL-PERP",
+      "assetClass": "stock",
+      "oracle": {
+        "sourceType": "chainlink",
+        "chainId": 1,
+        "feed": "0x0000000000000000000000000000000000000000",
+        "decimals": 8,
+        "maxStaleSecs": 3600
+      },
+      "collateralToken": "0x0000000000000000000000000000000000000000",
+      "maxLeverage": 5
+    },
+    {
+      "_comment": "EXAMPLE — ROBINHOOD CHAIN tokenized stock. NVDA-PERP priced from the Robinhood Chain Chainlink NVDA/USD per-stock proxy (8 decimals). Get the REAL proxy address from https://docs.chain.link/data-feeds/price-feeds/addresses?network=robinhood (do NOT guess). Spot venue is 0x RFQ (NVDA↔USDG) but the AUTHORITATIVE mark is this Chainlink feed. collateralToken = USDG (add via admin addSupportedToken — NOT a redeploy).",
+      "market": "NVDA-PERP",
+      "assetClass": "stock",
+      "oracle": {
+        "sourceType": "chainlink",
+        "chainId": 4663,
+        "feed": "0x0000000000000000000000000000000000000000",
+        "decimals": 8,
+        "maxStaleSecs": 3600
+      },
+      "collateralToken": "0x0000000000000000000000000000000000000000",
+      "maxLeverage": 5
+    },
+    {
+      "_comment": "EXAMPLE — RWA (gold). XAU-PERP priced from a Chainlink XAU/USD feed. Same external-feed path as stocks; assetClass:'rwa'. Replace `feed`.",
+      "market": "XAU-PERP",
+      "assetClass": "rwa",
+      "oracle": {
+        "sourceType": "chainlink",
+        "chainId": 1,
+        "feed": "0x0000000000000000000000000000000000000000",
+        "decimals": 8,
+        "maxStaleSecs": 86400
+      },
+      "maxLeverage": 10
+    },
+    {
+      "_comment": "EXAMPLE — Pyth-priced market (pull oracle). priceId = the 32-byte Pyth feed id; pythContract = the IPyth receiver on that chain. Fresh price must be posted on-chain (Hermes) or getPriceNoOlderThan reverts → {ok:false}. Replace both.",
+      "market": "TSLA-PERP",
+      "assetClass": "stock",
+      "oracle": {
+        "sourceType": "pyth",
+        "chainId": 1,
+        "pythContract": "0x0000000000000000000000000000000000000000",
+        "priceId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "maxStaleSecs": 60
+      },
+      "maxLeverage": 5
+    },
+    {
+      "_comment": "EXAMPLE — generic allowlisted HTTP price source (last resort). Host is enforced against allowedHost; auth header (if any) comes from an ENV var by name, never from config; pricePath is a dot-path into the JSON. Set signerEnv to require a signed attestation (TODO: wire scheme).",
+      "market": "EURUSD-PERP",
+      "assetClass": "fx",
+      "oracle": {
+        "sourceType": "api",
+        "url": "https://prices.example.com/v1/EURUSD",
+        "allowedHost": "prices.example.com",
+        "pricePath": "data.price",
+        "timestampPath": "data.timestamp",
+        "maxStaleSecs": 30,
+        "authHeaderEnv": "PERPS_API_EURUSD_AUTH"
+      },
+      "maxLeverage": 20
+    }
+  ]
+}

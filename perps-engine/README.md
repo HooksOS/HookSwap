@@ -7,16 +7,17 @@ separately from upstream `backend/` (see the domain sync points in
 
 ## Oracle adapter (`oracle/`)
 
-Turns any supported spot venue into a single decimal-normalized **scalar mark
-price** (`price1e18`, quote-per-base) that the P2P matching engine consumes. The
-engine uses it as the exit / liquidation / funding reference — **no
-`Settlement.sol` change**, so pricing is chain- and DEX-agnostic.
+Turns any supported **price source** — AMM spot venue OR external price feed —
+into a single decimal-normalized **scalar mark price** (`price1e18`,
+quote-per-base) that the P2P matching engine consumes. The engine uses it as the
+exit / liquidation / funding / matchPrice reference — **no `Settlement.sol`
+change**, so pricing is chain-, DEX-, and asset-class-agnostic.
 
 ```ts
-import { SpotOracleAdapter, loadRoutes } from "./oracle";
+import { SpotOracleAdapter, loadMarkets } from "./oracle";
 
-const oracle = new SpotOracleAdapter(loadRoutes());        // reads config/routes.json
-const { price1e18, ok, reason } = await oracle.getMarkPrice("ETH-PERP");
+const oracle = new SpotOracleAdapter(loadMarkets());       // reads config/markets.json
+const { price1e18, ok, reason } = await oracle.getMarkPrice("AAPL-PERP");
 if (!ok) hold(reason);                                     // never settle on a fabricated price
 ```
 
@@ -25,24 +26,46 @@ if (!ok) hold(reason);                                     // never settle on a 
 interface ISpotOracleAdapter { getMarkPrice(market): Promise<{ price1e18: bigint; ok: boolean }> }
 ```
 On any recoverable failure it returns `{ ok:false, reason }` (e.g. `NO_LIQUIDITY`,
-`NO_ROUTE`, `RPC_ERROR`) instead of throwing — honest, no mock prices.
+`STALE`, `NO_MARKET`, `RPC_ERROR`) instead of throwing — honest, no mock prices.
 
-### Sub-adapters
-| protocol | how it prices | covers |
-|---|---|---|
-| `*-v2` | `getReserves()` → quote/base, decimal-normalized | hookswap-v2, uniswap-v2, pancake-v2 |
-| `*-v3` | `observe([window,0])` mean-tick TWAP → `1.0001^tick` (canonical TickMath port); `slot0` spot fallback | hookswap-v3, uniswap-v3, pancake-v3 |
-| `*-v4` | **stub** — singleton `StateView.getSlot0(poolId)`; needs `{stateView,poolId,oracleHook?}` | uniswap-v4, pancake-v4 |
+### Pluggable adapter registry (`oracle/registry.ts`)
+Adapters are keyed by **`sourceType`**. The resolver
+(`SpotOracleAdapter.getMarkPrice`) is a single `registry.get(sourceType)` lookup
+and **never changes** when a venue/feed is added — adding a source is a new
+`ISourceAdapter` module + `register()`. `defaultRegistry()` ships:
 
-v4 is deliberately a documented stub: HookSwap is `supportsV4:false` today. When
-unblocked, v4 reuses ~all of `math.ts` (same Q64.96 concentrated math as v3) — see
-`oracle/v4Adapter.ts` header.
+| `sourceType` | adapter | how it prices | asset classes |
+|---|---|---|---|
+| `hookswap/uniswap/pancake-v2` | `V2Adapter` | `getReserves()` → quote/base, decimal-normalized | crypto |
+| `hookswap/uniswap/pancake-v3` | `V3Adapter` | `observe([window,0])` mean-tick TWAP → `1.0001^tick` (canonical TickMath port); `slot0` spot fallback | crypto |
+| `uniswap/pancake-v4` | `V4Adapter` | **stub** — singleton `StateView.getSlot0(poolId)` | crypto |
+| `chainlink` | `ChainlinkAdapter` | `latestRoundData()` → 1e18, `updatedAt` staleness check | **stock / rwa / fx** |
+| `pyth` | `PythAdapter` | `getPriceNoOlderThan(id, age)` (reverts if stale/unposted) | **stock / rwa / fx** |
+| `api` | `ApiAdapter` | allowlisted (optionally signed) HTTP source | **rwa / fx** |
+| `zerox-rfq` | `ZeroxRfqAdapter` | **stub** — 0x RFQ spot-reference (cross-check only) | stock |
 
-### Route config (`config/routes.json`)
-Per-market `{ market, chainId, protocol, poolAddress, quoteToken, twapWindow? }`.
-`quoteToken` names the numeraire (the OTHER pool token is the base); orientation
-vs. token0/token1 is auto-derived — no manual invert flag. Copy
-`config/routes.example.json` → `routes.json` and fill in real pool addresses.
+v4 and 0x-RFQ are deliberately documented stubs (see the module headers); v4
+reuses ~all of `math.ts` (same Q64.96 math as v3) when unblocked.
+
+### Market config (`config/markets.json`)
+A market is **fully described by config**:
+`{ market, assetClass: 'crypto'|'stock'|'rwa'|'fx', oracle: { sourceType, …params },
+collateralToken?, maxLeverage? }`. The `oracle` block's params are per-`sourceType`
+(AMM: `chainId/poolAddress/quoteToken/twapWindow`; Chainlink: `feed/decimals`;
+Pyth: `pythContract/priceId`; API: `url/allowedHost/pricePath`). Copy
+`config/markets.example.json` → `markets.json` (crypto v3, Uniswap v3, `AAPL-PERP`
++ `NVDA-PERP` stocks via Chainlink, gold RWA, Pyth, API examples) and fill in real
+addresses/feeds. The legacy flat-route file (`config/routes.json`,
+`{market,chainId,protocol,poolAddress,quoteToken}`) is still loadable and is
+lifted to a crypto market automatically (`loadRoutes`/`routeToMarket`).
+
+### Extensibility guarantee — [EXTENSIBILITY.md](./EXTENSIBILITY.md)
+Add a **market** (config + optional admin `addSupportedToken`), a **venue** (new
+adapter module — off-chain), or an **RWA/stock** (external-feed adapter + config)
+with **NO `Settlement` redeploy**. `EXTENSIBILITY.md` proves it against the exact
+on-chain functions (`Settlement.settleBatch`/`Order.token`/`addSupportedToken`,
+`ContractRegistry.setContractSpec`) and flags the one hardcoded value that would
+force a redeploy (global `MAX_LEVERAGE = 100×`).
 
 ### HookSwap pool wiring
 `oracle/deployments.ts` reads `contracts/deployments/*.json` (v2/v3 factories,

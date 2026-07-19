@@ -1,62 +1,72 @@
-// HookSwapPerps multi-DEX oracle adapter — entry point.
+// HookSwapPerps pluggable oracle — entry point.
 //
-// SpotOracleAdapter implements ISpotOracleAdapter.getMarkPrice(market) by
-// dispatching a per-market OracleRoute to the sub-adapter for its protocol
-// (v2 reserves / v3 tick-TWAP / v4 stub). The matching engine consumes the
-// scalar `price1e18` as the mark price — no Settlement.sol involvement.
+// SpotOracleAdapter implements ISpotOracleAdapter.getMarkPrice(market) by:
+//   1. looking up the market's MarketConfig (config-driven registry), then
+//   2. dispatching its oracle source to the adapter registered for that
+//      `sourceType` (AMM v2/v3/v4 OR Chainlink/Pyth/API/0x-RFQ).
+// The matching engine consumes the scalar `price1e18` as the mark price — no
+// Settlement.sol involvement. Adding a market/venue/RWA/stock is config + an
+// off-chain adapter module, never a contract redeploy (see EXTENSIBILITY.md).
 
-import type { ISpotOracleAdapter, ISubAdapter, MarkPrice, OracleProtocol, OracleRoute } from "./types";
-import { V2Adapter } from "./v2Adapter";
-import { V3Adapter } from "./v3Adapter";
-import { V4Adapter } from "./v4Adapter";
-
-function buildSubAdapters(): Record<OracleProtocol, ISubAdapter> {
-  const v2 = (p: OracleProtocol) => new V2Adapter(p);
-  const v3 = (p: OracleProtocol) => new V3Adapter(p);
-  const v4 = (p: OracleProtocol) => new V4Adapter(p);
-  return {
-    "hookswap-v2": v2("hookswap-v2"),
-    "uniswap-v2": v2("uniswap-v2"),
-    "pancake-v2": v2("pancake-v2"),
-    "hookswap-v3": v3("hookswap-v3"),
-    "uniswap-v3": v3("uniswap-v3"),
-    "pancake-v3": v3("pancake-v3"),
-    "uniswap-v4": v4("uniswap-v4"),
-    "pancake-v4": v4("pancake-v4"),
-  };
-}
+import type { ISpotOracleAdapter, MarketConfig, MarkPrice, OracleRoute } from "./types";
+import { AdapterRegistry, defaultRegistry } from "./registry";
+import { routeToMarket } from "./routes";
 
 export class SpotOracleAdapter implements ISpotOracleAdapter {
-  private readonly subs: Record<OracleProtocol, ISubAdapter>;
-  private readonly routes: Map<string, OracleRoute>;
+  private readonly registry: AdapterRegistry;
+  private readonly markets: Map<string, MarketConfig>;
 
-  constructor(routes: OracleRoute[]) {
-    this.subs = buildSubAdapters();
-    this.routes = new Map(routes.map((r) => [r.market, r]));
+  /**
+   * @param markets  fully-described markets (from loadMarkets()).
+   * @param registry adapter registry; defaults to the full shipped set.
+   */
+  constructor(markets: MarketConfig[], registry: AdapterRegistry = defaultRegistry()) {
+    this.registry = registry;
+    this.markets = new Map(markets.map((m) => [m.market, m]));
   }
 
-  /** Register / replace a market route at runtime. */
+  /** Register / replace a market at runtime. */
+  setMarket(market: MarketConfig): void {
+    this.markets.set(market.market, market);
+  }
+
+  /** Back-compat: register a legacy flat AMM route (lifted to a MarketConfig). */
   setRoute(route: OracleRoute): void {
-    this.routes.set(route.market, route);
+    this.setMarket(routeToMarket(route));
   }
 
-  hasRoute(market: string): boolean {
-    return this.routes.has(market);
+  hasMarket(market: string): boolean {
+    return this.markets.has(market);
+  }
+
+  getMarket(market: string): MarketConfig | undefined {
+    return this.markets.get(market);
   }
 
   async getMarkPrice(market: string): Promise<MarkPrice> {
-    const route = this.routes.get(market);
-    if (!route) {
-      return { price1e18: 0n, ok: false, reason: `NO_ROUTE:${market}` };
+    const cfg = this.markets.get(market);
+    if (!cfg) {
+      return { price1e18: 0n, ok: false, reason: `NO_MARKET:${market}` };
     }
-    const sub = this.subs[route.protocol];
-    if (!sub) {
-      return { price1e18: 0n, ok: false, reason: `NO_ADAPTER:${route.protocol}` };
+    const adapter = this.registry.get(cfg.oracle.sourceType);
+    if (!adapter) {
+      return { price1e18: 0n, ok: false, reason: `NO_ADAPTER:${cfg.oracle.sourceType}` };
     }
-    return sub.price(route);
+    return adapter.getMarkPrice(cfg.oracle);
   }
 }
 
 export * from "./types";
+export { AdapterRegistry, defaultRegistry } from "./registry";
+export { loadMarkets } from "./config";
+export { loadRoutes, routeToMarket } from "./routes";
 export { loadHookSwapDeployments, getHookSwapChain, computeHookSwapV2Pair } from "./deployments";
-export { loadRoutes } from "./routes";
+
+// Individual adapters (for custom registries / plugins).
+export { V2Adapter } from "./v2Adapter";
+export { V3Adapter } from "./v3Adapter";
+export { V4Adapter } from "./v4Adapter";
+export { ChainlinkAdapter } from "./chainlinkAdapter";
+export { PythAdapter } from "./pythAdapter";
+export { ApiAdapter } from "./apiAdapter";
+export { ZeroxRfqAdapter } from "./zeroxRfqAdapter";
