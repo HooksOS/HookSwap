@@ -33,7 +33,7 @@ contract FeeRouter is Ownable, ReentrancyGuard {
     // ---- config ----
     address public factory; // the only address allowed to register markets
     address public treasury; // platform fee sink
-    address public insuranceHub; // insurance fee sink (per-market accounting can live downstream)
+    address public insuranceHub; // InsuranceHub — per-market insurance sub-accounts (spec §7)
 
     /// Platform share of every fee, in bps. Enforced >= platformFloorBps.
     uint256 public platformShareBps = 5_000; // 50%
@@ -150,7 +150,14 @@ contract FeeRouter is Ownable, ReentrancyGuard {
         address creator = creatorOf[market];
         claimable[treasury][token] += platform;
         claimable[creator][token] += creatorCut;
-        claimable[insuranceHub][token] += insurance;
+
+        // Insurance slice → the market's OWN InsuranceHub sub-account (spec §7). Push it in
+        // per-market (approve + pull) rather than crediting a single claimable sink, so each
+        // market self-insures in isolation. Platform + creator stay claim-based (pull).
+        if (insurance > 0) {
+            IERC20(token).forceApprove(insuranceHub, insurance);
+            IInsuranceHub(insuranceHub).notifyFee(market, token, insurance);
+        }
 
         emit FeesCollected(market, token, total, platform, creatorCut, insurance);
     }
@@ -169,4 +176,9 @@ contract FeeRouter is Ownable, ReentrancyGuard {
 interface IPerpMarketFees {
     function balances(address account) external view returns (uint256 available, uint256 locked);
     function withdraw(address token, uint256 amount) external;
+}
+
+/// Minimal surface of the InsuranceHub the router credits per-market.
+interface IInsuranceHub {
+    function notifyFee(address market, address token, uint256 amount) external;
 }

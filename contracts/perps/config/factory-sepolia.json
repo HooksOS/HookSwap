@@ -5,6 +5,22 @@
   "deployer": "0x46B7fC4978D74c6Eda6b4573E5bE2C9675846adc",
   "weth9": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
 
+  "productionHardening": {
+    "_note": "BondManager (slashable creation bonds, spec §4/§5) + InsuranceHub (per-market insurance sub-accounts, spec §7) built + integrated + on-chain tested on Sepolia 2026-07-19. NEW FeeRouter v2 routes the insurance slice per-market via InsuranceHub.notifyFee (approve+pull); NEW Factory v3 createMarket is payable-for-bond (require msg.value >= minBond(tier)+listingFee, forwards bond to BondManager.postBond, listingFee to treasury). Reuses PerpMarket impl + MarketRegistry + OracleGuard + ParamGuard; setFactory on registry+oracleGuard repointed to factory v3. Full proof + tx table: ~/perps-deploy/bonds-insurance-results.json. Deploy+test script: contracts/perps/script/BondsInsuranceTest.s.sol. 22 deploy/test txs status 0x1 + 2 mined revert txs status 0x0 (WithdrawTooEarly, InsufficientMarketInsurance). Not production-wired; full audit before mainnet.",
+    "bondManager": "0x9146Eb0bcB3CF09bd7924787415595a182F07eE8",
+    "insuranceHub": "0xEAA01a0b3f31aBde9e72A779F9A79E12072e6048",
+    "feeRouter_v2": "0xfA91D73B30b719491109Ae1C3993620c813393A4",
+    "perpMarketFactory_v3": "0xa6A4272e5b5162c944cbF09eEb8BAda13eC5161A",
+    "bondManagerSlashSink": "0x70ccf8FB7B7B466067c190DC6E60B1446a80e830",
+    "minBond": { "curated": "5e13", "permissionless": "1e14" },
+    "withdrawDelaySeconds": 604800,
+    "supersedes": {
+      "_note": "feeRouter_v1 replaced by feeRouter_v2 (wired to InsuranceHub); factory v2 replaced by v3 (bond escrow). registry+oracleGuard.setFactory repointed to v3.",
+      "perpMarketFactory_v2": "0x26c719a0d24A7B373F9482292A43199a49ac378E",
+      "feeRouter_v1": "0x493A120cB92d7834dA98A8F1aE1ECF762a9d1A2f"
+    }
+  },
+
   "contracts": {
     "_note": "HARDENED v2 stack (2026-07-19). Factory + impl redeployed to wire OracleGuard + ParamGuard; FeeRouter + MarketRegistry reused (setFactory repointed to v2 factory). The v1 factory 0x5F3803B0EFdA11b19193Fa93b14435639a05E9ed / impl 0xc42F92908998631a60338E91d0397AfAe2Af5202 are SUPERSEDED (fee-split proof still valid).",
     "perpMarketImplementation": "0xCc6605183a70a04f7b0b255A826BbA251E3A5f3e",

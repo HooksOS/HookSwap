@@ -8,6 +8,7 @@ import "./FeeRouter.sol";
 import "./MarketRegistry.sol";
 import "./OracleGuard.sol";
 import "./ParamGuard.sol";
+import "./BondManager.sol";
 
 /**
  * @title PerpMarketFactory
@@ -36,6 +37,13 @@ contract PerpMarketFactory is Ownable {
     uint256 public listingFee; // creation fee forwarded to treasury (2nd revenue line)
     address public oracleGuard; // on-chain oracle safety layer (spec §6)
     address public paramGuard; // governance param bounds (spec §8)
+    address public bondManager; // slashable creation-bond escrow (spec §4/§5)
+
+    // ---- tier-aware creation-bond minimums (spec §5: permissionless > curated) ----
+    // Native-ETH, escrowed in BondManager at createMarket. Curated may be waived (0).
+    // Tier matches MarketRegistry.Tier: 0 = CURATED, 1 = PERMISSIONLESS.
+    uint256 public curatedMinBond;
+    uint256 public permissionlessMinBond;
 
     // ---- parameter bounds (ParamGuard, spec §8) ----
     // feeRate is per-side, in Settlement `feeRate` units (bps of matchSize / 10_000).
@@ -48,6 +56,8 @@ contract PerpMarketFactory is Ownable {
 
     event ImplementationSet(address indexed implementation);
     event GuardsSet(address indexed oracleGuard, address indexed paramGuard);
+    event BondManagerSet(address indexed bondManager);
+    event MinBondsSet(uint256 curatedMinBond, uint256 permissionlessMinBond);
     event PlatformWiringSet(
         address weth,
         address platformMatcher,
@@ -70,6 +80,7 @@ contract PerpMarketFactory is Ownable {
 
     error ZeroAddress();
     error InsufficientListingFee();
+    error InsufficientBond();
     error TreasuryTransferFailed();
 
     constructor(
@@ -82,7 +93,8 @@ contract PerpMarketFactory is Ownable {
         address _treasury,
         uint256 _listingFee,
         address _oracleGuard,
-        address _paramGuard
+        address _paramGuard,
+        address _bondManager
     ) Ownable(msg.sender) {
         if (
             _implementation == address(0) ||
@@ -93,7 +105,8 @@ contract PerpMarketFactory is Ownable {
             _registry == address(0) ||
             _treasury == address(0) ||
             _oracleGuard == address(0) ||
-            _paramGuard == address(0)
+            _paramGuard == address(0) ||
+            _bondManager == address(0)
         ) revert ZeroAddress();
         implementation = _implementation;
         weth = _weth;
@@ -105,6 +118,12 @@ contract PerpMarketFactory is Ownable {
         listingFee = _listingFee;
         oracleGuard = _oracleGuard;
         paramGuard = _paramGuard;
+        bondManager = _bondManager;
+    }
+
+    /// @notice Tier-aware minimum creation bond (spec §5): permissionless > curated.
+    function minBond(uint8 tier) public view returns (uint256) {
+        return tier == uint8(MarketRegistry.Tier.PERMISSIONLESS) ? permissionlessMinBond : curatedMinBond;
     }
 
     // ============================================================
@@ -156,6 +175,18 @@ contract PerpMarketFactory is Ownable {
         emit GuardsSet(_oracleGuard, _paramGuard);
     }
 
+    function setBondManager(address _bondManager) external onlyOwner {
+        if (_bondManager == address(0)) revert ZeroAddress();
+        bondManager = _bondManager;
+        emit BondManagerSet(_bondManager);
+    }
+
+    function setMinBonds(uint256 _curatedMinBond, uint256 _permissionlessMinBond) external onlyOwner {
+        curatedMinBond = _curatedMinBond;
+        permissionlessMinBond = _permissionlessMinBond;
+        emit MinBondsSet(_curatedMinBond, _permissionlessMinBond);
+    }
+
     // ============================================================
     // Create
     // ============================================================
@@ -183,13 +214,10 @@ contract PerpMarketFactory is Ownable {
         OracleGuard.OracleConfig calldata oracleCfg
     ) external payable returns (address market) {
         if (collateral == address(0) || creator == address(0)) revert ZeroAddress();
-        if (msg.value < listingFee) revert InsufficientListingFee();
-
-        // Forward the listing fee to the treasury (2nd platform revenue line).
-        if (msg.value > 0) {
-            (bool ok, ) = payable(treasury).call{value: msg.value}("");
-            if (!ok) revert TreasuryTransferFailed();
-        }
+        // Creation cost = listing fee (→ treasury) + creation bond (→ BondManager escrow, spec §4/§5).
+        uint256 lf = listingFee;
+        uint256 bond = minBond(tier);
+        if (msg.value < lf + bond) revert InsufficientBond();
 
         // Oracle safety gate (spec §6): venue allowlisted, deviation band sane, and the
         // PERMISSIONLESS tier forced dual-source + reference feed. Reverts on violation.
@@ -224,6 +252,16 @@ contract PerpMarketFactory is Ownable {
         FeeRouter(feeRouter).registerMarket(market, creator, collateral);
         MarketRegistry(registry).register(market, creator, collateral, marketId, MarketRegistry.Tier(tier));
         OracleGuard(oracleGuard).registerMarket(market, oracleCfg);
+
+        // Settle creation cost: listing fee → treasury (2nd revenue line), bond → escrow.
+        // Everything above the listing fee is escrowed as the (>= minBond) creation bond,
+        // letting a creator over-bond. Bond is slashable / reclaimable via BondManager.
+        if (lf > 0) {
+            (bool ok, ) = payable(treasury).call{value: lf}("");
+            if (!ok) revert TreasuryTransferFailed();
+        }
+        uint256 bondAmount = msg.value - lf;
+        BondManager(bondManager).postBond{value: bondAmount}(market, creator);
 
         emit MarketCreated(market, creator, collateral, marketId, tier, clampedFee, clampedLev);
     }
