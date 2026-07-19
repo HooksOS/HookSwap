@@ -102,6 +102,7 @@ import {
   ProtocolVersion,
 } from '@uniswap/client-data-api/dist/data/v1/poolTypes_pb'
 import { getChain, isSupportedChain, supportedChainIds } from './chains'
+import { isHiddenTokenSymbol, pairHasHiddenToken } from './hiddenTokens'
 import { resolveTokenLogo } from './logos'
 import {
   getErc20Balance,
@@ -491,6 +492,10 @@ export async function handleListTokens(req: ListTokensRequest): Promise<ListToke
     }
   }
 
+  // Drop test/seed placeholder tokens (tHOOK, tUSDC, tROBIN, STT, …) — they must never surface in the
+  // token selector / Markets / Analytics lists. Filtered by symbol (case-insensitive); see hiddenTokens.ts.
+  const visibleTokens = tokens.filter((tok) => !isHiddenTokenSymbol(tok.symbol))
+
   // Build the `multichainTokens[]` the Markets/Landing/Analytics panels actually read (price, 24H %,
   // sparkline, movers). For HookSwap the same asset isn't bridged across our chains, so each entry is a
   // single-chain group (one `chainTokens[]` element). Core fields are always returned; `stats` is attached
@@ -503,7 +508,7 @@ export async function handleListTokens(req: ListTokensRequest): Promise<ListToke
     // just without stats. Never throw, never fabricate.
     db = undefined
   }
-  const multichainTokens = tokens.map((tok) => {
+  const multichainTokens = visibleTokens.map((tok) => {
     const mt = new MultichainToken({
       // Deterministic id; not used as a join key by the UI (it joins by chainToken address + symbol).
       multichainId: tok.address ? `${tok.chainId}:${tok.address.toLowerCase()}` : `${tok.chainId}:native`,
@@ -523,7 +528,7 @@ export async function handleListTokens(req: ListTokensRequest): Promise<ListToke
     return mt
   })
 
-  return new ListTokensResponse({ tokens, nextPageToken: '', multichainTokens })
+  return new ListTokensResponse({ tokens: visibleTokens, nextPageToken: '', multichainTokens })
 }
 
 // ---------- REAL: listTopPools ----------
@@ -554,6 +559,10 @@ export async function handleListTopPools(req: ListTopPoolsRequest): Promise<List
 
   for (const chainPairs of perChain) {
     for (const p of chainPairs) {
+      // Hide pools whose either side is a test/seed placeholder token (see hiddenTokens.ts).
+      if (pairHasHiddenToken(p.token0.symbol, p.token1.symbol)) {
+        continue
+      }
       const pool = new Pool({
         chainId: p.chainId,
         poolId: p.pairAddress,
@@ -589,6 +598,10 @@ export async function handleListTopPools(req: ListTopPoolsRequest): Promise<List
 
   for (const chainV3 of perChainV3) {
     for (const p of chainV3) {
+      // Hide pools whose either side is a test/seed placeholder token (see hiddenTokens.ts).
+      if (pairHasHiddenToken(p.token0.symbol, p.token1.symbol)) {
+        continue
+      }
       const pool = new Pool({
         chainId: p.chainId,
         poolId: p.poolAddress,
@@ -664,6 +677,10 @@ async function collectPortfolioTokens(chainId: number): Promise<PortfolioTokenEn
   const pushErc20 = (meta: TokenMeta): void => {
     const key = meta.address.toLowerCase()
     if (!key || seen.has(key)) {
+      return
+    }
+    // Never surface test/seed placeholder tokens (tHOOK, tUSDC, …) in a wallet's holdings (see hiddenTokens.ts).
+    if (isHiddenTokenSymbol(meta.symbol)) {
       return
     }
     seen.add(key)
@@ -1172,6 +1189,10 @@ function buildTxFromSwapRows(
   if (!firstLegs || !lastLegs) {
     return undefined
   }
+  // Hide swaps whose net input or output is a test/seed placeholder token (see hiddenTokens.ts).
+  if (pairHasHiddenToken(firstLegs.input.symbol, lastLegs.output.symbol)) {
+    return undefined
+  }
   return assembleSwapTransaction({
     chainId: first.chainId,
     blockNumber: last.blockNumber,
@@ -1424,6 +1445,10 @@ async function handleListPositions(req: ListPositionsRequest): Promise<ListPosit
       }
 
       const filteredPairs = pairs.filter((pair) => {
+        // Hide LP positions in pools whose either side is a test/seed placeholder token (see hiddenTokens.ts).
+        if (pairHasHiddenToken(pair.token0.symbol, pair.token1.symbol)) {
+          return false
+        }
         // poolId (v2) is the pair/LP-token address (the parser's poolId).
         if (poolIdFilter && pair.pairAddress.toLowerCase() !== poolIdFilter) {
           return false
@@ -1535,6 +1560,10 @@ async function handleListPools(req: ListPoolsRequest): Promise<ListPoolsResponse
     try {
       const pairs = await getV2PairsCached(chainId)
       for (const p of pairs) {
+        // Hide pools whose either side is a test/seed placeholder token (see hiddenTokens.ts).
+        if (pairHasHiddenToken(p.token0.symbol, p.token1.symbol)) {
+          continue
+        }
         const a0 = p.token0.address.toLowerCase()
         const a1 = p.token1.address.toLowerCase()
         const tokenSet = new Set([a0, a1])
@@ -1563,6 +1592,10 @@ async function handleListPools(req: ListPoolsRequest): Promise<ListPoolsResponse
     try {
       const v3Pools = await getV3PoolsCached(chainId)
       for (const p of v3Pools) {
+        // Hide pools whose either side is a test/seed placeholder token (see hiddenTokens.ts).
+        if (pairHasHiddenToken(p.token0.symbol, p.token1.symbol)) {
+          continue
+        }
         const a0 = p.token0.address.toLowerCase()
         const a1 = p.token1.address.toLowerCase()
         const tokenSet = new Set([a0, a1])
@@ -1617,6 +1650,10 @@ async function handleGetPosition(req: GetPositionRequest): Promise<GetPositionRe
     const pairs = await getV2PairsCached(chainId)
     const pair = pairs.find((p) => p.pairAddress.toLowerCase() === pairAddress)
     if (!pair) {
+      return new GetPositionResponse()
+    }
+    // Hide positions in pools whose either side is a test/seed placeholder token (see hiddenTokens.ts).
+    if (pairHasHiddenToken(pair.token0.symbol, pair.token1.symbol)) {
       return new GetPositionResponse()
     }
 

@@ -22,6 +22,7 @@ import { SearchService } from '@uniswap/client-data-api/dist/data/v1/search_conn
 import { SearchTokensRequest, SearchTokensResponse } from '@uniswap/client-data-api/dist/data/v1/search_pb'
 import { Token as SearchToken } from '@uniswap/client-data-api/dist/data/v1/searchTypes_pb'
 import { getChain, isSupportedChain, supportedChainIds } from './chains'
+import { isHiddenTokenSymbol } from './hiddenTokens'
 import { getV2PairsCached, getV3PoolsCached } from './handlers'
 import { resolveTokenLogo } from './logos'
 import { getTokenMeta, TokenMeta } from './onchain'
@@ -77,6 +78,10 @@ export async function collectChainTokens(chainId: number): Promise<TokenCandidat
   const pushErc20 = (meta: Pick<TokenMeta, 'address' | 'symbol' | 'name' | 'decimals'>): void => {
     const key = meta.address.toLowerCase()
     if (!key || seen.has(key)) {
+      return
+    }
+    // Never surface test/seed placeholder tokens (tHOOK, tUSDC, …) in search / trending (see hiddenTokens.ts).
+    if (isHiddenTokenSymbol(meta.symbol)) {
       return
     }
     seen.add(key)
@@ -178,7 +183,8 @@ export async function handleSearchTokens(req: SearchTokensRequest): Promise<Sear
         }
         try {
           const meta = await getTokenMeta(chainId, query)
-          if (meta.symbol || meta.name) {
+          // Skip a pasted address that resolves to a hidden test/seed token (see hiddenTokens.ts).
+          if ((meta.symbol || meta.name) && !isHiddenTokenSymbol(meta.symbol)) {
             matches.push({
               chainId,
               address: meta.address,

@@ -58,6 +58,7 @@ import {
   VolumeSplit,
 } from '@uniswap/client-explore/dist/uniswap/explore/v1/service_pb'
 import { isSupportedChain, supportedChainIds } from './chains'
+import { pairHasHiddenToken } from './hiddenTokens'
 import { getV2PairsCached } from './handlers'
 import { collectChainTokens } from './searchHandlers'
 import { getDb } from './indexer/schema'
@@ -109,6 +110,11 @@ async function aggregateV2UsdForChain(
   let volCount = 0
 
   for (const p of pairs) {
+    // Exclude test/seed placeholder pools (tHOOK/… pairs) from the protocol TVL/volume aggregate so
+    // seed liquidity never inflates the Landing/Analytics headline stats (see hiddenTokens.ts).
+    if (pairHasHiddenToken(p.token0.symbol, p.token1.symbol)) {
+      continue
+    }
     // ingest.ts stores pool addresses lowercased → key the metrics reads the same way.
     const poolKey = p.pairAddress.toLowerCase()
     try {
