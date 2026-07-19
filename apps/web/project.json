@@ -213,8 +213,7 @@
         "{projectRoot}/public/sitemap.xml",
         "{projectRoot}/public/app-sitemap.xml",
         "{projectRoot}/public/tokens-sitemap.xml",
-        "{projectRoot}/public/pools-sitemap.xml",
-        "{projectRoot}/public/nfts-sitemap.xml"
+        "{projectRoot}/public/pools-sitemap.xml"
       ]
     },
     "snapshots": {
