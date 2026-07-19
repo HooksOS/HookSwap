@@ -1,0 +1,26 @@
+{
+  "_readme": "MegaETH (4326) seed pools. Run: SEED_POOLS=config/megaeth.json ./scripts/seed.sh megaeth [--broadcast]. WETH kind = the chain's wrapped-native (weth9 0x4200..0006, from contracts/deployments/megaeth.json); the seeder auto-wraps native ETH if the WETH balance is short. tHOOK/tUSDC are fresh MINT test tokens (no stablecoin needed). priceAperB values are DEMO ratios (tUSDC is a test token, not a real quote). Amounts are DEMO-scale — size to the funded deployer balance before --broadcast (see robinhood.json for a ~$1 dust proof). The v2 pool is cheap; the v3 mint is more gas-hungry, so seed v2 first on a thin balance.",
+  "4326": [
+    {
+      "protocol": "v2",
+      "label": "WETH / tHOOK v2 (MegaETH proof-of-liquidity)",
+      "tokenA": { "kind": "WETH", "symbol": "WETH", "decimals": 18 },
+      "tokenB": { "kind": "MINT", "name": "Test Hook Token", "symbol": "tHOOK", "decimals": 18 },
+      "priceAperB": 1000,
+      "amountA": 0.05,
+      "amountB": 50
+    },
+    {
+      "protocol": "v3",
+      "label": "WETH / tUSDC 0.30% concentrated (MegaETH demo depth)",
+      "tokenA": { "kind": "WETH", "symbol": "WETH", "decimals": 18 },
+      "tokenB": { "kind": "MINT", "name": "Test USD Coin", "symbol": "tUSDC", "decimals": 6 },
+      "fee": 3000,
+      "priceAperB": 2000,
+      "amountA": 0.08,
+      "amountB": 160,
+      "range": "concentrated",
+      "rangeTicks": 40
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "_readme": "Tempo (4217) seed pools. Run: SEED_POOLS=config/tempo.json ./scripts/seed.sh tempo [--broadcast]. IMPORTANT: Tempo gas is paid in pathUSD (ERC-20) and the deployment weth9 (0xBbBc..25Df2) is a routing wrapper only — the seeder's auto-wrap of native does NOT work here. So this config uses a MINT/MINT pool (two fresh test tokens), which needs no wrapped-native. 20 gwei is a NETWORK FLOOR (txs below it are rejected; chains.json sets gasPriceGwei=20). Set TEMPO_RPC_URL in ../.env. priceAperB is a DEMO ratio; amounts are DEMO-scale. NOTE: the routing adapter marks Tempo ready:false pending pathUSD gas-model validation — seeding proves liquidity, but end-to-end quoting/execution on Tempo still needs that validation. To later seed a wrapped-native-paired pool, first acquire/hold the 0xBbBc.. wrapper token and add a WETH-kind pool.",
+  "4217": [
+    {
+      "protocol": "v2",
+      "label": "tHOOK / tUSDC v2 (Tempo — MINT/MINT, no native wrap)",
+      "tokenA": { "kind": "MINT", "name": "Test Hook Token", "symbol": "tHOOK", "decimals": 18 },
+      "tokenB": { "kind": "MINT", "name": "Test USD Coin", "symbol": "tUSDC", "decimals": 6 },
+      "priceAperB": 1,
+      "amountA": 200,
+      "amountB": 200
+    }
+  ]
+}

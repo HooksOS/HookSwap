@@ -1,0 +1,26 @@
+{
+  "_readme": "HyperEVM (999) seed pools. Run: SEED_POOLS=config/hyperevm.json ./scripts/seed.sh hyperevm [--broadcast]. WETH kind = the chain's wrapped-native WHYPE (weth9 0x5555..5555, from contracts/deployments/hyperevm.json); the seeder auto-wraps native HYPE if short. tHOOK/tUSDC are fresh MINT test tokens. priceAperB values are DEMO ratios (tUSDC is a test token, not a real quote). Real HYPE — amounts are DEMO-scale; size to the funded deployer balance before --broadcast. NOTE: big-blocks mode was only needed for the large DEPLOY txs; seed txs are small (well under 3M gas), so standard blocks are fine.",
+  "999": [
+    {
+      "protocol": "v2",
+      "label": "WHYPE / tHOOK v2 (HyperEVM proof-of-liquidity)",
+      "tokenA": { "kind": "WETH", "symbol": "WHYPE", "decimals": 18 },
+      "tokenB": { "kind": "MINT", "name": "Test Hook Token", "symbol": "tHOOK", "decimals": 18 },
+      "priceAperB": 1000,
+      "amountA": 0.05,
+      "amountB": 50
+    },
+    {
+      "protocol": "v3",
+      "label": "WHYPE / tUSDC 0.30% concentrated (HyperEVM demo depth)",
+      "tokenA": { "kind": "WETH", "symbol": "WHYPE", "decimals": 18 },
+      "tokenB": { "kind": "MINT", "name": "Test USD Coin", "symbol": "tUSDC", "decimals": 6 },
+      "fee": 3000,
+      "priceAperB": 2000,
+      "amountA": 0.08,
+      "amountB": 160,
+      "range": "concentrated",
+      "rangeTicks": 40
+    }
+  ]
+}

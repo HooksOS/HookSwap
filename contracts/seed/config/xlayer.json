@@ -1,0 +1,26 @@
+{
+  "_readme": "XLayer (196) seed pools. Run: SEED_POOLS=config/xlayer.json ./scripts/seed.sh xlayer [--broadcast]. WETH kind = the chain's wrapped-native WOKB (weth9 0xe538..9b2b, from contracts/deployments/xlayer.json); the seeder auto-wraps native OKB if short. tHOOK/tUSDC are fresh MINT test tokens. priceAperB values are DEMO ratios (tUSDC is a test token, not a real quote). Gas is paid in OKB (base fee ~0.021 gwei; chains.json sets a 0.05 gwei floor). Amounts are DEMO-scale; size to the funded deployer balance before --broadcast. NOTE: XLayer already has a prior WOKB/SeedTestToken proof pool; these formalize repeatable v2+v3 seeds.",
+  "196": [
+    {
+      "protocol": "v2",
+      "label": "WOKB / tHOOK v2 (XLayer proof-of-liquidity)",
+      "tokenA": { "kind": "WETH", "symbol": "WOKB", "decimals": 18 },
+      "tokenB": { "kind": "MINT", "name": "Test Hook Token", "symbol": "tHOOK", "decimals": 18 },
+      "priceAperB": 1000,
+      "amountA": 0.05,
+      "amountB": 50
+    },
+    {
+      "protocol": "v3",
+      "label": "WOKB / tUSDC 0.30% concentrated (XLayer demo depth)",
+      "tokenA": { "kind": "WETH", "symbol": "WOKB", "decimals": 18 },
+      "tokenB": { "kind": "MINT", "name": "Test USD Coin", "symbol": "tUSDC", "decimals": 6 },
+      "fee": 3000,
+      "priceAperB": 2000,
+      "amountA": 0.08,
+      "amountB": 160,
+      "range": "concentrated",
+      "rangeTicks": 40
+    }
+  ]
+}

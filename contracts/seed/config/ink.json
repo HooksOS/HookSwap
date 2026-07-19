@@ -1,0 +1,26 @@
+{
+  "_readme": "Ink (57073) seed pools. Run: SEED_POOLS=config/ink.json ./scripts/seed.sh ink [--broadcast]. WETH kind = the chain's wrapped-native (weth9 0x4200..0006, from contracts/deployments/ink.json); the seeder auto-wraps native ETH if short. tHOOK/tUSDC are fresh MINT test tokens. priceAperB values are DEMO ratios (tUSDC is a test token, not a real quote). Real ETH, very cheap L2 — amounts are DEMO-scale; size to the funded deployer balance before --broadcast.",
+  "57073": [
+    {
+      "protocol": "v2",
+      "label": "WETH / tHOOK v2 (Ink proof-of-liquidity)",
+      "tokenA": { "kind": "WETH", "symbol": "WETH", "decimals": 18 },
+      "tokenB": { "kind": "MINT", "name": "Test Hook Token", "symbol": "tHOOK", "decimals": 18 },
+      "priceAperB": 1000,
+      "amountA": 0.05,
+      "amountB": 50
+    },
+    {
+      "protocol": "v3",
+      "label": "WETH / tUSDC 0.30% concentrated (Ink demo depth)",
+      "tokenA": { "kind": "WETH", "symbol": "WETH", "decimals": 18 },
+      "tokenB": { "kind": "MINT", "name": "Test USD Coin", "symbol": "tUSDC", "decimals": 6 },
+      "fee": 3000,
+      "priceAperB": 2000,
+      "amountA": 0.08,
+      "amountB": 160,
+      "range": "concentrated",
+      "rangeTicks": 40
+    }
+  ]
+}
