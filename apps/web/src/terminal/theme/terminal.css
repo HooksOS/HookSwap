@@ -328,12 +328,12 @@ button.tm-tape__item--btn:hover {
   background: var(--tm-panel);
 }
 .tm-tape__sym {
-  color: var(--tm-ink-2);
+  color: var(--tm-ink);
   font-weight: 600;
 }
 .tm-tape__price {
   color: var(--tm-ink);
-  font-weight: 500;
+  font-weight: 600;
 }
 .tm-tape__up {
   color: var(--tm-green-up);
@@ -342,7 +342,7 @@ button.tm-tape__item--btn:hover {
   color: var(--tm-red-down);
 }
 .tm-tape__flat {
-  color: var(--tm-ink-3);
+  color: var(--tm-ink-2);
 }
 
 @media (prefers-reduced-motion: reduce) {
