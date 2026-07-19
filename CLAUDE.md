@@ -253,7 +253,11 @@ The deployed Robinhood Universal Router `0x3D30133F4d4A80684F02d8310faF572E3dc19
 - 2026-07-03: v4 excluded; HyperEVM+Robinhood+Sepolia targeted; self-host routing; brand existing swap UI.
 - 2026-07-03: Documented Windows/bun localhost bring-up bypass.
 
-## HookSwap Perps (new workstream, 2026-07-19)
+## HookSwapPerps (new workstream, 2026-07-19)
+- **Product name: HookSwapPerps** (from Reggie). This is also the **EIP-712 domain name** for the contracts/backend/frontend rebrand: `MemePerp` → `HookSwapPerps` must change ATOMICALLY across all 4 sync points (Settlement.sol, SettlementV2.sol, backend matching-engine config.ts/server.ts, frontend usePerpetualV2.ts) or every order signature breaks.
+- **3 UI design options** (Desk daylight system) — artifact: https://claude.ai/code/artifact/d2327d02-d380-4740-a29f-2ab5dc6adbe4 → A·Pro-Desk (dense 4-col), B·Focused (chart + big order panel), C·Modular (framed InstrumentPanels). Awaiting Reggie's pick.
+- **Source model:** P2P perps (`Settlement.sol`, off-chain EIP-712 matching + on-chain settlement, dYdX-v3/GMX style). Price is a scalar mark price the engine consumes → the multi-DEX oracle adapter (v2 reserves / v3 tick-TWAP / v4 getSlot0) can be built OFF-CHAIN in the matching engine, no Settlement.sol change. `PerpVault.sol` (GLP house model) is undeployed + audit-flagged (3 criticals) → ship P2P first. Deployed only on Base Sepolia today. SECURITY: repo has a committed plaintext relayer key + SKIP_SIGNATURE_VERIFY bypass → purge/rotate before reuse.
+
 Self-hosted perpetuals for HookSwap, sourced from `~/Downloads/meme-perp-dex-main` — a full perps DEX (Foundry `contracts/` + Go `backend/` + Next.js `frontend/` + `docs/` + `PERPVAULT_AUDIT_REPORT.md`). Plan: deep-analyze → production plan → **rebrand contracts for HookSwap** → build perps UI into the Terminal → **3 design options** for the perps UI. Building with subagents.
 - **⛔ DEX-integration requirement (from Reggie, 2026-07-19 — LOCKED):** the perps contracts MUST work against ALL of these spot/liquidity venues, so the DEX legs (oracle/TWAP, spot price, liquidity, settlement) must be **multi-protocol adapter-based, NOT hardcoded to one DEX/version**:
   - **HookSwap v2 + v3** on ALL HookSwap chains (MegaETH 4326 / Robinhood 4663 / Ink 57073 / XLayer 196 / HyperEVM 999 / Tempo 4217 / Sepolia).
