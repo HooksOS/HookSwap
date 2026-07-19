@@ -27,6 +27,7 @@
  */
 
 import { getChainByEnum, resolveRpcUrl, resolveSubgraphUrl, type ChainConfig } from './chains'
+import { isHiddenTokenSymbol, pairHasHiddenToken } from './hiddenTokens'
 import { fetchChainHeadBlock, querySubgraph } from './subgraphClient'
 import {
   buildTokenMarket,
@@ -345,10 +346,12 @@ async function fetchTransactions(url: string, chain: GatewayChain, opts: TxOpts)
     { first: opts.first, swapWhere: where, mintWhere: where, burnWhere: where },
   )
 
+  // Drop events on test/seed placeholder pools (tHOOK etc.) so those tokens never leak via tx lists.
+  const visible = (e: SgPoolEvent): boolean => !pairHasHiddenToken(e.token0?.symbol, e.token1?.symbol)
   const all: GwPoolTransaction[] = [
-    ...(data.swaps ?? []).map((e) => toGwPoolTransaction(e, 'SWAP', chain)),
-    ...(data.mints ?? []).map((e) => toGwPoolTransaction(e, 'ADD', chain)),
-    ...(data.burns ?? []).map((e) => toGwPoolTransaction(e, 'REMOVE', chain)),
+    ...(data.swaps ?? []).filter(visible).map((e) => toGwPoolTransaction(e, 'SWAP', chain)),
+    ...(data.mints ?? []).filter(visible).map((e) => toGwPoolTransaction(e, 'ADD', chain)),
+    ...(data.burns ?? []).filter(visible).map((e) => toGwPoolTransaction(e, 'REMOVE', chain)),
   ]
   all.sort((a, b) => b.timestamp - a.timestamp)
   return all.slice(0, opts.first)
@@ -385,7 +388,10 @@ export const resolvers = {
         where: Object.keys(where).length > 0 ? where : undefined,
       })
       // TopV3Pools does not select token prices, so bundle is not needed here (pass null).
-      return data.pools.map((p) => toGwV3Pool(p, chain.gatewayChain, null, url))
+      // Drop any pool whose token0/token1 is a test/seed placeholder (tHOOK etc.).
+      return data.pools
+        .filter((p) => !pairHasHiddenToken(p.token0?.symbol, p.token1?.symbol))
+        .map((p) => toGwV3Pool(p, chain.gatewayChain, null, url))
     },
 
     // --- V3Pool ----------------------------------------------------------
@@ -395,6 +401,10 @@ export const resolvers = {
         id: args.address.toLowerCase(),
       })
       if (!data.pool) {
+        return null
+      }
+      // A pool containing a test/seed placeholder token is hidden entirely (honest null).
+      if (pairHasHiddenToken(data.pool.token0?.symbol, data.pool.token1?.symbol)) {
         return null
       }
       return toGwV3Pool(data.pool, chain.gatewayChain, data.bundle, url)
@@ -412,7 +422,10 @@ export const resolvers = {
         { t0: args.token0.toLowerCase(), t1: args.token1.toLowerCase() },
       )
       // token order is either (t0,t1) or (t1,t0); both are the same pair — return the union.
-      return [...(data.a ?? []), ...(data.b ?? [])].map((p) => toGwV3Pool(p, chain.gatewayChain, data.bundle, url))
+      // Exclude any pool whose token0/token1 is a test/seed placeholder (tHOOK etc.).
+      return [...(data.a ?? []), ...(data.b ?? [])]
+        .filter((p) => !pairHasHiddenToken(p.token0?.symbol, p.token1?.symbol))
+        .map((p) => toGwV3Pool(p, chain.gatewayChain, data.bundle, url))
     },
 
     // --- V3Transactions (chain-wide recent pool transactions) -----------
@@ -439,6 +452,10 @@ export const resolvers = {
       })
       if (!data.token) {
         // Wrapped-native (or requested token) not yet indexed by the subgraph -> honest null, not faked.
+        return null
+      }
+      // A test/seed placeholder token (tHOOK etc.) is hidden -> null, as if not indexed.
+      if (isHiddenTokenSymbol(data.token.symbol)) {
         return null
       }
       return toGwToken(data.token, chain.gatewayChain, tokenPriceUSD(data.token, data.bundle), url)
@@ -468,6 +485,10 @@ export const resolvers = {
         }
         const data = await querySubgraph<{ tokens: SgToken[]; bundle: SgBundle | null }>(url, TOKENS_QUERY, { ids })
         for (const t of data.tokens) {
+          // Test/seed placeholder tokens (tHOOK etc.) are never emitted -> that slot resolves to null.
+          if (isHiddenTokenSymbol(t.symbol)) {
+            continue
+          }
           found.set(
             `${chain.gatewayChain}:${t.id.toLowerCase()}`,
             toGwToken(t, chain.gatewayChain, tokenPriceUSD(t, data.bundle), url),
@@ -502,7 +523,10 @@ export const resolvers = {
         skip: (page - 1) * pageSize,
         orderBy: tokenOrderBy(args.orderBy ?? undefined),
       })
-      return data.tokens.map((t) => toGwToken(t, chain.gatewayChain, tokenPriceUSD(t, data.bundle), url))
+      // Drop test/seed placeholder tokens (tHOOK etc.) from the explore/top list.
+      return data.tokens
+        .filter((t) => !isHiddenTokenSymbol(t.symbol))
+        .map((t) => toGwToken(t, chain.gatewayChain, tokenPriceUSD(t, data.bundle), url))
     },
 
     // --- isV3SubgraphStale ----------------------------------------------
