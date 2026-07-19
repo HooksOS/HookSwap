@@ -1,6 +1,13 @@
 # HookSwap AI Knowledge Platform
 
-Enterprise, multi-tenant **RAG / AI Knowledge Layer** that powers every feature of the
+> **⛔ INTERNAL USE ONLY (from Reggie, 2026-07-19).** This is a HookSwap **team tool**, not a
+> public product. Internal auth only — no public signup, no customer billing, no marketing
+> funnel. The multi-tenant layer (orgs/projects/teams/RBAC) is for **internal team/project
+> separation**; "billing" = **internal usage/cost tracking** only. Deploy **behind auth on
+> internal infra**, not public-scale. Real security still required (auth, secrets, audit,
+> PII, prompt-injection / RAG-poisoning defenses) — internal-tools posture, not SOC2-for-customers.
+
+Enterprise-grade, multi-tenant (**internal**) **RAG / AI Knowledge Layer** that powers every feature of the
 HookSwap multi-chain DEX — semantic search, AI chat, trading/dev/support/governance
 assistants, liquidity & risk analytics, launchpad support, marketing generation, and
 autonomous AI agents. Built to be production-grade and horizontally scalable.
