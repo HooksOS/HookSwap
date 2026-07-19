@@ -175,6 +175,66 @@
   }
 }
 
+/* ============================================================================
+   iOS mini-app feel (mobile only) — native-app chrome + gestures.
+   Scoped to <= 900px so the desktop terminal is untouched.
+   ========================================================================== */
+@media (max-width: 900px) {
+  .tm-root {
+    /* Kill the grey tap flash + iOS long-press callout on app chrome. */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+  /* Momentum scroll + don't let content scroll bleed into Safari's rubber-band. */
+  .tm-scroll,
+  .tm-root .tm-table-scroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+  /* App chrome (nav + tab bar) is not text — never selectable, never highlighted. */
+  .tm-ios-chrome {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Active-tap feedback that reads iOS (brief dim, not a box highlight). */
+  .tm-tap:active {
+    opacity: 0.55;
+    transition: opacity 0.04s ease;
+  }
+}
+
+/* Frosted "material" for the nav + tab bars — translucent, blurred, saturated
+   (falls back to the solid panel colour where backdrop-filter is unsupported). */
+.tm-ios-blur {
+  background: color-mix(in srgb, var(--tm-panel) 78%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .tm-ios-blur {
+    background: var(--tm-panel);
+  }
+}
+
+/* iOS bottom-sheet: slide up from the bottom edge with a spring-ish ease. */
+@keyframes tm-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.tm-sheet {
+  animation: tm-sheet-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tm-sheet {
+    animation: none;
+  }
+}
+
 /* Horizontal-scroll container for wide tables / grids. The table scrolls INSIDE
    this box (never widening the page) once its columns hit their minimum widths.
    Pair with an inner element that carries the table's min-width. */

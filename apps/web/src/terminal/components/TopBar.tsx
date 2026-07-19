@@ -67,7 +67,171 @@ export function TopBar({
   wallet,
   onConnectWallet,
   onWalletClick,
+  isMobile,
 }: TopBarProps): JSX.Element {
+  // Mobile: a native-iOS navigation bar — tucks under the notch (safe-area-top),
+  // frosted/translucent, brand identity on the left, compact chain + wallet on the
+  // right, search collapsed to a tap target. The 4-tab bottom bar owns navigation.
+  if (isMobile) {
+    return (
+      <div
+        className="tm-ios-chrome tm-ios-blur"
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 44,
+          boxSizing: 'border-box',
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          borderBottom: `1px solid ${terminalColors.line2}`,
+          fontFamily: terminalFonts.sans,
+        }}
+      >
+        <div
+          style={{
+            height: 46,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            padding: '0 var(--tm-gutter)',
+          }}
+        >
+          {/* Brand */}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <HookLogo size={24} />
+            <span
+              style={{
+                fontFamily: terminalFonts.display,
+                fontWeight: 600,
+                fontSize: 17,
+                letterSpacing: '-0.01em',
+                color: terminalColors.ink,
+              }}
+            >
+              HookSwap
+            </span>
+          </span>
+
+          {/* Right cluster: search · chain · wallet */}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <button
+              type="button"
+              aria-label="Search"
+              onClick={onSearchClick}
+              className="tm-tap"
+              style={{
+                width: 34,
+                height: 34,
+                display: 'grid',
+                placeItems: 'center',
+                borderRadius: 999,
+                border: `1px solid ${terminalColors.line2}`,
+                background: terminalColors.panel,
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={terminalColors.ink2} strokeWidth={2}>
+                <circle cx={11} cy={11} r={7} />
+                <path d="M20 20l-3.5-3.5" />
+              </svg>
+            </button>
+
+            {chain ? (
+              <button
+                type="button"
+                aria-label="Switch chain"
+                onClick={onChainClick}
+                className="tm-tap"
+                style={{
+                  height: 34,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 999,
+                  border: `1px solid ${terminalColors.line2}`,
+                  background: terminalColors.panel,
+                  padding: '0 6px',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                {chain.chainId !== undefined ? (
+                  <ChainLogo chainId={chain.chainId} size={18} />
+                ) : (
+                  <span
+                    style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: '50%',
+                      background: chain.dotBackground ?? terminalTokenGradients.eth,
+                    }}
+                  />
+                )}
+              </button>
+            ) : null}
+
+            {wallet ? (
+              <button
+                type="button"
+                onClick={onWalletClick}
+                className="tm-tap"
+                style={{
+                  height: 34,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  borderRadius: 999,
+                  border: `1px solid ${terminalColors.line2}`,
+                  background: terminalColors.panel,
+                  padding: '0 11px 0 6px',
+                  fontSize: 12.5,
+                  fontWeight: 500,
+                  fontFamily: terminalFonts.mono,
+                  color: terminalColors.ink,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                <span
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 6,
+                    background: terminalTokenGradients.walletAvatar,
+                    flexShrink: 0,
+                  }}
+                />
+                {wallet.addressShort}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onConnectWallet}
+                className="tm-tap"
+                style={{
+                  height: 34,
+                  padding: '0 14px',
+                  borderRadius: 999,
+                  border: 'none',
+                  background: terminalColors.brandGreen,
+                  color: terminalColors.btnInk,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  fontFamily: terminalFonts.sans,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                Connect
+              </button>
+            )}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       style={{

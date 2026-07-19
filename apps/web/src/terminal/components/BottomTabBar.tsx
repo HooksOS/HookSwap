@@ -62,6 +62,7 @@ function TabButton({
       onClick={onClick}
       aria-label={label}
       aria-current={active ? 'page' : undefined}
+      className="tm-tap"
       style={{
         flex: 1,
         minWidth: 0,
@@ -71,21 +72,23 @@ function TabButton({
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 3,
+        gap: 4,
         border: 'none',
         background: 'transparent',
         cursor: 'pointer',
-        padding: '6px 2px',
-        color: active ? terminalColors.ink : terminalColors.railIconInactive,
+        padding: '7px 2px 5px',
+        // iOS convention: the active tab takes the app tint (brand green).
+        color: active ? terminalColors.brandGreen : terminalColors.railIconInactive,
       }}
     >
       {children}
       <span
         style={{
           fontFamily: terminalFonts.sans,
-          fontSize: 10.5,
+          fontSize: 10,
           fontWeight: active ? 600 : 500,
-          color: active ? terminalColors.ink : terminalColors.ink3Alt,
+          letterSpacing: 0.1,
+          color: active ? terminalColors.brandGreen : terminalColors.ink3Alt,
           lineHeight: 1,
           whiteSpace: 'nowrap',
         }}
@@ -100,6 +103,7 @@ export function BottomTabBar({ activeId, onNavigate, onMore, moreActive }: Botto
   return (
     <nav
       aria-label="Primary"
+      className="tm-ios-chrome tm-ios-blur"
       style={{
         position: 'fixed',
         left: 0,
@@ -108,11 +112,9 @@ export function BottomTabBar({ activeId, onNavigate, onMore, moreActive }: Botto
         zIndex: 45,
         display: 'flex',
         alignItems: 'stretch',
-        background: terminalColors.bg,
         borderTop: `1px solid ${terminalColors.line}`,
         // Clear the iPhone home indicator.
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        boxShadow: '0 -1px 2px rgba(11,15,20,.04)',
         fontFamily: terminalFonts.sans,
       }}
     >
@@ -127,19 +129,19 @@ export function BottomTabBar({ activeId, onNavigate, onMore, moreActive }: Botto
           >
             <NavIcon
               name={item.icon}
-              size={22}
-              stroke={active ? terminalColors.ink : terminalColors.railIconInactive}
+              size={23}
+              stroke={active ? terminalColors.brandGreen : terminalColors.railIconInactive}
             />
           </TabButton>
         )
       })}
       <TabButton label="More" active={Boolean(moreActive)} onClick={() => onMore?.()}>
         <svg
-          width={22}
-          height={22}
+          width={23}
+          height={23}
           viewBox="0 0 24 24"
           fill="none"
-          stroke={moreActive ? terminalColors.ink : terminalColors.railIconInactive}
+          stroke={moreActive ? terminalColors.brandGreen : terminalColors.railIconInactive}
           strokeWidth={2}
           strokeLinecap="round"
           strokeLinejoin="round"

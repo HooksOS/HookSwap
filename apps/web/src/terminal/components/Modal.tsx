@@ -1,5 +1,6 @@
 import { ReactNode, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { terminalColors, terminalFonts, terminalScrim, terminalShadows } from '~/terminal/theme/tokens'
 
 export interface ModalProps {
@@ -44,6 +45,10 @@ export function Modal({
   ariaLabel,
   children,
 }: ModalProps): JSX.Element | null {
+  // On phones, present as a native iOS bottom sheet (full-width, pinned to the
+  // bottom, rounded top corners, grabber handle, slide-up) instead of a centered card.
+  const isMobile = useIsMobileViewport()
+
   // Esc closes.
   useEffect(() => {
     if (!open) {
@@ -83,9 +88,9 @@ export function Modal({
         inset: 0,
         zIndex: 1000,
         display: 'flex',
-        alignItems: align === 'top' ? 'flex-start' : 'center',
+        alignItems: isMobile ? 'flex-end' : align === 'top' ? 'flex-start' : 'center',
         justifyContent: 'center',
-        paddingTop: align === 'top' ? topOffset : 0,
+        paddingTop: !isMobile && align === 'top' ? topOffset : 0,
       }}
     >
       {/* Scrim + blurred backdrop */}
@@ -100,27 +105,38 @@ export function Modal({
         }}
       />
 
-      {/* Card */}
+      {/* Card (desktop) / bottom sheet (mobile) */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title ?? ariaLabel}
+        className={isMobile ? 'tm-sheet' : undefined}
         style={{
           position: 'relative',
           zIndex: 1,
-          width,
-          maxWidth: 'calc(100vw - 32px)',
-          maxHeight: 'calc(100vh - 48px)',
+          width: isMobile ? '100%' : width,
+          maxWidth: isMobile ? '100%' : 'calc(100vw - 32px)',
+          maxHeight: isMobile ? '92vh' : 'calc(100vh - 48px)',
           display: 'flex',
           flexDirection: 'column',
           background: terminalColors.bg,
-          borderRadius: radius,
+          borderRadius: isMobile ? `${Math.max(radius, 20)}px ${Math.max(radius, 20)}px 0 0` : radius,
           boxShadow: terminalShadows.modal,
           overflow: 'hidden',
           fontFamily: terminalFonts.sans,
           color: terminalColors.ink,
+          // Clear the iPhone home indicator inside the sheet.
+          paddingBottom: isMobile ? 'env(safe-area-inset-bottom, 0px)' : undefined,
         }}
       >
+        {isMobile ? (
+          <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8, flexShrink: 0 }}>
+            <span
+              aria-hidden="true"
+              style={{ width: 38, height: 5, borderRadius: 999, background: terminalColors.line2 }}
+            />
+          </div>
+        ) : null}
         {title ? (
           <div
             style={{
