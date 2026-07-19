@@ -20,6 +20,34 @@ interface IWETH {
     function balanceOf(address) external view returns (uint256);
 }
 
+/// @dev Minimal OracleGuard surface (SECURITY_REVIEW.md H-1). `checkDeviation` reverts if the
+///      proposed mark price is stale vs, or deviates too far from, the market's reference feed.
+///      `marketConfig` is OracleGuard's public per-market config getter; we read only `refFeed`
+///      (3rd field) to skip enforcement gracefully for markets registered without a reference
+///      feed (curated tier) — preserving the original matcher-trusted behavior for those.
+interface IOracleGuardCheck {
+    function checkDeviation(address market, uint256 proposedPrice) external view;
+    function marketConfig(address market)
+        external
+        view
+        returns (
+            bytes32 sourceType,
+            address venue,
+            address refFeed,
+            uint256 maxDeviationBps,
+            uint256 maxStaleness,
+            uint256 minLiquidity,
+            bool dualSourceRequired
+        );
+}
+
+/// @dev Minimal InsuranceHub surface (SECURITY_REVIEW.md M-1). The market is a self-authorized
+///      coverer (msg.sender == market), so it may draw its OWN per-market sub-account to cover
+///      settlement bad-debt. Reverts InsufficientMarketInsurance when the sub-account can't cover.
+interface IInsuranceHubCover {
+    function coverLoss(address market, address token, uint256 amount, address to) external;
+}
+
 /**
  * @title PerpMarket
  * @notice Clone-friendly (EIP-1167 minimal-proxy) variant of HookSwapPerps `Settlement`.
@@ -176,6 +204,25 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     uint256 public marketMaxLeverage;
 
     // ============================================================
+    // Guard wiring (SECURITY_REVIEW.md H-1 / M-1) — APPENDED at the end of storage.
+    // Set by the factory at createMarket (before transferOwnership). Both default to 0 →
+    // the guard is skipped, preserving the original matcher-trusted / no-insurance behavior
+    // for any market created without them (backward-compat).
+    // ============================================================
+
+    // H-1: OracleGuard runtime circuit breaker. When set, every price consumed for value
+    // (settle entry, close/ADL exit, liquidation mark, updatePrice write) is checked against
+    // the market's Chainlink reference feed via checkDeviation (stale / deviation revert).
+    address public oracleGuard;
+
+    // M-1: the market's collateral token — the key under which the InsuranceHub holds this
+    // market's sub-account (FeeRouter credits notifyFee(market, collateralToken, ...)). Captured
+    // from the FIRST addSupportedToken (the factory adds exactly the collateral). Used to draw
+    // coverLoss in the winner-shortfall branch. `insuranceFund` (above) doubles as the wired
+    // InsuranceHub address for factory markets.
+    address public collateralToken;
+
+    // ============================================================
     // Events
     // ============================================================
 
@@ -200,6 +247,11 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     event EmergencyPaused(address indexed by, string reason);
     event EmergencyUnpaused(address indexed by);
     event MarketMaxLeverageSet(uint256 maxLeverage);
+    event OracleGuardSet(address indexed oracleGuard);
+    // M-1: fired whenever a winner-shortfall is covered from the market's InsuranceHub
+    // sub-account (covered=true) OR falls through to ADL after insurance is exhausted
+    // (covered=false) — no silent bad debt.
+    event InsuranceCovered(uint256 indexed pairId, address indexed winner, uint256 deficit, uint256 paidTokens, bool covered);
 
     // ============================================================
     // Errors
@@ -223,6 +275,7 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     error PositionLimitExceeded();
     error LeverageTooHigh();
     error PriceDeviationTooLarge();
+    error LimitPriceViolated(); // H-2: matchPrice violates a LIMIT order's signed price
 
     // ============================================================
     // Constructor / Initializer
@@ -484,6 +537,14 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         insuranceFund = _insuranceFund;
     }
 
+    /// @notice Wire the OracleGuard runtime circuit breaker (SECURITY_REVIEW.md H-1).
+    ///         0 = unset → price checks are skipped (original behavior). Set by the factory
+    ///         at createMarket; also owner-settable for existing markets.
+    function setOracleGuard(address _oracleGuard) external onlyOwner {
+        oracleGuard = _oracleGuard;
+        emit OracleGuardSet(_oracleGuard);
+    }
+
     function setFeeRate(uint256 _feeRate) external onlyOwner {
         require(_feeRate <= 100, "Fee too high");
         feeRate = _feeRate;
@@ -515,6 +576,9 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         supportedTokens[token] = true;
         tokenDecimals[token] = decimals;
         supportedTokenList.push(token);
+        // M-1: capture the market's collateral token (the factory adds exactly the collateral,
+        // matching FeeRouter.collateralOf / InsuranceHub sub-account key). First add wins.
+        if (collateralToken == address(0)) collateralToken = token;
         emit TokenAdded(token, decimals);
     }
 
@@ -556,6 +620,7 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
     function updatePrice(address token, uint256 price) external {
         if (!authorizedMatchers[msg.sender]) revert Unauthorized();
+        _guardPrice(price); // H-1: reject stale / out-of-band marks at write time
         tokenPrices[token] = price;
         emit PriceUpdated(token, price);
     }
@@ -581,6 +646,19 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         if (_hasLegacyPosition(pair.shortOrder.trader)) revert HasLegacyPosition();
         if (pair.longOrder.token != pair.shortOrder.token) revert InvalidMatch();
         if (pair.matchSize == 0) revert InvalidMatch();
+
+        // H-1: the matcher-supplied entry price must pass the OracleGuard deviation/staleness band.
+        _guardPrice(pair.matchPrice);
+
+        // H-2: enforce the SIGNED limit price on-chain. A LIMIT long may only fill at or below its
+        // signed price; a LIMIT short only at or above. MARKET orders are unconstrained here (their
+        // price protection is the H-1 deviation band).
+        if (pair.longOrder.orderType == OrderType.LIMIT && pair.matchPrice > pair.longOrder.price) {
+            revert LimitPriceViolated();
+        }
+        if (pair.shortOrder.orderType == OrderType.LIMIT && pair.matchPrice < pair.shortOrder.price) {
+            revert LimitPriceViolated();
+        }
 
         _validateContractSpec(pair);
 
@@ -699,6 +777,9 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
     function _closePair(uint256 pairId, uint256 exitPrice) internal {
         PairedPosition storage pos = pairedPositions[pairId];
+        // H-1: the exit price (matcher-supplied for batch/ADL, or the last on-chain mark for the
+        // user-callable closePair) must pass the deviation/staleness band before it settles PnL.
+        _guardPrice(exitPrice);
         _settleFunding(pairId);
         (int256 longPnL, int256 shortPnL) = _calculatePnL(pos, exitPrice);
         longPnL -= pos.accFundingLong;
@@ -728,24 +809,18 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             uint256 transfer = profit > pos.shortCollateral ? pos.shortCollateral : profit;
             balances[pos.longTrader].available += pos.longCollateral + transfer;
             if (pos.shortCollateral > transfer) balances[pos.shortTrader].available += pos.shortCollateral - transfer;
-            else if (profit > pos.shortCollateral && insuranceFund != address(0)) {
-                uint256 deficit = profit - pos.shortCollateral;
-                uint256 fundBal = balances[insuranceFund].available;
-                if (fundBal >= deficit) { balances[insuranceFund].available -= deficit; balances[pos.longTrader].available += deficit; }
-                else { if (fundBal > 0) { balances[insuranceFund].available = 0; balances[pos.longTrader].available += fundBal; deficit -= fundBal; }
-                    emit ADLTriggered(pos.pairId, 0, pos.longTrader, deficit, deficit); }
+            // M-1: winner (long) shortfall beyond loser's collateral → cover from InsuranceHub first, else ADL.
+            else if (profit > pos.shortCollateral) {
+                _coverWinnerDeficit(pos.pairId, pos.longTrader, profit - pos.shortCollateral);
             }
         } else {
             uint256 profit = uint256(shortPnL);
             uint256 transfer = profit > pos.longCollateral ? pos.longCollateral : profit;
             balances[pos.shortTrader].available += pos.shortCollateral + transfer;
             if (pos.longCollateral > transfer) balances[pos.longTrader].available += pos.longCollateral - transfer;
-            else if (profit > pos.longCollateral && insuranceFund != address(0)) {
-                uint256 deficit = profit - pos.longCollateral;
-                uint256 fundBal = balances[insuranceFund].available;
-                if (fundBal >= deficit) { balances[insuranceFund].available -= deficit; balances[pos.shortTrader].available += deficit; }
-                else { if (fundBal > 0) { balances[insuranceFund].available = 0; balances[pos.shortTrader].available += fundBal; deficit -= fundBal; }
-                    emit ADLTriggered(pos.pairId, 0, pos.shortTrader, deficit, deficit); }
+            // M-1: winner (short) shortfall beyond loser's collateral → cover from InsuranceHub first, else ADL.
+            else if (profit > pos.longCollateral) {
+                _coverWinnerDeficit(pos.pairId, pos.shortTrader, profit - pos.longCollateral);
             }
         }
     }
@@ -768,6 +843,9 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         if (pos.status != PositionStatus.ACTIVE) revert PositionNotActive();
         (bool liqLong, bool liqShort) = canLiquidate(pairId);
         if (!liqLong && !liqShort) revert CannotLiquidate();
+
+        // H-1: the liquidation mark price must pass the deviation/staleness band before it settles.
+        _guardPrice(tokenPrices[pos.token]);
 
         _settleFunding(pairId);
         (int256 longPnL, int256 shortPnL) = _calculatePnL(pos, tokenPrices[pos.token]);
@@ -966,6 +1044,55 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
     function _hasLegacyPosition(address) internal pure returns (bool) {
         return false; // Legacy check disabled to reduce contract size
+    }
+
+    /// @dev H-1: enforce the OracleGuard runtime circuit breaker on a price about to be consumed
+    ///      for value (entry / exit / mark). No-op when the guard is unset (backward-compat) or
+    ///      when the market has no reference feed configured (curated tier → matcher-trusted, as
+    ///      before). When a refFeed exists, checkDeviation reverts on stale / out-of-band prices.
+    function _guardPrice(uint256 price) internal view {
+        address og = oracleGuard;
+        if (og == address(0)) return;
+        (, , address refFeed, , , , ) = IOracleGuardCheck(og).marketConfig(address(this));
+        if (refFeed == address(0)) return; // no reference feed → nothing to check (curated)
+        IOracleGuardCheck(og).checkDeviation(address(this), price);
+    }
+
+    /// @dev M-1: cover a winner's settlement shortfall. Draw the market's OWN InsuranceHub
+    ///      sub-account FIRST (real collateral tokens → winner) via coverLoss; if the hub can't
+    ///      cover (reverts, e.g. InsufficientMarketInsurance) fall back to the pre-existing
+    ///      internal insurance-sub-account draw + ADL. Always emits an event (no silent bad debt).
+    function _coverWinnerDeficit(uint256 pairId, address winner, uint256 deficit) internal {
+        address hub = insuranceFund;
+        // Primary: external per-market InsuranceHub (real tokens, isolated per market).
+        if (hub != address(0) && collateralToken != address(0)) {
+            uint256 tokenAmt = _fromStandardDecimals(collateralToken, deficit);
+            if (tokenAmt > 0) {
+                try IInsuranceHubCover(hub).coverLoss(address(this), collateralToken, tokenAmt, winner) {
+                    emit InsuranceCovered(pairId, winner, deficit, tokenAmt, true);
+                    return;
+                } catch {
+                    // fall through to the legacy internal draw + ADL
+                }
+            }
+        }
+        // Fallback: original in-clone insurance sub-account draw (funded via funding fees), then ADL.
+        uint256 remaining = deficit;
+        if (hub != address(0)) {
+            uint256 fundBal = balances[hub].available;
+            if (fundBal >= remaining) {
+                balances[hub].available -= remaining;
+                balances[winner].available += remaining;
+                emit InsuranceCovered(pairId, winner, deficit, 0, true);
+                return;
+            } else if (fundBal > 0) {
+                balances[hub].available = 0;
+                balances[winner].available += fundBal;
+                remaining -= fundBal;
+            }
+        }
+        emit InsuranceCovered(pairId, winner, deficit, 0, false);
+        emit ADLTriggered(pairId, 0, winner, remaining, remaining);
     }
 
     function _validateOrder(Order calldata order, bytes calldata sig, bool expectLong) internal view {

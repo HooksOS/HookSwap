@@ -5,6 +5,18 @@
   "deployer": "0x46B7fC4978D74c6Eda6b4573E5bE2C9675846adc",
   "weth9": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
 
+  "guardWiring": {
+    "_note": "SECURITY_REVIEW H-1/H-2/M-1 FIX — OracleGuard + limit-price + InsuranceHub now WIRED into PerpMarket's settle path (previously deployed-but-dormant). New impl v4 + Factory v4 (createMarket/constructor signatures unchanged). Deployed 2026-07-19, ONCHAIN EXECUTION SUCCESSFUL; all setFactory repoints verified on-chain (feeRouter/registry/oracleGuard/bondManager .factory()==factory v4). Fixes fork-proven 5/5 (contracts/perps/test/GuardWiring.t.sol) against live Sepolia Chainlink. THE CURRENT canonical factory is v4.",
+    "perpMarketImplementation_v4": "0x30348E8802C90420b43B32d3EEE34D80f9eA7b9d",
+    "perpMarketFactory_v4": "0xa1A8C5A2D5527abfD2E46F4FaCebC6BC00C1a79a",
+    "fixes": {
+      "H1_oracleBreaker": "PerpMarket._guardPrice → OracleGuard.checkDeviation at updatePrice/_settlePair/_closePair/liquidate (stale/deviated mark reverts settlement)",
+      "H2_limitPrice": "LIMIT long fills only if matchPrice<=order.price, short only if >=order.price (LimitPriceViolated)",
+      "M1_insurance": "factory setInsuranceFund(InsuranceHub); winner-shortfall draws from market sub-account via coverLoss (try/catch → ADL fallback), always emits InsuranceCovered (no silent bad debt)"
+    },
+    "supersedes": { "perpMarketFactory_v3": "0xa6A4272e5b5162c944cbF09eEb8BAda13eC5161A", "perpMarketImplementation_v3": "0xCc6605183a70a04f7b0b255A826BbA251E3A5f3e" }
+  },
+
   "productionHardening": {
     "_note": "BondManager (slashable creation bonds, spec §4/§5) + InsuranceHub (per-market insurance sub-accounts, spec §7) built + integrated + on-chain tested on Sepolia 2026-07-19. NEW FeeRouter v2 routes the insurance slice per-market via InsuranceHub.notifyFee (approve+pull); NEW Factory v3 createMarket is payable-for-bond (require msg.value >= minBond(tier)+listingFee, forwards bond to BondManager.postBond, listingFee to treasury). Reuses PerpMarket impl + MarketRegistry + OracleGuard + ParamGuard; setFactory on registry+oracleGuard repointed to factory v3. Full proof + tx table: ~/perps-deploy/bonds-insurance-results.json. Deploy+test script: contracts/perps/script/BondsInsuranceTest.s.sol. 22 deploy/test txs status 0x1 + 2 mined revert txs status 0x0 (WithdrawTooEarly, InsufficientMarketInsurance). Not production-wired; full audit before mainnet.",
     "bondManager": "0x9146Eb0bcB3CF09bd7924787415595a182F07eE8",

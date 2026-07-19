@@ -245,6 +245,16 @@ contract PerpMarketFactory is Ownable {
         // Enforce the per-market leverage cap ON-CHAIN (spec §8) before handing off control.
         m.setMarketMaxLeverage(clampedLev);
 
+        // SECURITY_REVIEW.md H-1 / M-1: wire the on-chain safety layer into the settle path
+        // BEFORE handing off control, so it's active from the market's first trade.
+        //  - OracleGuard: runtime deviation/staleness breaker on every settled price.
+        //  - InsuranceHub (== the FeeRouter's insurance sink): the market's own per-market
+        //    sub-account that the settle path draws to cover winner-shortfall bad-debt. The
+        //    market is a self-authorized coverer in the hub (msg.sender == market), so no
+        //    extra authorization tx is needed.
+        m.setOracleGuard(oracleGuard);
+        m.setInsuranceFund(FeeRouter(feeRouter).insuranceHub());
+
         // Platform keeps operational control; creator only earns fees.
         m.transferOwnership(platformAdmin);
 
