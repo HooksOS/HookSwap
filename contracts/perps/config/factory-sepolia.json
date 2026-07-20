@@ -5,8 +5,32 @@
   "deployer": "0x46B7fC4978D74c6Eda6b4573E5bE2C9675846adc",
   "weth9": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
 
+  "securityFixesV5": {
+    "_note": "SECURITY_REVIEW.md OPEN Medium/Low FIX — M-3 (partial liquidation reward) + L-2 (route liquidation penalty to the wired insurance sub-account) + L-3 (revert zero-normalized deposits) in a new PerpMarket impl v5; M-4 (a PAUSED-but-not-slashed market no longer traps the creator's bond; only DELISTED/slashed blocks reclaim) in a new BondManager v2. Factory CODE unchanged → canonical factory STAYS v4 (0xa1A8…); it was merely repointed via setImplementation(implV5) + setBondManager(bondV2). Deployed + ONCHAIN VERIFIED on Sepolia 2026-07-19 (5 deploy txs status 0x1 + 1 createMarket proof tx). All fixes fork-proven 4/4 (contracts/perps/test/SecurityFixesV5.t.sol) against live Sepolia Chainlink. Design-accepted (no code): M-2 (emergencyPause+matcher-deauth is the real on-chain kill; registry status advisory), L-1 (owner power; timelock is the mitigation), L-4 (pause is an intentional global freeze; fees recoverable on unpause). Existing v4-created markets keep impl v4; NEW markets minted by the factory clone impl v5 (proven: clone 0xeccc9ec8… runtime bytecode → impl v5).",
+    "perpMarketImplementation_v5": "0x190694b5712C4Fc4D1eeC0d8E78AbFb8c089EB9b",
+    "bondManager_v2": "0xB3076bd496A3161F6D0596380f35E5ae0ef0A54E",
+    "perpMarketFactory": "0xa1A8C5A2D5527abfD2E46F4FaCebC6BC00C1a79a",
+    "fixes": {
+      "M3_partialLiquidationReward": "liquidate pays liquidator min(penalty, residual)/2 (was all-or-nothing → 0 on underwater positions)",
+      "L2_penaltyRouting": "liquidation insurance slice credited to balances[insuranceFund] (spendable by cover path) instead of the dead pendingLiquidationPenalty counter",
+      "L3_zeroDepositGuard": "all 6 deposit paths revert InvalidAmount when standardAmount==0 (d>18 dust)",
+      "M4_bondReclaim": "BondManager.withdrawBond blocks only slashed OR DELISTED(status 2); PAUSED(1) no longer traps the bond"
+    },
+    "onChainProof": {
+      "deployImplV5": "0x3a114a1f98ea962d0bc24adedcb1f14efe2f4f1b682af339aec7b6447f747ad1",
+      "factorySetImplementation": "0x53f358ca5c011755f45d80f4826bd55162e69ef9117b5d604a0f68487e09cdd0",
+      "deployBondManagerV2": "0xd8a8b88297f903bc74b31c26c11c5ee3eed8481c79dd6f6529e63ed83dc5724e",
+      "bondV2SetFactory": "0xecf115442a41d4ef4c48ff23033bee0630fe7ce56f94dac47d3c840cb9e05936",
+      "factorySetBondManager": "0x55a69cf3dccae0d6c321689f5504941972b013ffd839fcf4441657b927a170d3",
+      "createMarketV5Clone": "0x5e5d08377e4b7298567ffe87bfc3054fe8a15b37a7826dbc8e7ab033ff92fb24",
+      "v5CloneMarket": "0xeCCc9ec8f2C288f9E8d46048bfEA1bB75FE5b943",
+      "cloneImplPointer": "clone runtime bytecode (EIP-1167) delegates to impl v5 0x190694b5…; clone.oracleGuard/insuranceFund/collateralToken/feeReceiver all wired"
+    },
+    "supersedes": { "perpMarketImplementation_v4": "0x30348E8802C90420b43B32d3EEE34D80f9eA7b9d", "bondManager_v1": "0x9146Eb0bcB3CF09bd7924787415595a182F07eE8" }
+  },
+
   "guardWiring": {
-    "_note": "SECURITY_REVIEW H-1/H-2/M-1 FIX — OracleGuard + limit-price + InsuranceHub now WIRED into PerpMarket's settle path (previously deployed-but-dormant). New impl v4 + Factory v4 (createMarket/constructor signatures unchanged). Deployed 2026-07-19, ONCHAIN EXECUTION SUCCESSFUL; all setFactory repoints verified on-chain (feeRouter/registry/oracleGuard/bondManager .factory()==factory v4). Fixes fork-proven 5/5 (contracts/perps/test/GuardWiring.t.sol) against live Sepolia Chainlink. THE CURRENT canonical factory is v4.",
+    "_note": "SECURITY_REVIEW H-1/H-2/M-1 FIX — OracleGuard + limit-price + InsuranceHub now WIRED into PerpMarket's settle path (previously deployed-but-dormant). New impl v4 + Factory v4 (createMarket/constructor signatures unchanged). Deployed 2026-07-19, ONCHAIN EXECUTION SUCCESSFUL; all setFactory repoints verified on-chain (feeRouter/registry/oracleGuard/bondManager .factory()==factory v4). Fixes fork-proven 5/5 (contracts/perps/test/GuardWiring.t.sol) against live Sepolia Chainlink. NOTE: factory v4 remains the canonical factory ADDRESS but its implementation() is now impl v5 and bondManager() is BondManager v2 (see securityFixesV5 above).",
     "perpMarketImplementation_v4": "0x30348E8802C90420b43B32d3EEE34D80f9eA7b9d",
     "perpMarketFactory_v4": "0xa1A8C5A2D5527abfD2E46F4FaCebC6BC00C1a79a",
     "fixes": {

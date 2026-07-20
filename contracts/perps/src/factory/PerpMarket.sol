@@ -308,6 +308,9 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         if (!supportedTokens[token]) revert TokenNotSupported();
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         uint256 standardAmount = _toStandardDecimals(token, amount);
+        // L-3 (SECURITY_REVIEW.md): reject dust that normalizes to 0 (d>18 collateral) — the
+        // tokens were just pulled, so a 0 credit would silently take value from the depositor.
+        if (standardAmount == 0) revert InvalidAmount();
         balances[msg.sender].available += standardAmount;
         emit Deposited(msg.sender, standardAmount);
     }
@@ -325,6 +328,7 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         if (!supportedTokens[token]) revert TokenNotSupported();
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         uint256 standardAmount = _toStandardDecimals(token, amount);
+        if (standardAmount == 0) revert InvalidAmount(); // L-3: reject dust that credits 0
         balances[recipient].available += standardAmount;
         emit DepositedFor(recipient, msg.sender, token, standardAmount);
     }
@@ -343,6 +347,7 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
         // 计算标准化金额并计入余额
         uint256 standardAmount = _toStandardDecimals(weth, msg.value);
+        if (standardAmount == 0) revert InvalidAmount(); // L-3: reject dust that credits 0
         balances[msg.sender].available += standardAmount;
         emit Deposited(msg.sender, standardAmount);
     }
@@ -353,6 +358,7 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         IERC20Permit(token).permit(msg.sender, address(this), amount, deadline, v, r, s);
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         uint256 standardAmount = _toStandardDecimals(token, amount);
+        if (standardAmount == 0) revert InvalidAmount(); // L-3: reject dust that credits 0
         balances[msg.sender].available += standardAmount;
         emit Deposited(msg.sender, standardAmount);
     }
@@ -409,6 +415,7 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         // 从用户账户转入代币（用户需要先 approve）
         IERC20(token).safeTransferFrom(user, address(this), amount);
         uint256 standardAmount = _toStandardDecimals(token, amount);
+        if (standardAmount == 0) revert InvalidAmount(); // L-3: reject dust that credits 0
         balances[user].available += standardAmount;
 
         emit DepositedFor(user, msg.sender, token, standardAmount);
@@ -450,6 +457,7 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
         // 计入用户余额
         uint256 standardAmount = _toStandardDecimals(weth, msg.value);
+        if (standardAmount == 0) revert InvalidAmount(); // L-3: reject dust that credits 0
         balances[user].available += standardAmount;
 
         emit DepositedFor(user, msg.sender, weth, standardAmount);
@@ -865,13 +873,29 @@ contract PerpMarket is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         _settleProfit(pos, longPnL, shortPnL);
 
         // 清算罚金：一部分给清算者(激励)，一部分进保险基金
-        uint256 liquidatorReward = penalty / 2;  // 50% 给清算者
-        uint256 insurancePenalty = penalty - liquidatorReward;  // 50% 进保险基金
-
-        if (penalty > 0 && balances[liqTrader].available >= penalty) {
-            balances[liqTrader].available -= penalty;
-            balances[msg.sender].available += liquidatorReward;  // 清算者奖励
-            pendingLiquidationPenalty += insurancePenalty;  // 累计到待转保险基金
+        // M-3 (SECURITY_REVIEW.md): pay the liquidator from WHATEVER residual exists rather than
+        // all-or-nothing. A deeply-underwater position often leaves `available < penalty` after
+        // settlement; the old `>= penalty` gate then skipped the entire block, so the liquidator
+        // got NOTHING (no incentive to close exactly the positions that most need closing). Now the
+        // penalty is capped to the residual and split pro-rata, so the liquidator is always paid
+        // for a non-empty residual and the position stays economically liquidatable.
+        uint256 avail = balances[liqTrader].available;
+        uint256 actualPenalty = penalty > avail ? avail : penalty;
+        uint256 liquidatorReward;
+        if (actualPenalty > 0) {
+            balances[liqTrader].available -= actualPenalty;
+            liquidatorReward = actualPenalty / 2;                       // 50% 给清算者
+            uint256 insurancePenalty = actualPenalty - liquidatorReward; // remainder → insurance
+            balances[msg.sender].available += liquidatorReward;         // 清算者奖励
+            // L-2 (SECURITY_REVIEW.md): route the insurance slice into the WIRED insurance
+            // sub-account (spendable by _coverWinnerDeficit's fallback + transferFundingToInsurance
+            // path) instead of the dead `pendingLiquidationPenalty` counter that nothing ever routed.
+            // Fall back to the counter only when no insurance fund is wired (backward-compat).
+            if (insuranceFund != address(0)) {
+                balances[insuranceFund].available += insurancePenalty;
+            } else {
+                pendingLiquidationPenalty += insurancePenalty;
+            }
         }
 
         _updatePositionSize(pos);

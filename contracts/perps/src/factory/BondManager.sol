@@ -150,9 +150,17 @@ contract BondManager is Ownable {
     // Creator — reclaim
     // ============================================================
 
-    /// @notice Reclaim a bond after the cool-down, IF not slashed and the market is ACTIVE.
-    ///         Reverts before the delay, if slashed/withdrawn, if the caller isn't the
-    ///         creator, or if the market's MarketRegistry status is not ACTIVE.
+    /// @notice Reclaim a bond after the cool-down, IF not slashed and the market is not DELISTED.
+    ///         Reverts before the delay, if slashed/withdrawn, if the caller isn't the creator,
+    ///         or if the market is DELISTED.
+    ///
+    ///         M-4 (SECURITY_REVIEW.md): the old gate required registry status == ACTIVE, so an
+    ///         ordinary operational PAUSE (a legitimate, temporary state) trapped the creator's
+    ///         bond indefinitely — a de-facto seizure with no on-chain `slashed` record. A bond is
+    ///         the abuse deterrent: seizing it must go through `slash` (permanent, emits
+    ///         BondSlashed → treasury). So only two states may block a post-cool-down reclaim:
+    ///         `slashed` (checked above) and DELISTED (the explicit abuse-takedown terminal state).
+    ///         PAUSED no longer blocks — a paused-but-not-slashed market's creator can still reclaim.
     function withdrawBond(address market) external {
         Bond storage b = bonds[market];
         if (b.postedAt == 0) revert NoBond();
@@ -161,11 +169,12 @@ contract BondManager is Ownable {
         if (b.withdrawn) revert BondClosed();
         if (block.timestamp < uint256(b.postedAt) + withdrawDelay) revert WithdrawTooEarly();
 
-        // Market must still be ACTIVE in the registry (not paused/delisted).
+        // Market must not be DELISTED in the registry (Status: 0=ACTIVE, 1=PAUSED, 2=DELISTED).
+        // ACTIVE and PAUSED both permit reclaim; only a DELISTED (abuse) market blocks it.
         uint256 idx = IMarketRegistryStatus(registry).indexOf(market);
         if (idx == 0) revert UnknownMarket();
         (, , , , , uint8 status, ) = IMarketRegistryStatus(registry).markets(idx - 1);
-        if (status != 0) revert MarketNotActive(); // 0 = ACTIVE
+        if (status == 2) revert MarketNotActive(); // 2 = DELISTED (abuse takedown)
 
         uint256 amt = b.amount;
         b.withdrawn = true;
