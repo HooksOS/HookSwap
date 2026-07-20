@@ -40,6 +40,7 @@ import { OrderTicket } from '~/terminal/screens/perps/OrderTicket'
 import { PerpsChart } from '~/terminal/screens/perps/PerpsChart'
 import { PerpsWatchlist } from '~/terminal/screens/perps/PerpsWatchlist'
 import { PositionsTable } from '~/terminal/screens/perps/PositionsTable'
+import { PerpsTutorial, PERPS_TUTORIAL_STEPS } from '~/terminal/screens/perps/PerpsTutorial'
 import { TradesFeed } from '~/terminal/screens/perps/TradesFeed'
 import { PERPS_FACTORY_HOME_CHAIN } from '~/terminal/perps/factory/abis'
 import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
@@ -65,6 +66,10 @@ export function PerpsScreen(): JSX.Element {
   const connected = Boolean(account.address)
   const trader = account.address as Address | undefined
   const wrongChain = connected && account.chainId !== PERPS_CHAIN
+
+  // Interactive first-visit walkthrough. `tutorialOpen` is bumped to force-open it
+  // from the "Tutorial" button; it also auto-starts once (localStorage-gated).
+  const [tutorialOpen, setTutorialOpen] = useState(0)
 
   const marketsQuery = useMarkets({ chainId: PERPS_CHAIN })
   const markets = marketsQuery.markets
@@ -140,14 +145,33 @@ export function PerpsScreen(): JSX.Element {
       <div style={{ padding: '14px var(--tm-gutter) 40px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 10 }}>
           {/* Engine status — honest offline/fallback indicator */}
-          <div style={{ fontFamily: terminalFonts.mono, fontSize: 10.5, color: terminalColors.ink3 }}>
-            {marketsQuery.engineUnreachable ? (
-              <span style={{ color: terminalColors.warn }}>
-                ● Matching engine offline{marketsQuery.source === 'chain' ? ' — showing on-chain markets' : ''}
-              </span>
-            ) : marketsQuery.source === 'engine' ? (
-              <span style={{ color: terminalColors.greenDeep }}>● Engine connected</span>
-            ) : null}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontFamily: terminalFonts.mono, fontSize: 10.5, color: terminalColors.ink3 }}>
+              {marketsQuery.engineUnreachable ? (
+                <span style={{ color: terminalColors.warn }}>
+                  ● Matching engine offline{marketsQuery.source === 'chain' ? ' — showing on-chain markets' : ''}
+                </span>
+              ) : marketsQuery.source === 'engine' ? (
+                <span style={{ color: terminalColors.greenDeep }}>● Engine connected</span>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => setTutorialOpen((n) => n + 1)}
+              title="Replay the desk walkthrough"
+              style={{
+                fontFamily: terminalFonts.mono,
+                fontSize: 10.5,
+                color: terminalColors.ink3,
+                background: 'transparent',
+                border: `1px solid ${terminalColors.line}`,
+                borderRadius: 7,
+                padding: '4px 10px',
+                cursor: 'pointer',
+              }}
+            >
+              ? Tutorial
+            </button>
           </div>
           <button
             type="button"
@@ -182,31 +206,35 @@ export function PerpsScreen(): JSX.Element {
             }}
           >
             {/* 1 — Markets watchlist */}
-            <InstrumentPanel title="Markets" flush>
-              {marketsLoading ? (
-                <PanelNote>Loading markets…</PanelNote>
-              ) : marketsQuery.error ? (
-                <PanelNote>Markets unavailable</PanelNote>
-              ) : markets ? (
-                <PerpsWatchlist markets={markets} selected={selected?.address} onSelect={(m) => setSelectedAddr(m.address)} />
-              ) : (
-                <PanelNote>Loading markets…</PanelNote>
-              )}
-            </InstrumentPanel>
+            <div data-tut="watchlist">
+              <InstrumentPanel title="Markets" flush>
+                {marketsLoading ? (
+                  <PanelNote>Loading markets…</PanelNote>
+                ) : marketsQuery.error ? (
+                  <PanelNote>Markets unavailable</PanelNote>
+                ) : markets ? (
+                  <PerpsWatchlist markets={markets} selected={selected?.address} onSelect={(m) => setSelectedAddr(m.address)} />
+                ) : (
+                  <PanelNote>Loading markets…</PanelNote>
+                )}
+              </InstrumentPanel>
+            </div>
 
             {/* 2 — Chart + OHLC */}
-            <InstrumentPanel
-              title={`${selected?.label ?? 'Perp'} · 1M`}
-              live={candles.status === 'live' || orderbook.status === 'live' || trades.status === 'live'}
-              corners
-              meta={[ticker.indexPrice !== undefined ? 'Mark · Chainlink' : selected ? `Mark · ${selected.source === 'engine' ? 'engine' : 'chain'}` : '—']}
-              bodyStyle={{ padding: 10 }}
-            >
-              <PerpsChart candles={candles.candles} height={360} />
-            </InstrumentPanel>
+            <div data-tut="chart">
+              <InstrumentPanel
+                title={`${selected?.label ?? 'Perp'} · 1M`}
+                live={candles.status === 'live' || orderbook.status === 'live' || trades.status === 'live'}
+                corners
+                meta={[ticker.indexPrice !== undefined ? 'Mark · Chainlink' : selected ? `Mark · ${selected.source === 'engine' ? 'engine' : 'chain'}` : '—']}
+                bodyStyle={{ padding: 10 }}
+              >
+                <PerpsChart candles={candles.candles} height={360} />
+              </InstrumentPanel>
+            </div>
 
             {/* 3 — Order Book + Trades stacked */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div data-tut="orderbook" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <InstrumentPanel title="Order Book" flush>
                 <OrderBook bids={orderbook.bids} asks={orderbook.asks} status={orderbook.status} spread={spread} />
               </InstrumentPanel>
@@ -216,21 +244,23 @@ export function PerpsScreen(): JSX.Element {
             </div>
 
             {/* 4 — Order Ticket */}
-            <InstrumentPanel title="Order Ticket" meta={['Isolated']} flush>
-              <OrderTicket
-                market={selected}
-                trader={trader}
-                chainId={PERPS_CHAIN}
-                connected={connected}
-                wrongChain={wrongChain}
-                markPrice={markPrice}
-                onConnect={() => accountDrawer.open()}
-                onSwitchChain={() => void selectChain(PERPS_CHAIN)}
-              />
-            </InstrumentPanel>
+            <div data-tut="ticket">
+              <InstrumentPanel title="Order Ticket" meta={['Isolated']} flush>
+                <OrderTicket
+                  market={selected}
+                  trader={trader}
+                  chainId={PERPS_CHAIN}
+                  connected={connected}
+                  wrongChain={wrongChain}
+                  markPrice={markPrice}
+                  onConnect={() => accountDrawer.open()}
+                  onSwitchChain={() => void selectChain(PERPS_CHAIN)}
+                />
+              </InstrumentPanel>
+            </div>
 
             {/* Bottom — Positions (spans all columns) */}
-            <div style={{ gridColumn: '1 / -1' }}>
+            <div data-tut="positions" style={{ gridColumn: '1 / -1' }}>
               <InstrumentPanel title="Positions" flush>
                 <PositionsTable
                   positions={positions.positions}
@@ -321,6 +351,14 @@ export function PerpsScreen(): JSX.Element {
           matching-engine feed + on-chain state — no mock data.
         </div>
       </div>
+
+      {/* Interactive first-visit walkthrough (localStorage-gated; replayable via the Tutorial button). */}
+      <PerpsTutorial
+        steps={PERPS_TUTORIAL_STEPS}
+        storageKey="hookswap.perps.tutorial.seen.v1"
+        ready={!noMarkets && !!markets && markets.length > 0}
+        openSignal={tutorialOpen}
+      />
     </div>
   )
 }
