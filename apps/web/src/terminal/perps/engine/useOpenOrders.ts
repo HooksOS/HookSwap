@@ -14,8 +14,9 @@
  */
 import { useCallback, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useSignTypedData } from 'wagmi'
 import type { Address } from '~/chains'
-import { EngineError, perpsEngine, type EngineOpenOrder } from '~/terminal/perps/engine/client'
+import { cancelTypedData, EngineError, perpsEngine, type EngineOpenOrder } from '~/terminal/perps/engine/client'
 
 /** Sepolia — the only chain HookSwapPerps is deployed + validated on. */
 const PERPS_CHAIN_ID = 11155111
@@ -90,6 +91,8 @@ export function useOpenOrders({
     staleTime: 2_000,
   })
 
+  const { signTypedDataAsync } = useSignTypedData()
+
   const [pendingOrderId, setPendingOrderId] = useState<string | undefined>(undefined)
   const [cancelStatus, setCancelStatus] = useState<CancelStatus>('idle')
   const [cancelError, setCancelError] = useState<string | undefined>(undefined)
@@ -102,7 +105,8 @@ export function useOpenOrders({
 
   const cancel = useCallback(
     async (orderId: string): Promise<void> => {
-      if (!ready) {
+      // ready implies market + trader are defined and chain is Sepolia.
+      if (!ready || !market || !trader) {
         setCancelError(disabledReason ?? 'Cannot cancel')
         setCancelStatus('error')
         return
@@ -111,7 +115,11 @@ export function useOpenOrders({
       setPendingOrderId(orderId)
       setCancelStatus('canceling')
       try {
-        await perpsEngine.cancelOrder(orderId)
+        // Authenticated cancel: sign the EIP-712 Cancel proving wallet ownership of the order.
+        const signature = await signTypedDataAsync(
+          cancelTypedData({ market: String(market), orderId, trader, chainId: chainId ?? PERPS_CHAIN_ID }),
+        )
+        await perpsEngine.cancelOrder(orderId, signature)
         setCancelStatus('done')
         // Re-poll so the cancelled order drops out of the list (never assume it's gone).
         await query.refetch()
@@ -122,7 +130,7 @@ export function useOpenOrders({
         setPendingOrderId(undefined)
       }
     },
-    [ready, disabledReason, query],
+    [ready, disabledReason, query, market, trader, chainId, signTypedDataAsync],
   )
 
   return {

@@ -2,6 +2,7 @@
 
 import { getAddress, recoverTypedDataAddress } from "viem";
 import {
+  EIP712_CANCEL_TYPES,
   EIP712_DOMAIN_NAME,
   EIP712_DOMAIN_VERSION,
   EIP712_ORDER_TYPES,
@@ -116,6 +117,37 @@ export function sanityCheck(
   }
   if (order.orderType === OrderType.LIMIT && order.price <= 0n) {
     throw new OrderError("LIMIT order.price must be > 0");
+  }
+}
+
+/**
+ * Recover the EIP-712 `Cancel` signer over the market's domain and require it == the
+ * order's `trader`. This authenticates DELETE /orders/:orderId — without it, anyone who
+ * reads an orderId from GET /orders can cancel another trader's resting order.
+ * Throws OrderError on invalid/mismatched signature.
+ */
+export async function verifyCancelSigner(
+  market: `0x${string}`,
+  orderId: string,
+  trader: `0x${string}`,
+  signature: `0x${string}`,
+): Promise<void> {
+  let recovered: `0x${string}`;
+  try {
+    recovered = await recoverTypedDataAddress({
+      domain: domainFor(market),
+      types: EIP712_CANCEL_TYPES,
+      primaryType: "Cancel",
+      message: { orderId, trader },
+      signature,
+    });
+  } catch (e: any) {
+    throw new OrderError(`cancel signature recovery failed: ${e?.message || e}`);
+  }
+  if (getAddress(recovered) !== getAddress(trader)) {
+    throw new OrderError(
+      `cancel signer ${recovered} != order trader ${trader} (wrong domain/market or forged)`,
+    );
   }
 }
 

@@ -150,6 +150,7 @@
     "https://*.hookswap.org",
     "https://trading.hookswap.org",
     "https://data.hookswap.org",
+    "wss://*.hookswap.org",
     "https://robinhoodchain.blockscout.com"
   ],
   "workerSrc": [

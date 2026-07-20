@@ -19,7 +19,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { formatUnits, parseUnits, type Hex } from 'viem'
 import { useReadContract, useSignTypedData } from 'wagmi'
 import type { Address } from '~/chains'
-import { EngineError, perpsEngine, type PlaceOrderResult } from '~/terminal/perps/engine/client'
+import { cancelTypedData, EngineError, perpsEngine, type PlaceOrderResult } from '~/terminal/perps/engine/client'
 import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
 import { LEVERAGE_PRECISION, OrderType, perpMarketReadAbi, PRICE_PRECISION, SIZE_PRECISION } from '~/terminal/perps/engine/perpMarketAbi'
 
@@ -286,13 +286,24 @@ export function usePlaceOrder({
     [marketAddress, trader, collateral, nonce, maxLeverageX, hasCollateral, chainId, signTypedDataAsync],
   )
 
-  const cancel = useCallback(async (orderId: string): Promise<void> => {
-    try {
-      await perpsEngine.cancelOrder(orderId)
-    } catch (e) {
-      setError(toMessage(e))
-    }
-  }, [])
+  const cancel = useCallback(
+    async (orderId: string): Promise<void> => {
+      if (!marketAddress || !trader) {
+        setError('Not ready')
+        return
+      }
+      try {
+        // Authenticated cancel: sign the EIP-712 Cancel proving wallet ownership.
+        const signature = await signTypedDataAsync(
+          cancelTypedData({ market: marketAddress, orderId, trader, chainId: chainId ?? 0 }),
+        )
+        await perpsEngine.cancelOrder(orderId, signature)
+      } catch (e) {
+        setError(toMessage(e))
+      }
+    },
+    [marketAddress, trader, chainId, signTypedDataAsync],
+  )
 
   const busy = status === 'signing' || status === 'submitting'
   const disabledReason = !enabled

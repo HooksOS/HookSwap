@@ -22,6 +22,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
+  EIP712_CANCEL_TYPES,
   EIP712_DOMAIN_NAME,
   EIP712_DOMAIN_VERSION,
   EIP712_ORDER_TYPES,
@@ -229,7 +230,22 @@ async function cancelBotOrders(): Promise<void> {
   for (const o of body) {
     if (!o?.orderId) continue;
     try {
-      await engine("DELETE", `/orders/${encodeURIComponent(o.orderId)}`);
+      // DELETE is now authenticated — sign the EIP-712 Cancel proving we own the order.
+      const signature = await account.signTypedData({
+        domain: {
+          name: EIP712_DOMAIN_NAME,
+          version: EIP712_DOMAIN_VERSION,
+          chainId: CHAIN_ID,
+          verifyingContract: MARKET,
+        },
+        types: EIP712_CANCEL_TYPES as any,
+        primaryType: "Cancel",
+        message: { orderId: o.orderId, trader: account.address },
+      });
+      await engine(
+        "DELETE",
+        `/orders/${encodeURIComponent(o.orderId)}?signature=${signature}`,
+      );
     } catch {
       /* already filled/gone — ignore */
     }

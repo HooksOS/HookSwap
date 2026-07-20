@@ -59,6 +59,7 @@ interface SerializedTrade {
   token: `0x${string}`;
   matchPrice: string;
   matchSize: string;
+  takerIsLong?: boolean;
   txHash: `0x${string}` | null;
   settled: boolean;
   reason?: string;
@@ -123,6 +124,7 @@ function deserializeTrade(s: SerializedTrade, market: `0x${string}`): Trade {
     token: s.token,
     matchPrice: BigInt(s.matchPrice),
     matchSize: BigInt(s.matchSize),
+    takerIsLong: s.takerIsLong ?? false,
     txHash: s.txHash ?? null,
     settled: s.settled,
     reason: s.reason,
@@ -247,6 +249,15 @@ export class MatchingEngine extends EventEmitter {
   /** Trades at/after `sinceMs` (chronological). */
   tradesSince(market: string, sinceMs: number): Trade[] {
     return this.allTrades(market).filter((t) => t.ts >= sinceMs);
+  }
+
+  /** Resolve an orderId to its owning market + trader (for cancel authorization). */
+  getOrderOwner(orderId: string): { market: `0x${string}`; trader: `0x${string}` } | undefined {
+    for (const [k, b] of this.books) {
+      const o = b.orders.get(orderId);
+      if (o) return { market: k as `0x${string}`, trader: o.order.trader };
+    }
+    return undefined;
   }
 
   cancel(orderId: string): { ok: boolean; reason?: string; market?: string } {
@@ -405,6 +416,7 @@ export class MatchingEngine extends EventEmitter {
         token: longO.token,
         matchPrice: mp,
         matchSize,
+        takerIsLong,
         txHash: res.txHash,
         settled: res.settled,
         reason: res.reason,
@@ -499,6 +511,7 @@ export class MatchingEngine extends EventEmitter {
       token: t.token,
       matchPrice: t.matchPrice.toString(),
       matchSize: t.matchSize.toString(),
+      takerIsLong: t.takerIsLong,
       txHash: t.txHash,
       settled: t.settled,
       reason: t.reason,

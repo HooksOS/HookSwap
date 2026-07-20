@@ -14,25 +14,32 @@ import type { FeedStatus } from '~/terminal/perps/engine/useOrderbook'
 
 const MAX_TRADES = 40
 
-function toTime(t: EngineTrade): string {
-  const raw = t.time ?? t.timestamp
-  if (raw === undefined) {
+/** 1e18-scaled decimal string → number (matches the engine's contract precision). */
+const WAD = 1e18
+
+function toTime(ts?: number): string {
+  if (typeof ts !== 'number' || !Number.isFinite(ts)) {
     return ''
   }
-  const d = typeof raw === 'number' ? new Date(raw) : new Date(raw)
+  const d = new Date(ts)
   if (Number.isNaN(d.getTime())) {
-    return typeof raw === 'string' ? raw : ''
+    return ''
   }
   return d.toLocaleTimeString('en-US', { hour12: false })
 }
 
 function parseTrade(t: EngineTrade): Trade | undefined {
-  const price = Number(t.price)
-  const size = Number(t.size)
+  // A failed live-settlement still emits a frame (settled:false) — never print it as a fill.
+  if (t.settled === false) {
+    return undefined
+  }
+  const price = Number(t.matchPrice) / WAD
+  const size = Number(t.matchSize) / WAD
   if (!Number.isFinite(price) || !Number.isFinite(size)) {
     return undefined
   }
-  return { price, size, time: toTime(t), side: t.side === 'sell' ? 'sell' : 'buy' }
+  // Aggressor (taker) side drives the tape tint: taker long = buy, taker short = sell.
+  return { price, size, time: toTime(t.ts), side: t.takerIsLong ? 'buy' : 'sell' }
 }
 
 export interface UseTrades {
@@ -66,8 +73,10 @@ export function useTrades({ market, limit = MAX_TRADES }: { market?: string; lim
     setLive([])
     const ctrl = openPerpsStream(market, {
       onMessage: (msg) => {
+        // Server frame shape: { type:'trade', trade: <serializedTrade> } (server.ts:291).
         if (msg.type === 'trade') {
-          const parsed = parseTrade(msg as EngineTrade)
+          const raw = (msg as { trade?: EngineTrade }).trade
+          const parsed = raw ? parseTrade(raw) : undefined
           if (parsed) {
             setLive((prev) => [parsed, ...prev].slice(0, limit))
           }
@@ -79,7 +88,10 @@ export function useTrades({ market, limit = MAX_TRADES }: { market?: string; lim
   }, [market, limit])
 
   return useMemo<UseTrades>(() => {
-    const seeded = (query.data ?? []).map(parseTrade).filter((t): t is Trade => t !== undefined)
+    // Defensive: getTrades already unwraps to an array, but never assume the shape at the .map.
+    const seeded = (Array.isArray(query.data) ? query.data : [])
+      .map(parseTrade)
+      .filter((t): t is Trade => t !== undefined)
     // Live frames first, then the polled seed, de-duped by the initial cap.
     const trades = [...live, ...seeded].slice(0, limit)
     const lastPrice = trades.length ? trades[0].price : undefined

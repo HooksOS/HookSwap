@@ -36,6 +36,8 @@ export interface Trade {
   token: `0x${string}`;
   matchPrice: bigint;
   matchSize: bigint;
+  /** Aggressor side: true when the incoming (taker) order was the long. Drives the tape's buy/sell tint. */
+  takerIsLong: boolean;
   /** On-chain settle tx hash when LIVE_SETTLE, else null (simulate-only). */
   txHash: `0x${string}` | null;
   /** true when settlement (send or simulate) succeeded. */

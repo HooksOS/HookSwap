@@ -8,7 +8,7 @@ import { ENV } from "./env.js";
 import { matcherAccount } from "./chain.js";
 import { fetchPositions } from "./chain.js";
 import { MatchingEngine } from "./engine.js";
-import { OrderError, parseOrder, parseSignature, sanityCheck, verifySigner } from "./order.js";
+import { OrderError, parseOrder, parseSignature, sanityCheck, verifyCancelSigner, verifySigner } from "./order.js";
 import { marksConfigured } from "./mark.js";
 import { CANDLE_INTERVALS, MarkStore, nextFundingTime, volume24h } from "./marketData.js";
 import type { MarketMeta, StoredOrder } from "./types.js";
@@ -150,9 +150,16 @@ export async function startServer(engine: MatchingEngine, marks: MarkStore): Pro
         });
       }
 
-      // DELETE /orders/:orderId
+      // DELETE /orders/:orderId?signature=<eip712 Cancel sig>
+      // Authenticated: the caller must prove they own the order by signing the EIP-712
+      // Cancel struct over the order's market domain. Without this, any actor could read
+      // an orderId from GET /orders and cancel another trader's resting order (griefing).
       if (method === "DELETE" && path.startsWith("/orders/")) {
         const orderId = decodeURIComponent(path.slice("/orders/".length));
+        const owner = engine.getOrderOwner(orderId);
+        if (!owner) return json(res, 404, { ok: false, error: "orderId not found" });
+        const signature = parseSignature(url.searchParams.get("signature"));
+        await verifyCancelSigner(owner.market, orderId, owner.trader, signature);
         const r = engine.cancel(orderId);
         if (!r.ok) return json(res, 400, { ok: false, error: r.reason });
         return json(res, 200, { ok: true, orderId });

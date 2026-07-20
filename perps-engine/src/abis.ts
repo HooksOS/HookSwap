@@ -182,6 +182,18 @@ export const EIP712_ORDER_TYPES = {
 export const EIP712_DOMAIN_NAME = "HookSwapPerps";
 export const EIP712_DOMAIN_VERSION = "1";
 
+// Off-chain-only auth for DELETE /orders/:orderId. NOT an on-chain typehash — the
+// engine recovers this to prove the caller owns the order before cancelling it.
+// Signed over the SAME per-market domain as Order (verifyingContract = market), so a
+// cancel sig is bound to one market. `orderId` is a unique single-use UUID, so a
+// replayed sig only ever re-cancels that same (already-gone) order — idempotent.
+export const EIP712_CANCEL_TYPES = {
+  Cancel: [
+    { name: "orderId", type: "string" },
+    { name: "trader", type: "address" },
+  ],
+} as const;
+
 // OracleGuard.getMarketConfig(market) — the on-chain per-market oracle config the
 // factory registered at createMarket. We read `refFeed` (the Chainlink deviation
 // reference feed) and use THAT feed as the engine's mark source, so the mark is the

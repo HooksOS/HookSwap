@@ -74,15 +74,28 @@ export interface EngineOrderbook {
   asks: EngineLevel[]
 }
 
-/** One printed trade from `GET /trades`. */
+/**
+ * One printed trade — the engine's `serializeTrade` shape EXACTLY (engine.ts:494).
+ * A P2P match settles a long against a short; `matchPrice`/`matchSize` are 1e18-scaled
+ * decimal strings and `ts` is unix ms. `takerIsLong` is the aggressor side (the incoming
+ * order) — the honest buy/sell tint for the tape (older persisted trades may omit it).
+ */
 export interface EngineTrade {
-  price: string
-  size: string
-  /** Taker side. */
-  side: 'buy' | 'sell'
-  /** ISO timestamp or unix ms — rendered as a short time. */
-  time?: string | number
-  timestamp?: string | number
+  matchPrice: string
+  matchSize: string
+  takerIsLong?: boolean
+  longTrader?: string
+  shortTrader?: string
+  token?: string
+  settled?: boolean
+  /** Unix ms the fill printed. */
+  ts?: number
+}
+
+/** `GET /trades` response envelope. */
+export interface EngineTradesResponse {
+  market: string
+  trades: EngineTrade[]
 }
 
 /**
@@ -303,8 +316,10 @@ export const perpsEngine = {
     return engineFetch<EngineOrderbook>('/orderbook', { params: { market }, signal })
   },
 
-  getTrades(market: string, limit = 40, signal?: AbortSignal): Promise<EngineTrade[]> {
-    return engineFetch<EngineTrade[]>('/trades', { params: { market, limit }, signal })
+  async getTrades(market: string, limit = 40, signal?: AbortSignal): Promise<EngineTrade[]> {
+    // The engine returns an envelope { market, trades: [...] } — unwrap it (mirrors getCandles).
+    const res = await engineFetch<EngineTradesResponse>('/trades', { params: { market, limit }, signal })
+    return Array.isArray(res?.trades) ? res.trades : []
   },
 
   getTicker(market: string, signal?: AbortSignal): Promise<EngineTicker> {
@@ -333,9 +348,45 @@ export const perpsEngine = {
     return engineFetch<PlaceOrderResult>('/orders', { method: 'POST', body, signal, timeoutMs: 15_000 })
   },
 
-  cancelOrder(orderId: string, signal?: AbortSignal): Promise<void> {
-    return engineFetch<void>(`/orders/${encodeURIComponent(orderId)}`, { method: 'DELETE', signal })
+  /**
+   * Cancel a resting order. The engine now AUTHENTICATES cancels: `signature` must be an
+   * EIP-712 `Cancel` sig (see `cancelTypedData`) proving the caller owns the order —
+   * without it the engine rejects (any actor could otherwise cancel any order by id).
+   */
+  cancelOrder(orderId: string, signature: string, signal?: AbortSignal): Promise<void> {
+    return engineFetch<void>(`/orders/${encodeURIComponent(orderId)}`, {
+      method: 'DELETE',
+      params: { signature },
+      signal,
+    })
   },
+}
+
+/**
+ * EIP-712 typed-data for an authenticated cancel — signed over the SAME per-market domain
+ * as an order (verifyingContract = the market), recovered engine-side against the order's
+ * owner. `orderId` is a unique single-use id, so a captured sig only re-cancels that same
+ * (already-gone) order. Pass the result straight to wagmi `signTypedDataAsync`.
+ */
+export const CANCEL_TYPES = {
+  Cancel: [
+    { name: 'orderId', type: 'string' },
+    { name: 'trader', type: 'address' },
+  ],
+} as const
+
+export function cancelTypedData(params: { market: string; orderId: string; trader: string; chainId: number }) {
+  return {
+    domain: {
+      name: 'HookSwapPerps',
+      version: '1',
+      chainId: params.chainId,
+      verifyingContract: params.market as `0x${string}`,
+    },
+    types: CANCEL_TYPES,
+    primaryType: 'Cancel' as const,
+    message: { orderId: params.orderId, trader: params.trader as `0x${string}` },
+  }
 }
 
 /* ------------------------------------------------------------------ WebSocket stream */
