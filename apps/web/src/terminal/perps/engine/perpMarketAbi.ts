@@ -107,6 +107,116 @@ export const perpMarketReadAbi = [
   },
 ] as const
 
+/**
+ * PerpMarket WRITE ABI — the collateral entry/exit functions the desk needs.
+ *
+ * Matches `contracts/perps/src/factory/PerpMarket.sol` EXACTLY:
+ *   • `depositETH() payable`            — wrap msg.value → WETH, credit `available` (no approval).
+ *   • `deposit(address token,uint256)`  — pull ERC-20 `amount` (native decimals) → credit `available`.
+ *   • `withdraw(address token,uint256)` — transfer out `amount` in STANDARD (1e18) units from `available`.
+ *   • `weth() view`                     — the market's wrapped-native (depositETH target).
+ *   • `supportedTokens(token) view`     — whether a token is an accepted collateral.
+ *
+ * BALANCE UNITS: the on-chain ledger (`getUserBalance`, and `withdraw`'s amount) is always
+ * STANDARD_DECIMALS = 18 (PerpMarket.sol:84), regardless of collateral token decimals. ERC-20
+ * `deposit` takes the amount in the TOKEN's native decimals (safeTransferFrom pulls it, then
+ * normalizes to 18). ETH `depositETH` takes msg.value in wei (ETH = 18).
+ */
+export const perpMarketWriteAbi = [
+  {
+    type: 'function',
+    name: 'depositETH',
+    stateMutability: 'payable',
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'deposit',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'token', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'withdraw',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'token', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+  {
+    // PerpMarket.sol:763 `closePair(uint256 pairId) external nonReentrant whenNotPaused`.
+    // Caller MUST be the pair's long or short trader; the pair must be ACTIVE; the market not
+    // paused. Exit price is the stored on-chain mark `tokenPrices[pos.token]` (no price arg).
+    type: 'function',
+    name: 'closePair',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'pairId', type: 'uint256' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'weth',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'supportedTokens',
+    stateMutability: 'view',
+    inputs: [{ name: 'token', type: 'address' }],
+    outputs: [{ type: 'bool' }],
+  },
+] as const
+
+/** Minimal ERC-20 ABI for the WETH-collateral deposit path (balance / allowance / approve). */
+export const erc20Abi = [
+  {
+    type: 'function',
+    name: 'balanceOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'allowance',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'approve',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    type: 'function',
+    name: 'decimals',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint8' }],
+  },
+] as const
+
+/** The on-chain collateral ledger is always 18-decimal standard units. */
+export const STANDARD_DECIMALS = 18
+
 /** PerpMarket.PositionStatus enum ordering (must match the contract). */
 export enum PositionStatus {
   Active = 0,

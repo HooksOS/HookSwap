@@ -2,6 +2,7 @@ import { ReactNode, useMemo, useState } from 'react'
 import type { Address } from '~/chains'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { EMPTY } from '~/terminal/screens/perps/perpsCatalog'
+import { CollateralDrawer } from '~/terminal/screens/perps/CollateralDrawer'
 import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
 import { usePlaceOrder } from '~/terminal/perps/engine/usePlaceOrder'
 
@@ -45,6 +46,7 @@ export function OrderTicket({
   const [leverage, setLeverage] = useState(10)
   const [size, setSize] = useState('')
   const [limitPrice, setLimitPrice] = useState('')
+  const [collateralOpen, setCollateralOpen] = useState(false)
 
   const placeOrder = usePlaceOrder({ market, trader, chainId })
   const base = market?.base ?? 'BASE'
@@ -86,8 +88,11 @@ export function OrderTicket({
     return side === 'long' ? `Long ${base}` : `Short ${base}`
   }, [connected, wrongChain, market, placeOrder.status, placeOrder.hasCollateral, placeOrder.nonce, side, base])
 
+  // The deposit guard is active once the account has loaded (nonce known) with 0 collateral.
+  const needsDeposit = Boolean(market) && !placeOrder.hasCollateral && placeOrder.nonce !== undefined
+
   const canClick =
-    !connected || wrongChain ? true : Boolean(market) && placeOrder.canSubmit && inputsOk && !busy
+    !connected || wrongChain ? true : needsDeposit ? true : Boolean(market) && placeOrder.canSubmit && inputsOk && !busy
 
   const onSubmit = (): void => {
     if (!connected) {
@@ -96,6 +101,11 @@ export function OrderTicket({
     }
     if (wrongChain) {
       onSwitchChain()
+      return
+    }
+    // No deposited collateral → open the funding drawer instead of a dead-end disabled state.
+    if (needsDeposit) {
+      setCollateralOpen(true)
       return
     }
     void placeOrder.submit({ side, orderType, sizeStr: size, leverage: effLev, limitPriceStr: limitPrice })
@@ -161,6 +171,46 @@ export function OrderTicket({
             </button>
           )
         })}
+      </div>
+
+      {/* Collateral — live available + a manage affordance (opens the deposit/withdraw drawer). */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: terminalColors.panel,
+          border: `1px solid ${terminalColors.line2}`,
+          borderRadius: 8,
+          padding: '7px 11px',
+          marginBottom: 9,
+        }}
+      >
+        <span style={{ fontSize: 10, color: terminalColors.ink3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          Collateral
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: terminalColors.ink }}>{placeOrder.availableFormatted ?? EMPTY}</span>
+          <button
+            type="button"
+            onClick={() => setCollateralOpen(true)}
+            style={{
+              fontFamily: MONO,
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: '0.03em',
+              textTransform: 'uppercase',
+              color: terminalColors.greenDeep,
+              background: terminalColors.greenBg,
+              border: `1px solid ${terminalColors.greenBorder}`,
+              borderRadius: 6,
+              padding: '4px 9px',
+              cursor: 'pointer',
+            }}
+          >
+            {placeOrder.hasCollateral ? 'Manage' : 'Deposit'}
+          </button>
+        </div>
       </div>
 
       {/* Size */}
@@ -311,6 +361,19 @@ export function OrderTicket({
       ) : placeOrder.disabledReason && placeOrder.disabledReason !== 'Submitting…' ? (
         <div style={{ marginTop: 8, textAlign: 'center', fontSize: 10, color: terminalColors.faint }}>{placeOrder.disabledReason}</div>
       ) : null}
+
+      {/* Deposit / withdraw collateral drawer. */}
+      <CollateralDrawer
+        open={collateralOpen}
+        onClose={() => setCollateralOpen(false)}
+        market={market}
+        trader={trader}
+        chainId={chainId ?? 0}
+        connected={connected}
+        wrongChain={wrongChain}
+        onConnect={onConnect}
+        onSwitchChain={onSwitchChain}
+      />
     </div>
   )
 }

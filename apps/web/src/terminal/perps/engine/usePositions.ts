@@ -143,6 +143,7 @@ export function usePositions({
         uPnlRaw = isLong ? longPnL : shortPnL
       }
       rows.push({
+        pairId: pairIds[i],
         market: pos.token as string,
         side: isLong ? 'long' : 'short',
         size: fmt(pos.size, SIZE_PRECISION, 4),

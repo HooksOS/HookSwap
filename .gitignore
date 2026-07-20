@@ -132,6 +132,10 @@ contracts/cache/
 contracts/out/
 contracts/lib/
 contracts/broadcast/
+contracts/perps/cache/
+contracts/perps/out/
+contracts/perps/lib/
+contracts/perps/broadcast/
 
 # more dev screenshots/logs
 terminal-*.png

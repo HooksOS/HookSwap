@@ -19,22 +19,24 @@ No **Critical** (direct, unauthorized, permissionless fund-drain / isolation bre
 
 ## 2. Findings table (severity-sorted)
 
-| ID | Severity | Title | Location |
-|----|----------|-------|----------|
-| H-1 | High | OracleGuard runtime breaker is dormant — on-chain price is 100% matcher-trusted; stale-price counterparty extraction | `PerpMarket.sol` (whole price path); `OracleGuard.sol:161,182` never called |
-| H-2 | High | Signed limit price / orderType never enforced on-chain; matcher sets arbitrary entry & exit prices | `PerpMarket.sol:576-608, 644, 971-982` |
-| M-1 | Medium | Insurance is disconnected: factory never wires `insuranceFund`; InsuranceHub funds unreachable by settlement → uncovered bad debt | `PerpMarketFactory.sol:233-254`; `PerpMarket.sol:731-749, 861-871` |
-| M-2 | Medium | MarketRegistry kill-switch is cosmetic on-chain — a DELISTED/PAUSED market keeps trading | `MarketRegistry.sol:86`; `PerpMarket.sol:568` |
-| M-3 | Medium | Liquidation reward frequently unpayable → no incentive to liquidate underwater positions | `PerpMarket.sol:793-797` |
-| M-4 | Medium | Owner can lock a creator's bond indefinitely via registry status without slashing | `BondManager.sol:156-168`; `MarketRegistry.sol:86` |
-| L-1 | Low | Post-handoff owner can exceed ParamGuard bounds (fee → 100 bps, leverage → 100x) | `PerpMarket.sol:487-502` |
-| L-2 | Low | Orphaned accounting: `pendingLiquidationPenalty` never routed; funding stuck when `insuranceFund==0` | `PerpMarket.sol:796, 861-871` |
-| L-3 | Low | Decimals rounding: dust / >18-dec deposits credit 0 while pulling tokens | `PerpMarket.sol:253-260, 953-958` |
-| L-4 | Low | `FeeRouter.collect` reverts while the market is paused (fees uncollectable) | `FeeRouter.sol:141`; `PerpMarket.sol:307` |
-| I-1 | Info | First-come/bank-run withdrawal: `withdraw` gated only by raw token balance, no pro-rata on insolvency | `PerpMarket.sol:307-316` |
-| I-2 | Info | Fee-on-transfer collateral edge in the 3-way split | `FeeRouter.sol:140-160` |
-| I-3 | Info | Positive: clone/init/EIP-712 hardening is correct | `PerpMarket.sol:233-247` |
-| I-4 | Info | `updatePrice` has no freshness/deviation gate (matcher trust) | `PerpMarket.sol:557-561` |
+| ID | Severity | Title | Location | Status |
+|----|----------|-------|----------|--------|
+| H-1 | High | OracleGuard runtime breaker is dormant — on-chain price is 100% matcher-trusted; stale-price counterparty extraction | `PerpMarket.sol` (whole price path); `OracleGuard.sol:161,182` never called | ✅ FIXED (impl v4) |
+| H-2 | High | Signed limit price / orderType never enforced on-chain; matcher sets arbitrary entry & exit prices | `PerpMarket.sol:576-608, 644, 971-982` | ✅ FIXED (impl v4) |
+| M-1 | Medium | Insurance is disconnected: factory never wires `insuranceFund`; InsuranceHub funds unreachable by settlement → uncovered bad debt | `PerpMarketFactory.sol:233-254`; `PerpMarket.sol:731-749, 861-871` | ✅ FIXED (factory/impl v4) |
+| M-2 | Medium | MarketRegistry kill-switch is cosmetic on-chain — a DELISTED/PAUSED market keeps trading | `MarketRegistry.sol:86`; `PerpMarket.sol:568` | 🛡 RESOLVED-BY-DESIGN |
+| M-3 | Medium | Liquidation reward frequently unpayable → no incentive to liquidate underwater positions | `PerpMarket.sol:793-797` | ✅ FIXED (impl v5) |
+| M-4 | Medium | Owner can lock a creator's bond indefinitely via registry status without slashing | `BondManager.sol:156-168`; `MarketRegistry.sol:86` | ✅ FIXED (BondManager v2) |
+| L-1 | Low | Post-handoff owner can exceed ParamGuard bounds (fee → 100 bps, leverage → 100x) | `PerpMarket.sol:487-502` | 🛡 RESOLVED-BY-DESIGN |
+| L-2 | Low | Orphaned accounting: `pendingLiquidationPenalty` never routed; funding stuck when `insuranceFund==0` | `PerpMarket.sol:796, 861-871` | ✅ FIXED (impl v5) |
+| L-3 | Low | Decimals rounding: dust / >18-dec deposits credit 0 while pulling tokens | `PerpMarket.sol:253-260, 953-958` | ✅ FIXED (impl v5) |
+| L-4 | Low | `FeeRouter.collect` reverts while the market is paused (fees uncollectable) | `FeeRouter.sol:141`; `PerpMarket.sol:307` | 🛡 RESOLVED-BY-DESIGN |
+| I-1 | Info | First-come/bank-run withdrawal: `withdraw` gated only by raw token balance, no pro-rata on insolvency | `PerpMarket.sol:307-316` | ℹ️ Accepted (design note) |
+| I-2 | Info | Fee-on-transfer collateral edge in the 3-way split | `FeeRouter.sol:140-160` | ℹ️ Accepted (allowlist) |
+| I-3 | Info | Positive: clone/init/EIP-712 hardening is correct | `PerpMarket.sol:233-247` | ✅ Positive |
+| I-4 | Info | `updatePrice` has no freshness/deviation gate (matcher trust) | `PerpMarket.sol:557-561` | ✅ FIXED (impl v4; H-1) |
+
+> **Resolution legend.** ✅ FIXED = closed with a code change + on-chain redeploy/retest. 🛡 RESOLVED-BY-DESIGN = an accepted trust assumption / intentional behavior, documented not "fixed." See §6 for the full per-finding resolution record (impl v5 / BondManager v2, deployed + fork-proven on Sepolia 2026-07-19).
 
 ---
 
@@ -94,6 +96,8 @@ Factory-created markets **never set `insuranceFund`**, so it is `address(0)` in 
 
 **Fix.** Either have `PerpMarket` read the registry status (adds cross-contract coupling), or document clearly that the on-chain kill = `emergencyPause` + matcher de-auth, and that registry status is advisory. Ensure runbooks call `emergencyPause`, not just `setStatus`.
 
+**🛡 RESOLUTION — RESOLVED-BY-DESIGN (2026-07-19).** Not fixed by coupling; documented as an operational invariant. Rationale: (1) The market already ships a **real** on-chain kill switch — `emergencyPause()` (blocks `settleBatch`/`closePair`/`liquidate` via `whenNotPaused`) plus `setAuthorizedMatcher(matcher,false)` (halts all matcher-driven settlement). (2) Adding a `MarketRegistry.status` read to `settleBatch` would put a **cross-contract external call on the hot settlement path** — a regression risk (extra gas + a new coupling/failure mode) for no security gain, since a "delisted" market should still let users `closePair`/`liquidate` to **exit** existing positions (freezing exits is the opposite of a safe takedown). (3) Registry status is authoritative only where it already is read: the frontend/indexer and `BondManager` withdrawal gating. **Runbook (authoritative on-chain kill):** to stop a market on-chain, the platform admin calls `PerpMarket.emergencyPause(reason)` **and** `setAuthorizedMatcher(matcher,false)` — `MarketRegistry.setStatus(...,DELISTED)` is the directory/abuse flag, NOT the on-chain halt.
+
 ---
 
 ### M-3 — Liquidation reward is frequently unpayable
@@ -105,6 +109,8 @@ Factory-created markets **never set `insuranceFund`**, so it is `address(0)` in 
 **Impact.** No economic incentive to liquidate the exact positions that most need liquidating (deeply underwater), so bad debt accrues until the platform matcher force-closes via `closePairsBatch`/`executeADL`. Medium (liquidation liveness / griefing of the incentive).
 
 **Fix.** Pay the liquidator from whatever residual exists (partial reward) rather than all-or-nothing, and/or fund the reward from the insurance sub-account when the trader's balance is insufficient. At minimum, do not silently no-op.
+
+**✅ RESOLUTION — FIXED in impl v5 (2026-07-19).** `liquidate` now caps the penalty to the residual and always pays a pro-rata reward on a non-empty residual: `actualPenalty = min(penalty, balances[liqTrader].available)`; `liquidatorReward = actualPenalty/2`; the remainder routes to insurance (see L-2). The old all-or-nothing `available >= penalty` gate (which no-op'd on exactly the deeply-underwater positions that most need closing) is gone. Internal-accounting conservation preserved (`reward + insuranceSlice == actualPenalty`, all backed by tokens already in the clone). Fork-proven against live Sepolia (`test/SecurityFixesV5.t.sol::test_1`): a residual of 1e13 (< the 2.5e13 full penalty) pays the liquidator 5e12 where the old code paid **0**.
 
 ---
 
@@ -118,6 +124,8 @@ Factory-created markets **never set `insuranceFund`**, so it is `address(0)` in 
 
 **Fix.** Allow bond withdrawal after the cool-down for any market that is **not slashed**, regardless of ACTIVE/PAUSED (only `DELISTED`-for-abuse or `slashed` should block), or introduce a separate, time-bounded "frozen" state distinct from operational pause. Consider a governance timelock on `setStatus`.
 
+**✅ RESOLUTION — FIXED in BondManager v2 (2026-07-19).** `withdrawBond` no longer requires registry status == ACTIVE. After the cool-down, a bond is reclaimable unless it is `slashed` (checked already, permanent, emits `BondSlashed`) **or** the market is `DELISTED` (status 2, the explicit abuse-takedown terminal state). An ordinary operational `PAUSED` (status 1) no longer traps the creator's bond — seizing a bond must go through `slash`, leaving an on-chain record, rather than an opaque indefinite lock. Fork-proven (`test/SecurityFixesV5.t.sol::test_3`): a PAUSED market's bond is reclaimed in full; a DELISTED market still reverts `MarketNotActive`.
+
 ---
 
 ### L-1 — Post-handoff owner can exceed ParamGuard bounds
@@ -129,6 +137,8 @@ Factory-created markets **never set `insuranceFund`**, so it is `address(0)` in 
 **Impact.** The ParamGuard bounds are not invariants; they are one-time create clamps. Owner power, but worth flagging because it contradicts the "clamped to global bounds" framing. Low.
 
 **Fix.** Have `setFeeRate`/`setMarketMaxLeverage` re-consult ParamGuard, or timelock/renounce these post-handoff.
+
+**🛡 RESOLUTION — RESOLVED-BY-DESIGN (2026-07-19).** Accepted owner power, not fixed. It is already enumerated as an accepted power in §4 ("raise fee to 100 bps / leverage to 100x post-handoff"). The per-market owner is `platformAdmin`, a **fully-trusted** platform role: it can authorize a matcher, redirect the fee receiver, and (per H-2's trust model) already influences settlement — so clamping two setters provides no real protection against a hostile owner, while the hard on-chain ceilings (`feeRate ≤ 100` bps, `leverage ≤ MAX_LEVERAGE` 100x) remain. Re-consulting ParamGuard would also be circumventable (the owner controls the factory/guard wiring). The honest posture is: **ParamGuard bounds are create-time clamps, not post-handoff invariants; the platform owner is trusted within a market** (documented in §4). The real production mitigation is a **timelock/multisig for `platformAdmin`** (already recommended in §5.10–11), not a code clamp.
 
 ---
 
@@ -142,6 +152,8 @@ Factory-created markets **never set `insuranceFund`**, so it is `address(0)` in 
 
 **Fix.** Route `pendingLiquidationPenalty` and funding into the (wired, per M-1) insurance sub-account, or remove the dead counters.
 
+**✅ RESOLUTION — FIXED in impl v5 (2026-07-19).** The liquidation insurance slice is now credited straight into the wired insurance sub-account: in `liquidate`, `balances[insuranceFund].available += insurancePenalty` (falling back to the `pendingLiquidationPenalty` counter only when no insurance fund is wired — backward-compat for guard-less markets). Since M-1 (impl/factory v4) now wires `insuranceFund = InsuranceHub` on every factory market, this balance is real, spendable value drawn by `_coverWinnerDeficit`'s fallback + `transferFundingToInsurance` — no longer a dead counter. The funding-fee path (`insuranceFundFromFunding` → `transferFundingToInsurance`) was already un-stuck by M-1 (`insuranceFund != 0`). Fork-proven (`test/SecurityFixesV5.t.sol::test_1`): after a liquidation, the insurance sub-account grows by exactly the penalty slice and `pendingLiquidationPenalty` stays 0.
+
 ---
 
 ### L-3 — Decimals rounding can credit zero while pulling tokens
@@ -154,6 +166,8 @@ Factory-created markets **never set `insuranceFund`**, so it is `address(0)` in 
 
 **Fix.** Revert if `standardAmount == 0`. Prefer restricting collateral to 18-decimal (or ≤18) tokens via the venue allowlist / factory checks.
 
+**✅ RESOLUTION — FIXED in impl v5 (2026-07-19).** All six deposit entry points (`deposit`, `depositTo`, `depositETH`, `depositWithPermit`, `depositFor`, `depositETHFor`) now `revert InvalidAmount()` when the normalized `standardAmount == 0`, so dust that would round to a 0 credit can no longer silently pull tokens. Fork-proven (`test/SecurityFixesV5.t.sol::test_2`) with a live 20-decimal mock: a 99-unit deposit reverts `InvalidAmount`, a 100-unit deposit credits 1.
+
 ---
 
 ### L-4 — `collect` reverts while a market is paused
@@ -165,6 +179,8 @@ Factory-created markets **never set `insuranceFund`**, so it is `address(0)` in 
 **Impact.** Low; fees are not lost, just temporarily uncollectable, and pausing is an owner action.
 
 **Fix.** Consider a fee-only withdrawal path exempt from `whenNotPaused`, or accept as intended.
+
+**🛡 RESOLUTION — RESOLVED-BY-DESIGN (2026-07-19).** Accepted as intended. `emergencyPause` is a deliberate **global freeze** of an incident'd market — freezing fee movement along with everything else is the conservative, correct behavior during an incident. Fees are **not lost**: they remain accrued to the FeeRouter's sub-account and `collect` succeeds immediately on `emergencyUnpause`. Adding a pause-exempt token-exit path would widen the pause's blast radius (a path that still moves tokens out of a market frozen precisely because something is wrong) for a marginal, low-severity convenience — a bad trade. The fix would also cascade a new FeeRouter deploy (it calls `withdraw`). Accepted; operators should `emergencyUnpause` before collecting, or collect before pausing.
 
 ---
 
@@ -223,3 +239,29 @@ This stack is intentionally permissioned. The following are **accepted-by-design
 9. **Add a Pausable-exempt fee collection path** or accept L-4.
 10. **Fuzz + invariant test** collateral conservation per market, fee-split conservation, funding/liquidation math, and cross-market isolation; run economic simulation of the matcher-trust surface. Consider a timelock/multisig for all owner powers enumerated in §4 and publish the trust model to users.
 11. Confirm the throwaway Sepolia wiring (`platformAdmin`/`matcher`/`treasury` = deployer, per `config/factory-sepolia.json`) is replaced with a multisig/timelock before any production deploy.
+
+---
+
+## 6. Resolution record (2026-07-19 / 2026-07-20 UTC, Sepolia)
+
+Two remediation passes have been shipped and verified on Sepolia. The factory ADDRESS is unchanged across both passes (canonical `PerpMarketFactory` = `0xa1A8C5A2D5527abfD2E46F4FaCebC6BC00C1a79a`); only its `implementation()` / `bondManager()` pointers were repointed.
+
+**Pass 1 — H-1 / H-2 / M-1 (impl v4 + factory v4).** OracleGuard `checkDeviation` wired into `updatePrice` / `_settlePair` / `_closePair` / `liquidate`; signed LIMIT price enforced on-chain; factory `setInsuranceFund(InsuranceHub)` + winner-shortfall `coverLoss`. Fork-proven 5/5 (`test/GuardWiring.t.sol`). See `config/factory-sepolia.json` → `guardWiring`.
+
+**Pass 2 — M-3 / L-2 / L-3 (impl v5) + M-4 (BondManager v2).** This pass. Full record in `~/perps-deploy/security-fixes-results.json` and `config/factory-sepolia.json` → `securityFixesV5`.
+
+| ID | Resolution | What shipped |
+|----|-----------|--------------|
+| M-2 | 🛡 Resolved-by-design | On-chain kill = `emergencyPause()` + matcher de-auth (documented runbook). A registry-status read on `settleBatch` is deliberately NOT added — it would put a cross-contract call on the hot settle path and would wrongly freeze user `closePair`/`liquidate` exits. |
+| M-3 | ✅ Fixed (impl v5) | `liquidate` pays `min(penalty, residual)/2` — partial reward instead of all-or-nothing (which paid 0 on the deeply-underwater positions that most need closing). |
+| M-4 | ✅ Fixed (BondManager v2) | `withdrawBond` blocks reclaim only on `slashed` OR `DELISTED`; ordinary `PAUSED` no longer traps the creator's bond. Seizure must go through `slash` (leaves an on-chain record). |
+| L-1 | 🛡 Resolved-by-design | Accepted owner power (§4). `platformAdmin` is fully trusted; hard ceilings (100 bps / 100x) remain; a timelock/multisig on `platformAdmin` is the real mitigation, not a code clamp. |
+| L-2 | ✅ Fixed (impl v5) | Liquidation insurance slice credited to `balances[insuranceFund]` (spendable by the cover path) rather than the dead `pendingLiquidationPenalty` counter; funding path un-stuck by M-1's `insuranceFund` wiring. |
+| L-3 | ✅ Fixed (impl v5) | All six deposit paths `revert InvalidAmount()` when the normalized `standardAmount == 0` (d>18 dust). |
+| L-4 | 🛡 Resolved-by-design | `emergencyPause` is an intentional global freeze; fees are preserved and collectable on `emergencyUnpause`. A pause-exempt exit path would widen the pause blast radius and cascade a FeeRouter redeploy for marginal benefit. |
+
+**New addresses (Pass 2):** impl v5 `0x190694b5712C4Fc4D1eeC0d8E78AbFb8c089EB9b`, BondManager v2 `0xB3076bd496A3161F6D0596380f35E5ae0ef0A54E`.
+
+**On-chain proof (Pass 2):** 5 deploy/repoint txs (all status 0x1) + a `createMarket` proof tx (`0x5e5d0837…`) minting v5 clone `0xeCCc9ec8…`, whose EIP-1167 runtime bytecode delegates to impl v5 and whose `oracleGuard` / `insuranceFund` / `collateralToken` / `feeReceiver` / `marketMaxLeverage` are all correctly wired. Behavioral fixes fork-proven 4/4 against live Sepolia Chainlink (`test/SecurityFixesV5.t.sol`): regression (settle+close), M-3+L-2 (partial reward + routing), L-3 (zero-deposit revert), M-4 (paused reclaimable / delisted blocked). The counterparty bot + engine live-settle were paused during the deploy (matcher key == deployer) and restored afterward.
+
+> **Scope note.** impl v5 / BondManager v2 apply to markets created **after** the repoint. Markets minted by factory v4 before it keep the v4 impl / v1 BondManager. On throwaway Sepolia this is acceptable; on any production deploy, mint markets only after the final impl/BondManager are wired.

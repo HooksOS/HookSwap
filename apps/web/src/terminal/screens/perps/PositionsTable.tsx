@@ -3,8 +3,10 @@ import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
 
-/** One open perp position. Kept for the live feed; empty for now. */
+/** One open perp position, decoded from an on-chain `PairedPosition`. */
 export interface PerpPosition {
+  /** On-chain pairId — the argument `closePair(uint256)` takes. */
+  pairId: bigint
   market: string
   side: 'long' | 'short'
   size: string
@@ -27,11 +29,17 @@ export function PositionsTable({
   connected,
   loading = false,
   onClose,
+  pendingPairId,
+  closeDisabled = false,
 }: {
   positions?: PerpPosition[]
   connected: boolean
   loading?: boolean
   onClose?: (position: PerpPosition) => void
+  /** The pairId whose close tx is in flight — that row's button shows a pending state. */
+  pendingPairId?: bigint
+  /** True when the close flow can't run at all (no wallet / wrong chain / no market). */
+  closeDisabled?: boolean
 }): JSX.Element {
   const th = {
     fontFamily: MONO,
@@ -84,22 +92,32 @@ export function PositionsTable({
               </td>
               <td style={cell('right')}>{p.margin}</td>
               <td style={cell('right')}>
-                <button
-                  type="button"
-                  onClick={onClose ? () => onClose(p) : undefined}
-                  style={{
-                    fontFamily: MONO,
-                    fontSize: 10,
-                    color: terminalColors.ink2,
-                    border: `1px solid ${terminalColors.line}`,
-                    borderRadius: 6,
-                    padding: '3px 9px',
-                    background: terminalColors.bg,
-                    cursor: onClose ? 'pointer' : 'default',
-                  }}
-                >
-                  Close
-                </button>
+                {(() => {
+                  const isPending = pendingPairId !== undefined && pendingPairId === p.pairId
+                  // A different row's close is in flight → lock the others while it settles.
+                  const otherPending = pendingPairId !== undefined && !isPending
+                  const disabled = !onClose || closeDisabled || isPending || otherPending
+                  return (
+                    <button
+                      type="button"
+                      onClick={onClose && !disabled ? () => onClose(p) : undefined}
+                      disabled={disabled}
+                      style={{
+                        fontFamily: MONO,
+                        fontSize: 10,
+                        color: isPending ? terminalColors.ink3 : terminalColors.ink2,
+                        border: `1px solid ${terminalColors.line}`,
+                        borderRadius: 6,
+                        padding: '3px 9px',
+                        background: terminalColors.bg,
+                        cursor: disabled ? 'not-allowed' : 'pointer',
+                        opacity: disabled && !isPending ? 0.5 : 1,
+                      }}
+                    >
+                      {isPending ? 'Closing…' : 'Close'}
+                    </button>
+                  )
+                })()}
               </td>
             </tr>
           ))

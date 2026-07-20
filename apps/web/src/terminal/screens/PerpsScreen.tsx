@@ -9,8 +9,11 @@
  * DATA WIRING (no mock data — handoff hard rule):
  *   Every live surface binds to the HookSwapPerps matching engine + chain:
  *     • market directory  → useMarkets (engine GET /markets, on-chain registry fallback)
+ *     • stat bar          → useTicker (engine GET /ticker — mark + index from the market's
+ *                           on-chain Chainlink refFeed; 24h change / volume / open interest)
+ *     • chart             → useCandles (engine GET /candles — OHLC from the mark series + trades)
  *     • order book        → useOrderbook (poll + WS)
- *     • trades / mark      → useTrades (poll + WS; last price = mark proxy)
+ *     • trades / mark      → useTrades (poll + WS; last price is the mark fallback)
  *     • positions         → usePositions (on-chain PairedPositions for the wallet)
  *     • order ticket      → usePlaceOrder (EIP-712 sign → POST /orders)
  *   When the engine is unreachable, or a wallet isn't connected / is on the wrong chain,
@@ -18,10 +21,10 @@
  *   is fabricated. The engine base URL is the single `PERPS_ENGINE_URL` constant in
  *   ./perps/engine/client.ts (env `PERPS_ENGINE_URL`).
  *
- * KNOWN FEED GAP (honest): the FIXED engine contract exposes no dedicated ticker endpoint,
- * so 24h change / index / funding / open interest / 24h volume, per-row watchlist prices,
- * and candles render '—' (never guessed). Mark price is derived from the last trade / book
- * mid. Adding those requires a ticker/candles endpoint on the engine (noted to backend).
+ * HONEST NULLS: mark + index bind to the Chainlink refFeed when the market has one, else
+ * mark falls back to last-trade / book-mid and index shows '—'. 24h change is '—' until the
+ * engine has enough mark history; 24h volume is '—' until the market trades; funding is '—'
+ * until computed. Candles accrue as the mark samples + trades land. Nothing is guessed.
  */
 import { ReactNode, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
@@ -39,9 +42,12 @@ import { PositionsTable } from '~/terminal/screens/perps/PositionsTable'
 import { TradesFeed } from '~/terminal/screens/perps/TradesFeed'
 import { PERPS_FACTORY_HOME_CHAIN } from '~/terminal/perps/factory/abis'
 import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
+import { useCandles } from '~/terminal/perps/engine/useCandles'
+import { useClosePosition } from '~/terminal/perps/engine/useClosePosition'
 import { useMarkets } from '~/terminal/perps/engine/useMarkets'
 import { useOrderbook } from '~/terminal/perps/engine/useOrderbook'
 import { usePositions } from '~/terminal/perps/engine/usePositions'
+import { useTicker } from '~/terminal/perps/engine/useTicker'
 import { useTrades } from '~/terminal/perps/engine/useTrades'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
@@ -79,6 +85,8 @@ export function PerpsScreen(): JSX.Element {
 
   const orderbook = useOrderbook({ market: selected?.address })
   const trades = useTrades({ market: selected?.address })
+  const ticker = useTicker({ market: selected?.address })
+  const candles = useCandles({ market: selected?.address, interval: '1m' })
   const positions = usePositions({
     market: selected?.address,
     collateral: selected?.collateral,
@@ -86,7 +94,16 @@ export function PerpsScreen(): JSX.Element {
     chainId: PERPS_CHAIN,
   })
 
-  const markPrice = trades.lastPrice ?? orderbook.mid
+  // Close flow — on-chain `closePair(pairId)`; refetch positions on a mined receipt.
+  const closePosition = useClosePosition({
+    market: selected,
+    trader,
+    chainId: PERPS_CHAIN,
+    refetch: positions.refetch,
+  })
+
+  // Mark: prefer the engine ticker (Chainlink refFeed), fall back to last trade / book mid.
+  const markPrice = ticker.mark ?? trades.lastPrice ?? orderbook.mid
   const spread = orderbook.asks.length && orderbook.bids.length ? orderbook.asks[0].price - orderbook.bids[0].price : undefined
 
   const noMarkets = markets !== undefined && markets.length === 0
@@ -94,8 +111,17 @@ export function PerpsScreen(): JSX.Element {
 
   return (
     <div>
-      {/* Full-bleed market stat bar */}
-      <MarketStatBar market={selected} markPrice={markPrice} maxLeverageX={selected?.catalogMaxLeverage} />
+      {/* Full-bleed market stat bar — binds to the engine ticker (honest '—' on null). */}
+      <MarketStatBar
+        market={selected}
+        mark={markPrice}
+        indexPrice={ticker.indexPrice}
+        change24hPct={ticker.change24hPct}
+        volume24h={ticker.volume24h}
+        openInterest={ticker.openInterest}
+        fundingRatePct={ticker.fundingRatePct}
+        maxLeverageX={selected?.catalogMaxLeverage}
+      />
 
       <div style={{ padding: '14px var(--tm-gutter) 40px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 10 }}>
@@ -156,13 +182,13 @@ export function PerpsScreen(): JSX.Element {
 
             {/* 2 — Chart + OHLC */}
             <InstrumentPanel
-              title={`${selected?.label ?? 'Perp'} · 1H`}
-              live={orderbook.status === 'live' || trades.status === 'live'}
+              title={`${selected?.label ?? 'Perp'} · 1M`}
+              live={candles.status === 'live' || orderbook.status === 'live' || trades.status === 'live'}
               corners
-              meta={[selected ? `Mark · ${selected.source === 'engine' ? 'engine' : 'chain'}` : '—']}
+              meta={[ticker.indexPrice !== undefined ? 'Mark · Chainlink' : selected ? `Mark · ${selected.source === 'engine' ? 'engine' : 'chain'}` : '—']}
               bodyStyle={{ padding: 10 }}
             >
-              <PerpsChart height={360} />
+              <PerpsChart candles={candles.candles} height={360} />
             </InstrumentPanel>
 
             {/* 3 — Order Book + Trades stacked */}
@@ -192,7 +218,41 @@ export function PerpsScreen(): JSX.Element {
             {/* Bottom — Positions (spans all columns) */}
             <div style={{ gridColumn: '1 / -1' }}>
               <InstrumentPanel title="Positions" flush>
-                <PositionsTable positions={positions.positions} connected={connected} loading={positions.isLoading} />
+                <PositionsTable
+                  positions={positions.positions}
+                  connected={connected}
+                  loading={positions.isLoading}
+                  onClose={(p) => void closePosition.close(p.pairId)}
+                  pendingPairId={closePosition.pendingPairId}
+                  closeDisabled={!closePosition.ready}
+                />
+                {/* Close status — real tx result / error, never fabricated. */}
+                {closePosition.status !== 'idle' || closePosition.error ? (
+                  <div
+                    style={{
+                      padding: '8px 14px',
+                      borderTop: `1px solid ${terminalColors.line3}`,
+                      fontFamily: terminalFonts.mono,
+                      fontSize: 10.5,
+                      textAlign: 'right',
+                      color: closePosition.error
+                        ? terminalColors.redDown
+                        : closePosition.status === 'done'
+                          ? terminalColors.greenDeep
+                          : terminalColors.ink3,
+                    }}
+                  >
+                    {closePosition.error
+                      ? closePosition.error
+                      : closePosition.status === 'closing'
+                        ? 'Confirm in wallet…'
+                        : closePosition.status === 'confirming'
+                          ? `Closing position${closePosition.txHash ? ` · ${closePosition.txHash.slice(0, 10)}…` : ''}`
+                          : closePosition.status === 'done'
+                            ? `Position closed${closePosition.txHash ? ` · ${closePosition.txHash.slice(0, 10)}…` : ''}`
+                            : null}
+                  </div>
+                ) : null}
               </InstrumentPanel>
             </div>
           </div>

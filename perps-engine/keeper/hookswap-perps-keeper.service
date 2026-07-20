@@ -1,0 +1,18 @@
+[Unit]
+Description=HookSwapPerps keeper (Sepolia) — auto-liquidates underwater positions + periodically settles funding
+After=network-online.target hookswap-perps-engine.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/hookswap-perps-engine
+EnvironmentFile=/home/ubuntu/hookswap-perps-engine/keeper/.env
+ExecStart=/home/ubuntu/hookswap-perps-engine/node_modules/.bin/tsx keeper/keeperMain.ts
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/home/ubuntu/hookswap-perps-engine/keeper/keeper.log
+StandardError=append:/home/ubuntu/hookswap-perps-engine/keeper/keeper.log
+
+[Install]
+WantedBy=multi-user.target
