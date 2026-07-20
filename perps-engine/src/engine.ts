@@ -8,12 +8,19 @@ import { EventEmitter } from "events";
 import { randomUUID } from "crypto";
 import { getAddress } from "viem";
 import { ENV } from "./env.js";
-import { fetchMarkets, onchainNonce } from "./chain.js";
+import { fetchMarkets, onchainNonce, userBalance } from "./chain.js";
 import { markPrice } from "./mark.js";
+import { OrderError } from "./order.js";
 import { settlePair } from "./settle.js";
 import { OrderType, type MarketMeta, type MatchedPair, type Order, type StoredOrder, type Trade } from "./types.js";
 
 const MAX_PRICE = (1n << 256n) - 1n;
+
+// Anti-flood / OOM bounds on the in-memory book (HIGH-3). A market's book Map and a
+// single trader's resting-order count are capped so a signer cannot flood unbounded
+// orders (each of which would render as fake depth) until the engine runs out of memory.
+const MAX_ORDERS_PER_BOOK = 2_000;
+const MAX_ORDERS_PER_TRADER = 50;
 
 export interface SubmitResult {
   orderId: string;
@@ -136,6 +143,10 @@ function deserializeTrade(s: SerializedTrade, market: `0x${string}`): Trade {
 export class MatchingEngine extends EventEmitter {
   private books = new Map<string, Book>(); // key: checksummed market address
   private ready = false;
+  // Per-market submit serialization tail (HIGH-2). Holds the promise of the last
+  // submit on each market; the next submit chains after it so matching/settlement
+  // never interleaves for a single book.
+  private bookLocks = new Map<string, Promise<void>>();
 
   async init(): Promise<void> {
     await this.refreshMarkets();
@@ -278,13 +289,63 @@ export class MatchingEngine extends EventEmitter {
 
   // ---- Matching --------------------------------------------------------------
 
+  /**
+   * Submit an order — SERIALIZED PER MARKET (HIGH-2). `match()` awaits `settlePair`
+   * (seconds under LIVE_SETTLE) before it consumes the book, so two takers arriving
+   * concurrently would otherwise both see a resting maker at full `remaining` and
+   * double-match it (phantom fill in dry-run; nonce-revert in live). The per-market
+   * lock chains every submit so only one runs its match/settle at a time; a failing
+   * submit does not block the next (both `.then` arms run the next).
+   */
   async submit(
     market: `0x${string}`,
     order: Order,
     signature: `0x${string}`,
   ): Promise<SubmitResult> {
     const k = this.key(market);
+    const prev = this.bookLocks.get(k) ?? Promise.resolve();
+    const run = prev.then(
+      () => this.doSubmit(k, order, signature),
+      () => this.doSubmit(k, order, signature),
+    );
+    // The tail resolves when this submit settles (value/errors swallowed for chaining only).
+    this.bookLocks.set(k, run.then(() => {}, () => {}));
+    return run;
+  }
+
+  private async doSubmit(
+    k: string,
+    order: Order,
+    signature: `0x${string}`,
+  ): Promise<SubmitResult> {
     const b = this.book(k);
+
+    // Anti-flood gates (HIGH-3) — bound in-memory fake depth / OOM.
+    const traderKey = getAddress(order.trader);
+    let restingForTrader = 0;
+    for (const o of b.orders.values()) {
+      if (o.status === "open" && getAddress(o.order.trader) === traderKey) restingForTrader += 1;
+    }
+    if (b.orders.size >= MAX_ORDERS_PER_BOOK) {
+      throw new OrderError(`market order book is full (${MAX_ORDERS_PER_BOOK})`);
+    }
+    if (restingForTrader >= MAX_ORDERS_PER_TRADER) {
+      throw new OrderError(`too many open orders for ${order.trader} (max ${MAX_ORDERS_PER_TRADER})`);
+    }
+
+    // Require deposited collateral (HIGH-3): the contract enforces margin at settle, but
+    // without this an actor with 0 collateral could rest orders that never settle yet show
+    // as real depth. Fail-OPEN on a transient RPC error (like the nonce read) to preserve
+    // liveness — the caps above still bound the blast radius and settlement is authoritative.
+    try {
+      const { available } = await userBalance(k as `0x${string}`, order.trader);
+      if (available <= 0n) {
+        throw new OrderError(`no deposited collateral for ${order.trader} — deposit before ordering`);
+      }
+    } catch (e: any) {
+      if (e instanceof OrderError) throw e; // hard: zero collateral
+      console.warn("[engine] balance read failed, proceeding:", e?.message || e);
+    }
 
     // Best-effort on-chain nonce check (a mismatch guarantees a settle revert).
     try {
