@@ -1321,6 +1321,14 @@ function LandingScreenBody(): JSX.Element {
     },
     { label: 'Markets', onClick: () => navigate('/markets') },
     {
+      label: 'Perps',
+      onClick: () => navigate('/perps'),
+      children: [
+        { label: 'Trade perps', onClick: () => navigate('/perps') },
+        { label: 'Launch a market', onClick: () => navigate('/perps/launch') },
+      ],
+    },
+    {
       label: 'Earn',
       onClick: () => navigate('/pools/new'),
       children: [

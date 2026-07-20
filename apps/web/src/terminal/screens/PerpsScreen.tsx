@@ -69,14 +69,19 @@ export function PerpsScreen(): JSX.Element {
   const marketsQuery = useMarkets({ chainId: PERPS_CHAIN })
   const markets = marketsQuery.markets
 
-  // Selected market — default to the first, kept stable while the address still exists.
+  // Selected market — kept stable while the address still exists. The registry lists
+  // markets in creation order, which is dominated by permissionless test markets; a
+  // curated + ACTIVE market is the sensible landing default (falls back to first active,
+  // then first of any). Never fabricates — purely a display-default preference.
   const [selectedAddr, setSelectedAddr] = useState<string | undefined>(undefined)
   useEffect(() => {
     if (!markets || markets.length === 0) {
       return
     }
     if (!selectedAddr || !markets.some((m) => m.address.toLowerCase() === selectedAddr.toLowerCase())) {
-      setSelectedAddr(markets[0].address)
+      const curatedActive = markets.find((m) => m.tier === 0 && m.status === 0)
+      const active = markets.find((m) => m.status === 0)
+      setSelectedAddr((curatedActive ?? active ?? markets[0]).address)
     }
   }, [markets, selectedAddr])
 
