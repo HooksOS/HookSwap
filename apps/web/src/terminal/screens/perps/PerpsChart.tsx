@@ -14,9 +14,9 @@ export interface Candle {
 
 /**
  * Candlestick chart (canvas). Draws the faint background grid at all times and
- * renders candles when data is supplied. With no data — the current, honest
- * state (the matching-engine feed isn't deployed) — it overlays a centered
- * "No price history yet" note. NEVER draws fabricated candles.
+ * renders candles supplied by `useCandles` (engine `GET /candles`, built from the
+ * mark series + trade prints). Until candles accrue it overlays a centered
+ * "Building price history…" note. NEVER draws fabricated candles.
  */
 export function PerpsChart({ candles = [], height = 360 }: { candles?: Candle[]; height?: number }): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -112,7 +112,7 @@ export function PerpsChart({ candles = [], height = 360 }: { candles?: Candle[];
               color: terminalColors.faint,
             }}
           >
-            No price history yet
+            Building price history…
           </div>
         ) : null}
       </div>

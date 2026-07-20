@@ -85,6 +85,52 @@ export interface EngineTrade {
   timestamp?: string | number
 }
 
+/**
+ * `GET /ticker?market=` — live per-market stats. All price fields are quote-per-base
+ * scaled 1e18 as decimal STRINGS; honest `null` where a value is not yet computable
+ * (never fabricated). `mark`/`indexPrice` come from the market's on-chain Chainlink
+ * refFeed (the same price the deviation guard enforces) when configured, else the
+ * book-mid / last-trade for `mark` and `null` for `indexPrice`.
+ */
+export interface EngineTicker {
+  market: string
+  /** Mark price, 1e18 string, or null. */
+  mark: string | null
+  /** Oracle index price (Chainlink refFeed), 1e18 string, or null. */
+  indexPrice: string | null
+  /** 24h change percent (already ×100), or null until enough mark history. */
+  change24h: number | null
+  /** 24h volume in quote notional, 1e18 string, or null if the market never traded. */
+  volume24h: string | null
+  /** Open interest = sum of ACTIVE position sizes, 1e18 string, or null if unreadable. */
+  openInterest: string | null
+  /** Funding rate (fraction/pct) — null until computed by the engine. */
+  fundingRate: number | null
+  /** Next funding boundary, unix ms, or null. */
+  nextFundingTime: number | null
+}
+
+/** One OHLC candle from `GET /candles`. Prices are 1e18 strings; `t` is unix ms. */
+export interface EngineCandle {
+  t: number
+  o: string
+  h: string
+  l: string
+  c: string
+  /** Quote notional traded in the bucket, 1e18 string. */
+  v: string
+}
+
+/** `GET /candles` response envelope. */
+export interface EngineCandlesResponse {
+  market: string
+  interval: string
+  candles: EngineCandle[]
+}
+
+/** Candle intervals the engine supports. */
+export type CandleInterval = '1m' | '5m' | '1h'
+
 /** One open (resting) order from `GET /orders`. */
 export interface EngineOpenOrder {
   orderId: string
@@ -237,6 +283,20 @@ export const perpsEngine = {
 
   getTrades(market: string, limit = 40, signal?: AbortSignal): Promise<EngineTrade[]> {
     return engineFetch<EngineTrade[]>('/trades', { params: { market, limit }, signal })
+  },
+
+  getTicker(market: string, signal?: AbortSignal): Promise<EngineTicker> {
+    return engineFetch<EngineTicker>('/ticker', { params: { market }, signal })
+  },
+
+  async getCandles(
+    market: string,
+    interval: CandleInterval = '1m',
+    limit = 200,
+    signal?: AbortSignal,
+  ): Promise<EngineCandle[]> {
+    const res = await engineFetch<EngineCandlesResponse>('/candles', { params: { market, interval, limit }, signal })
+    return Array.isArray(res?.candles) ? res.candles : []
   },
 
   getOpenOrders(params: { trader: string; market?: string }, signal?: AbortSignal): Promise<EngineOpenOrder[]> {
