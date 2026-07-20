@@ -335,8 +335,9 @@ export class MatchingEngine extends EventEmitter {
 
     // Require deposited collateral (HIGH-3): the contract enforces margin at settle, but
     // without this an actor with 0 collateral could rest orders that never settle yet show
-    // as real depth. Fail-OPEN on a transient RPC error (like the nonce read) to preserve
-    // liveness — the caps above still bound the blast radius and settlement is authoritative.
+    // as real depth. Fail-OPEN on a transient RPC error (unlike the nonce read below,
+    // which is a replay guard and fails CLOSED) to preserve liveness — the caps above
+    // still bound the blast radius and settlement is authoritative for margin.
     try {
       const { available } = await userBalance(k as `0x${string}`, order.trader);
       if (available <= 0n) {
@@ -347,7 +348,7 @@ export class MatchingEngine extends EventEmitter {
       console.warn("[engine] balance read failed, proceeding:", e?.message || e);
     }
 
-    // Best-effort on-chain nonce check (a mismatch guarantees a settle revert).
+    // On-chain nonce check (a mismatch guarantees a settle revert).
     try {
       const chainNonce = await onchainNonce(k as `0x${string}`, order.trader);
       if (order.nonce !== chainNonce) {
@@ -357,8 +358,12 @@ export class MatchingEngine extends EventEmitter {
       }
     } catch (e: any) {
       if (/!= on-chain nonce/.test(e?.message || "")) throw e; // hard mismatch
-      // transient RPC error — proceed but note it
-      console.warn("[engine] nonce read failed, proceeding:", e?.message || e);
+      // MED-5: the nonce is a REPLAY guard, so a read FAILURE must fail CLOSED
+      // (reject), unlike the collateral check above — settlement is not a backstop
+      // for replay/stale-nonce orders. Reject so the client retries once the RPC
+      // recovers, rather than letting an unverifiable order into the book.
+      console.warn("[engine] nonce read failed, rejecting:", e?.message || e);
+      throw new OrderError(`could not verify nonce for ${order.trader}, retry`);
     }
 
     const stored: StoredOrder = {

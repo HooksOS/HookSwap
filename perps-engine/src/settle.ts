@@ -97,7 +97,12 @@ export async function settlePair(
         args: args as any,
       });
       const hash = await wallet.writeContract(request as any);
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      // Bounded wait: a stuck/dropped tx throws on timeout (caught below as a
+      // failure) rather than hanging the serialized settle queue head-of-line.
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash,
+        timeout: ENV.receiptTimeoutMs,
+      });
       return {
         calldata,
         txHash: hash,

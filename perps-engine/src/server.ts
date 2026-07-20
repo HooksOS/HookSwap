@@ -184,6 +184,7 @@ export async function startServer(engine: MatchingEngine, marks: MarkStore): Pro
       // GET /positions?trader=&market=
       if (method === "GET" && path === "/positions") {
         const market = reqMarket(url);
+        if (!engine.hasMarket(market)) return json(res, 404, { error: "unknown market" });
         const traderRaw = url.searchParams.get("trader");
         if (!traderRaw) throw new OrderError("missing ?trader=<address>");
         let trader: `0x${string}`;
@@ -294,9 +295,17 @@ export async function startServer(engine: MatchingEngine, marks: MarkStore): Pro
     const obKey = `orderbook:${market}`;
     const trKey = `trade:${market}`;
     const flKey = `fill:${market}`;
+    // LOW-1: /stream is unauthenticated, so strip the settlement `calldata` from
+    // the public tape (trader addresses stay — they become on-chain-public at settle
+    // and the client tints the tape by side). Broadcasting raw calldata pre-settle
+    // would leak the signed settle tx to anyone before it mines.
+    const publicTape = (t: unknown) => {
+      const { calldata: _drop, ...pub } = (t as Record<string, unknown>) ?? {};
+      return pub;
+    };
     const onOb = (ob: unknown) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type: "orderbook", ...(ob as object) }));
-    const onTr = (t: unknown) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type: "trade", trade: t }));
-    const onFl = (t: unknown) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type: "fill", fill: t }));
+    const onTr = (t: unknown) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type: "trade", trade: publicTape(t) }));
+    const onFl = (t: unknown) => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type: "fill", fill: publicTape(t) }));
 
     engine.on(obKey, onOb);
     engine.on(trKey, onTr);

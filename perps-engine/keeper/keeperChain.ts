@@ -70,6 +70,11 @@ export const CFG = {
   maxFeedStaleSecs: BigInt(num(process.env.KEEPER_MAX_FEED_STALE, 86_400)),
   // Legacy gas price for Sepolia (predictable + cheap).
   gasPrice: BigInt(num(process.env.KEEPER_GAS_PRICE_WEI, 2_000_000_000)),
+  // Max ms to wait for a tx receipt before treating the wait as failed (default
+  // 120s ≈ 10 Sepolia blocks). Prevents a stuck/dropped tx from hanging the
+  // serialized keeper send chain head-of-line; the tx may still mine later and
+  // on-chain state stays authoritative.
+  receiptTimeoutMs: num(process.env.KEEPER_RECEIPT_TIMEOUT_MS, 120_000),
   // How many pair ids to settle funding for per settleFundingBatch tx.
   fundingBatchSize: num(process.env.KEEPER_FUNDING_BATCH, 50),
   // Upper bound on pair-id enumeration (nascent markets are tiny).
@@ -155,7 +160,12 @@ export function send(
         ...(request as any),
         gasPrice: CFG.gasPrice,
       });
-      const receipt = await primaryClient.waitForTransactionReceipt({ hash });
+      // Bounded wait: a stuck/dropped tx throws on timeout (caught below as a
+      // failure) rather than hanging the serialized keeper send chain.
+      const receipt = await primaryClient.waitForTransactionReceipt({
+        hash,
+        timeout: CFG.receiptTimeoutMs,
+      });
       return {
         txHash: hash,
         mined: receipt.status === "success",

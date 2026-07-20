@@ -45,6 +45,13 @@ export const ENV = {
   matcherKey: (process.env.MATCHER_PRIVATE_KEY || "").trim(),
   /** false = assemble + simulate settleBatch (no broadcast). true = mine it. */
   liveSettle: bool(process.env.LIVE_SETTLE, false),
+  /**
+   * Max ms to wait for a settle tx receipt before treating the wait as failed
+   * (default 120s ≈ 10 Sepolia blocks). A stuck/dropped tx must not hang the
+   * serialized settle queue head-of-line; the tx may still mine later and the
+   * on-chain state / settle re-check remains authoritative.
+   */
+  receiptTimeoutMs: Number(process.env.PERPS_RECEIPT_TIMEOUT_MS || 120_000),
   port: Number(process.env.PORT || 4100),
   /** Optional JSON mapping on-chain market address -> oracle source (mark price). */
   engineMarketsPath: process.env.PERPS_ENGINE_MARKETS || "",
