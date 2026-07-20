@@ -13,12 +13,17 @@ import type { BookLevel } from '~/terminal/screens/perps/OrderBook'
 
 export type FeedStatus = 'idle' | 'loading' | 'live' | 'polling' | 'unavailable'
 
+/** Engine order-book levels are 1e18-scaled strings (contract precision), like the
+ *  ticker/trades feeds — divide by WAD to get human display units. Without this the
+ *  book renders raw wei (e.g. 1.9e21) and the spread shows as ~3.8e18. */
+const WAD = 1e18
+
 function parseLevels(raw: EngineLevel[] | undefined): BookLevel[] {
   if (!Array.isArray(raw)) {
     return []
   }
   return raw
-    .map((l) => ({ price: Number(l.price), size: Number(l.size) }))
+    .map((l) => ({ price: Number(l.price) / WAD, size: Number(l.size) / WAD }))
     .filter((l) => Number.isFinite(l.price) && Number.isFinite(l.size) && l.size > 0)
 }
 

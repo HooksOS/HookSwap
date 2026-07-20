@@ -26,6 +26,7 @@ import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks
 import { useAccount } from '~/hooks/useAccount'
 import { useSelectChain } from '~/hooks/useSelectChain'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
+import { PerpsTutorial, type TutorialStep } from '~/terminal/screens/perps/PerpsTutorial'
 import { StatCard } from '~/terminal/components/StatCard'
 import { getPerpsFactoryDeployment, PERPS_FACTORY_HOME_CHAIN } from '~/terminal/perps/factory/abis'
 import {
@@ -45,6 +46,46 @@ import { assume0xAddress } from '~/utils/wagmi'
 const MONO = terminalFonts.mono
 const DISPLAY = terminalFonts.display
 const SANS = terminalFonts.sans
+
+/* ---------------------------------------------------- creator launch walkthrough */
+
+/**
+ * First-visit tour of the launch flow for market creators. Explains each field in
+ * plain terms — including why on-chain addresses (collateral token, oracle feed)
+ * appear: they are contract locations, pre-filled with sensible defaults, that
+ * most creators never need to touch.
+ */
+const LAUNCH_TUTORIAL_STEPS: TutorialStep[] = [
+  {
+    title: 'Launch your own perp market',
+    body: 'Anyone can list a new isolated perpetual market in a single transaction, and earn a share of every trade on it. This 30-second tour shows what each field does — most creators only set a name and launch.',
+  },
+  {
+    target: 'launch-overview',
+    title: 'Live preview',
+    body: 'These tiles preview your market as you build it: its symbol, the per-side fee you earn, the max leverage traders get, and its listing tier. They update live from the form below.',
+  },
+  {
+    target: 'launch-market',
+    title: '1 · Market',
+    body: 'Name the market (e.g. BTC-PERP) — that derives its on-chain marketId. Collateral is the token traders post as margin; it defaults to WETH and the 0x… is simply that token’s contract address, pre-filled for you. Creator is the wallet that receives your fee share.',
+  },
+  {
+    target: 'launch-params',
+    title: '2 · Parameters',
+    body: 'Set the fee you earn per side (2–15 bps), the max leverage (up to the platform cap), and the tier. Curated lists against a single trusted price source; Permissionless requires two independent sources to agree.',
+  },
+  {
+    target: 'launch-oracle',
+    title: '3 · Oracle',
+    body: 'The market’s price source. It’s pre-filled with the platform’s allowlisted Chainlink feed — the 0x… values are that feed’s on-chain address, not something you normally change. Only allowlisted venues will launch.',
+  },
+  {
+    target: 'launch-review',
+    title: 'Review & launch',
+    body: 'Check the summary, including the listing fee and the refundable creation bond you pay. Connect your wallet and launch — the factory deploys your isolated market in one transaction and its address appears here.',
+  },
+]
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -434,6 +475,9 @@ export function CreatePerpMarketScreen(): JSX.Element {
   const connected = Boolean(account.address)
   const owner = assume0xAddress(account.address)
 
+  // Creator walkthrough — auto-starts once (localStorage), replayable via the header button.
+  const [tutorialOpen, setTutorialOpen] = useState(0)
+
   const deployment = getPerpsFactoryDeployment(chainId)
   const deployed = Boolean(deployment)
   const chainLabel = getChainLabel(chainId)
@@ -584,9 +628,32 @@ export function CreatePerpMarketScreen(): JSX.Element {
           isolated market · one tx
         </span>
       </div>
-      <div style={{ fontFamily: SANS, fontSize: 13, color: terminalColors.ink2, marginBottom: 18, maxWidth: 620, lineHeight: 1.5 }}>
+      <div style={{ fontFamily: SANS, fontSize: 13, color: terminalColors.ink2, marginBottom: 12, maxWidth: 620, lineHeight: 1.5 }}>
         Permissionlessly list a new isolated perpetual market on HookSwapPerps in a single transaction. Pick the
         collateral, fee rate, leverage cap, tier, and oracle source — the factory deploys the market and registers it.
+        The collateral and oracle addresses are <strong>pre-filled with sensible defaults</strong>; most creators only
+        set a name and launch.
+      </div>
+
+      <div style={{ marginBottom: 18 }}>
+        <button
+          type="button"
+          onClick={() => setTutorialOpen((n) => n + 1)}
+          title="Walk me through launching a market"
+          style={{
+            fontFamily: MONO,
+            fontSize: 11,
+            fontWeight: 600,
+            color: terminalColors.greenDeep,
+            background: terminalColors.greenBg,
+            border: `1px solid ${terminalColors.greenBorder}`,
+            borderRadius: 8,
+            padding: '6px 12px',
+            cursor: 'pointer',
+          }}
+        >
+          ? How to launch a market
+        </button>
       </div>
 
       {/* Wrong-chain / not-deployed banner */}
@@ -604,7 +671,7 @@ export function CreatePerpMarketScreen(): JSX.Element {
       ) : null}
 
       {/* Stat tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
+      <div data-tut="launch-overview" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
         <StatCard size="lg" label="Market" value={symbolValue} />
         <StatCard size="lg" label="Fee (per side)" value={feeValue} />
         <StatCard size="lg" label="Max leverage" value={levValue} />
@@ -614,6 +681,7 @@ export function CreatePerpMarketScreen(): JSX.Element {
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* Left: market config */}
         <div style={{ flex: '1 1 380px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div data-tut="launch-market">
           <Panel title="01 · Market">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
@@ -650,7 +718,9 @@ export function CreatePerpMarketScreen(): JSX.Element {
               </div>
             </div>
           </Panel>
+          </div>
 
+          <div data-tut="launch-params">
           <Panel title="02 · Parameters">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
@@ -681,7 +751,9 @@ export function CreatePerpMarketScreen(): JSX.Element {
               </div>
             </div>
           </Panel>
+          </div>
 
+          <div data-tut="launch-oracle">
           <Panel title="03 · Oracle">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
@@ -725,10 +797,12 @@ export function CreatePerpMarketScreen(): JSX.Element {
               </Notice>
             </div>
           </Panel>
+          </div>
         </div>
 
         {/* Right: review + launch */}
         <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div data-tut="launch-review">
           <Panel title="Review" corners>
             <SummaryRow label="Market" value={symbolValue} />
             <SummaryRow label="Collateral" value={collateral.trim() !== '' ? shortAddr(collateral) : '—'} />
@@ -764,10 +838,19 @@ export function CreatePerpMarketScreen(): JSX.Element {
               </div>
             ) : null}
           </Panel>
+          </div>
 
           <MarketsDirectory chainId={chainId} />
         </div>
       </div>
+
+      {/* Creator launch walkthrough — first-visit auto-start + replayable button. */}
+      <PerpsTutorial
+        steps={LAUNCH_TUTORIAL_STEPS}
+        storageKey="hookswap.perps.launch.tutorial.seen.v1"
+        ready
+        openSignal={tutorialOpen}
+      />
     </div>
   )
 }
