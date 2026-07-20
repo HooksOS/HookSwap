@@ -50,6 +50,23 @@ export const ENV = {
   engineMarketsPath: process.env.PERPS_ENGINE_MARKETS || "",
   /** How often (ms) to refresh the market list from the registry. */
   marketRefreshMs: Number(process.env.PERPS_MARKET_REFRESH_MS || 60_000),
+  /**
+   * OracleGuard — the on-chain oracle-config registry. The engine reads each
+   * market's `refFeed` (Chainlink deviation reference) from it and uses that feed
+   * as the market's mark source (no manual config, same price the on-chain
+   * deviation breaker enforces). Default = the deployed Sepolia guard.
+   */
+  oracleGuard: (process.env.ORACLE_GUARD ||
+    "0x3D2ee857AE129688fA43E378dAE85b60803bfFD1").trim() as `0x${string}`,
+  /** How often (ms) the mark sampler reads each configured feed into the ring buffer. */
+  markSampleMs: Number(process.env.PERPS_MARK_SAMPLE_MS || 30_000),
+  /** How often (ms) open-interest is refreshed from chain (cached between). */
+  oiRefreshMs: Number(process.env.PERPS_OI_REFRESH_MS || 60_000),
+  /** JSON snapshot file for orderbook + trades + mark history (survives restart). */
+  stateFile:
+    process.env.PERPS_STATE_FILE ||
+    // default: perps-engine/data/engine-state.json
+    "",
 } as const;
 
 /** Normalize the matcher key to 0x-prefixed 32-byte hex, or "" if unset/invalid. */

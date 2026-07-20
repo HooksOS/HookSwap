@@ -30,6 +30,107 @@ interface Book {
 
 const TRADE_HISTORY_CAP = 500;
 
+// ---- Persistence wire shapes (bigints as decimal strings) --------------------
+
+interface SerializedOrder {
+  trader: `0x${string}`;
+  token: `0x${string}`;
+  isLong: boolean;
+  size: string;
+  leverage: string;
+  price: string;
+  deadline: string;
+  nonce: string;
+  orderType: number;
+}
+interface SerializedStoredOrder {
+  orderId: string;
+  market: `0x${string}`;
+  order: SerializedOrder;
+  signature: `0x${string}`;
+  remaining: string;
+  status: StoredOrder["status"];
+  receivedAt: number;
+}
+interface SerializedTrade {
+  market: `0x${string}`;
+  longTrader: `0x${string}`;
+  shortTrader: `0x${string}`;
+  token: `0x${string}`;
+  matchPrice: string;
+  matchSize: string;
+  txHash: `0x${string}` | null;
+  settled: boolean;
+  reason?: string;
+  calldata?: `0x${string}`;
+  ts: number;
+}
+export interface SerializedBook {
+  market: string;
+  orders: SerializedStoredOrder[];
+  trades: SerializedTrade[];
+}
+
+function serializeStoredOrder(o: StoredOrder): SerializedStoredOrder {
+  return {
+    orderId: o.orderId,
+    market: o.market,
+    order: {
+      trader: o.order.trader,
+      token: o.order.token,
+      isLong: o.order.isLong,
+      size: o.order.size.toString(),
+      leverage: o.order.leverage.toString(),
+      price: o.order.price.toString(),
+      deadline: o.order.deadline.toString(),
+      nonce: o.order.nonce.toString(),
+      orderType: o.order.orderType,
+    },
+    signature: o.signature,
+    remaining: o.remaining.toString(),
+    status: o.status,
+    receivedAt: o.receivedAt,
+  };
+}
+
+function deserializeStoredOrder(s: SerializedStoredOrder): StoredOrder {
+  return {
+    orderId: s.orderId,
+    market: s.market,
+    order: {
+      trader: s.order.trader,
+      token: s.order.token,
+      isLong: s.order.isLong,
+      size: BigInt(s.order.size),
+      leverage: BigInt(s.order.leverage),
+      price: BigInt(s.order.price),
+      deadline: BigInt(s.order.deadline),
+      nonce: BigInt(s.order.nonce),
+      orderType: s.order.orderType as StoredOrder["order"]["orderType"],
+    },
+    signature: s.signature,
+    remaining: BigInt(s.remaining),
+    status: s.status,
+    receivedAt: s.receivedAt,
+  };
+}
+
+function deserializeTrade(s: SerializedTrade, market: `0x${string}`): Trade {
+  return {
+    market: (s.market ?? market) as `0x${string}`,
+    longTrader: s.longTrader,
+    shortTrader: s.shortTrader,
+    token: s.token,
+    matchPrice: BigInt(s.matchPrice),
+    matchSize: BigInt(s.matchSize),
+    txHash: s.txHash ?? null,
+    settled: s.settled,
+    reason: s.reason,
+    calldata: s.calldata,
+    ts: s.ts,
+  };
+}
+
 export class MatchingEngine extends EventEmitter {
   private books = new Map<string, Book>(); // key: checksummed market address
   private ready = false;
@@ -134,6 +235,20 @@ export class MatchingEngine extends EventEmitter {
     return b.trades.slice(-limit).reverse();
   }
 
+  /** All retained trades for a market (chronological), for volume/candle aggregation. */
+  allTrades(market: string): Trade[] {
+    try {
+      return this.book(market).trades;
+    } catch {
+      return [];
+    }
+  }
+
+  /** Trades at/after `sinceMs` (chronological). */
+  tradesSince(market: string, sinceMs: number): Trade[] {
+    return this.allTrades(market).filter((t) => t.ts >= sinceMs);
+  }
+
   cancel(orderId: string): { ok: boolean; reason?: string; market?: string } {
     for (const [k, b] of this.books) {
       const o = b.orders.get(orderId);
@@ -144,6 +259,7 @@ export class MatchingEngine extends EventEmitter {
       o.status = "cancelled";
       b.orders.delete(orderId);
       this.emit(`orderbook:${k}`, this.orderbook(k));
+      this.emit("changed");
       return { ok: true, market: k };
     }
     return { ok: false, reason: "orderId not found" };
@@ -195,6 +311,7 @@ export class MatchingEngine extends EventEmitter {
     }
 
     this.emit(`orderbook:${k}`, this.orderbook(k));
+    this.emit("changed");
 
     return {
       orderId: stored.orderId,
@@ -249,6 +366,11 @@ export class MatchingEngine extends EventEmitter {
     for (const rest of resting) {
       if (taker.remaining <= 0n) break;
 
+      // Self-trade prevention: never cross two orders from the SAME trader (a
+      // self-match settles nothing real and would revert / wash on-chain). Skip
+      // this resting order and leave BOTH resting; continue scanning others.
+      if (getAddress(rest.order.trader) === getAddress(taker.order.trader)) continue;
+
       const longO = takerIsLong ? taker.order : rest.order;
       const shortO = takerIsLong ? rest.order : taker.order;
 
@@ -302,6 +424,8 @@ export class MatchingEngine extends EventEmitter {
         fills.push(trade);
         this.emit(`trade:${this.key(b.meta.market)}`, this.serializeTrade(trade));
         this.emit(`fill:${this.key(b.meta.market)}`, this.serializeTrade(trade));
+        // Unkeyed 'trade' — market-data sampler + persistence subscribe to all fills.
+        this.emit("trade", trade);
       } else {
         // Live broadcast failed — leave the book untouched, surface the reason, stop.
         fills.push(trade);
@@ -310,6 +434,61 @@ export class MatchingEngine extends EventEmitter {
       }
     }
     return fills;
+  }
+
+  // ---- Persistence (snapshot / restore of books + trades) --------------------
+
+  /** Serialize every book's resting orders + retained trades (bigints → strings). */
+  snapshotBooks(): SerializedBook[] {
+    const out: SerializedBook[] = [];
+    for (const [k, b] of this.books) {
+      out.push({
+        market: k,
+        orders: [...b.orders.values()].map(serializeStoredOrder),
+        trades: b.trades.map((t) => this.serializeTrade(t)),
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Restore resting orders + trades into EXISTING books (call after init(), which
+   * loads markets from the registry). Rows for unknown markets are skipped. Only
+   * still-open orders are re-seated onto the book; trades repopulate history.
+   */
+  restoreBooks(rows: SerializedBook[] | undefined): { orders: number; trades: number } {
+    let orders = 0;
+    let trades = 0;
+    if (!rows) return { orders, trades };
+    for (const row of rows) {
+      let b: Book;
+      try {
+        b = this.book(row.market);
+      } catch {
+        continue; // market no longer in the registry
+      }
+      for (const so of row.orders ?? []) {
+        try {
+          const stored = deserializeStoredOrder(so);
+          if (stored.status === "open" && stored.remaining > 0n) {
+            b.orders.set(stored.orderId, stored);
+            orders++;
+          }
+        } catch {
+          /* skip malformed persisted order */
+        }
+      }
+      for (const t of row.trades ?? []) {
+        try {
+          b.trades.push(deserializeTrade(t, row.market as `0x${string}`));
+          trades++;
+        } catch {
+          /* skip malformed persisted trade */
+        }
+      }
+      if (b.trades.length > TRADE_HISTORY_CAP) b.trades.splice(0, b.trades.length - TRADE_HISTORY_CAP);
+    }
+    return { orders, trades };
   }
 
   serializeTrade(t: Trade) {

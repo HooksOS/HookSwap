@@ -11,8 +11,10 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { ENV, normalizedMatcherKey } from "./env.js";
-import { MARKET_REGISTRY_ABI, PERP_MARKET_ABI } from "./abis.js";
+import { MARKET_REGISTRY_ABI, ORACLE_GUARD_ABI, PERP_MARKET_ABI } from "./abis.js";
 import type { MarketMeta, Order } from "./types.js";
+
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
 
 export const publicClient: PublicClient = createPublicClient({
   transport: http(ENV.rpcUrl),
@@ -173,6 +175,67 @@ export async function fetchPositions(
     openTime: p.openTime.toString(),
     status: Number(p.status),
   }));
+}
+
+/**
+ * Read a market's Chainlink reference feed from OracleGuard.getMarketConfig.
+ * Returns the feed address, or null when the market has no refFeed (0x0) or the
+ * read fails. This is the SAME feed the on-chain deviation breaker enforces, so
+ * using it as the mark source keeps the engine mark in lock-step with the guard.
+ */
+export async function fetchMarketRefFeed(market: `0x${string}`): Promise<`0x${string}` | null> {
+  try {
+    const cfg = (await publicClient.readContract({
+      address: ENV.oracleGuard,
+      abi: ORACLE_GUARD_ABI,
+      functionName: "getMarketConfig",
+      args: [market],
+    })) as { refFeed: `0x${string}` };
+    if (!cfg?.refFeed || cfg.refFeed.toLowerCase() === ZERO_ADDR) return null;
+    return cfg.refFeed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Open interest = the sum of ACTIVE PairedPosition sizes on-chain. Enumerates
+ * pair ids [0, nextPairId] via multicall (allowFailure) and sums `size` where
+ * status == 0 (ACTIVE). Returns null when it cannot be read. A best-effort cap
+ * bounds the read for pathological markets; nascent markets are tiny.
+ */
+const OI_ID_CAP = 5_000n;
+// Canonical Multicall3 (same address on Sepolia + every HookSwap chain). Passed
+// explicitly because publicClient is created without a `chain` (transport only).
+const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as const;
+export async function fetchOpenInterest(market: `0x${string}`): Promise<bigint | null> {
+  try {
+    const next = (await publicClient.readContract({
+      address: market,
+      abi: PERP_MARKET_ABI,
+      functionName: "nextPairId",
+    })) as bigint;
+    if (next <= 0n) return 0n;
+    const last = next > OI_ID_CAP ? OI_ID_CAP : next;
+    const calls = [] as { address: `0x${string}`; abi: typeof PERP_MARKET_ABI; functionName: "getPairedPosition"; args: [bigint] }[];
+    for (let id = 0n; id <= last; id++) {
+      calls.push({ address: market, abi: PERP_MARKET_ABI, functionName: "getPairedPosition", args: [id] });
+    }
+    const results = await publicClient.multicall({
+      contracts: calls,
+      allowFailure: true,
+      multicallAddress: MULTICALL3,
+    });
+    let oi = 0n;
+    for (const r of results) {
+      if (r.status !== "success" || !r.result) continue;
+      const p = r.result as { size: bigint; status: number };
+      if (Number(p.status) === 0 && p.size > 0n) oi += p.size;
+    }
+    return oi;
+  } catch {
+    return null;
+  }
 }
 
 export async function orderHashOnchain(

@@ -14,6 +14,8 @@ import { ENV } from "./env.js";
 let adapter: SpotOracleAdapter | null = null;
 // address (checksummed) -> oracle market key used in the adapter
 const addressToKey = new Map<string, string>();
+// checksummed market address -> refFeed it was auto-registered against (dedupe).
+const autoRegistered = new Map<string, string>();
 
 /**
  * Load optional engine oracle config: a JSON file whose entries are MarketConfig
@@ -56,4 +58,44 @@ export async function markPrice(market: `0x${string}`): Promise<bigint | null> {
 
 export function marksConfigured(): number {
   return addressToKey.size;
+}
+
+/**
+ * Auto-register a market's mark source from its on-chain OracleGuard `refFeed`
+ * (a Chainlink AggregatorV3 feed). The engine then resolves getMarkPrice(<market
+ * address>) to that feed's price (8-dec → 1e18, handled by ChainlinkAdapter). This
+ * is the SAME price the on-chain deviation breaker enforces — no manual config,
+ * never fabricated. Idempotent: a no-op if the same feed is already registered.
+ * Returns true if a (new) registration happened.
+ */
+export function registerRefFeedMark(
+  market: `0x${string}`,
+  refFeed: `0x${string}`,
+  chainId: number,
+): boolean {
+  if (!adapter) adapter = new SpotOracleAdapter([]);
+  let key: string;
+  try {
+    key = getAddress(market);
+  } catch {
+    key = market;
+  }
+  if (autoRegistered.get(key)?.toLowerCase() === refFeed.toLowerCase()) return false;
+  adapter.setMarket({
+    market: key,
+    assetClass: "crypto",
+    oracle: { sourceType: "chainlink", chainId, feed: refFeed },
+  });
+  addressToKey.set(key, key);
+  autoRegistered.set(key, refFeed);
+  return true;
+}
+
+/** True when the market has a configured mark source (config file or auto refFeed). */
+export function hasMark(market: `0x${string}`): boolean {
+  try {
+    return addressToKey.has(getAddress(market));
+  } catch {
+    return false;
+  }
 }

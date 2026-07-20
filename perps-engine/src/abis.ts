@@ -181,3 +181,28 @@ export const EIP712_ORDER_TYPES = {
 
 export const EIP712_DOMAIN_NAME = "HookSwapPerps";
 export const EIP712_DOMAIN_VERSION = "1";
+
+// OracleGuard.getMarketConfig(market) — the on-chain per-market oracle config the
+// factory registered at createMarket. We read `refFeed` (the Chainlink deviation
+// reference feed) and use THAT feed as the engine's mark source, so the mark is the
+// exact price the on-chain deviation breaker (checkDeviation) enforces.
+// Source: contracts/perps/src/factory/OracleGuard.sol.
+const ORACLE_CONFIG_COMPONENTS = [
+  { name: "sourceType", type: "bytes32" },
+  { name: "venue", type: "address" },
+  { name: "refFeed", type: "address" },
+  { name: "maxDeviationBps", type: "uint256" },
+  { name: "maxStaleness", type: "uint256" },
+  { name: "minLiquidity", type: "uint256" },
+  { name: "dualSourceRequired", type: "bool" },
+] as const;
+
+export const ORACLE_GUARD_ABI = [
+  {
+    type: "function",
+    name: "getMarketConfig",
+    stateMutability: "view",
+    inputs: [{ name: "market", type: "address" }],
+    outputs: [{ type: "tuple", components: ORACLE_CONFIG_COMPONENTS }],
+  },
+] as const;
