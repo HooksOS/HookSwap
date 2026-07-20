@@ -131,18 +131,40 @@ export interface EngineCandlesResponse {
 /** Candle intervals the engine supports. */
 export type CandleInterval = '1m' | '5m' | '1h'
 
-/** One open (resting) order from `GET /orders`. */
+/**
+ * One open (resting) order from `GET /orders`.
+ *
+ * Mirrors the engine's `orderView` EXACTLY (perps-engine/src/server.ts:55) — the engine
+ * derives `side` from `order.isLong`, exposes the unfilled `remaining`, maps `orderType`
+ * to the `'LIMIT'|'MARKET'` label, and stamps `receivedAt = Date.now()` (unix ms).
+ * `size`/`remaining`/`price` are 1e18-scaled decimal strings; `leverage` is 1e4-scaled.
+ */
 export interface EngineOpenOrder {
   orderId: string
   market: string
   trader: string
-  isLong: boolean
+  /** Collateral/base token the order is on (engine `order.token`). */
+  token: string
+  /** Order side — engine maps `order.isLong` → 'long' | 'short'. */
+  side: 'long' | 'short'
+  /** Original order size — 1e18-scaled decimal string. */
   size: string
+  /** Unfilled size remaining — 1e18-scaled decimal string. */
+  remaining: string
+  /** Leverage — 1e4-scaled decimal string. */
   leverage: string
+  /** Limit price — 1e18-scaled decimal string (0 for a MARKET order). */
   price: string
-  orderType: number | string
-  status?: string
-  createdAt?: string | number
+  /** Order type label — engine maps `order.orderType === 1` → 'LIMIT', else 'MARKET'. */
+  orderType: 'LIMIT' | 'MARKET'
+  /** Order deadline — unix-seconds decimal string. */
+  deadline: string
+  /** Signer nonce — decimal string. */
+  nonce: string
+  /** Engine-side order status. */
+  status: 'open' | 'matched' | 'cancelled'
+  /** Unix ms the engine received the order (`Date.now()`). */
+  receivedAt: number
 }
 
 /** One position from `GET /positions` (engine mirror of on-chain PairedPosition). */

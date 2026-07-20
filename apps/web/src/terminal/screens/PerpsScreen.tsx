@@ -34,6 +34,7 @@ import { useSelectChain } from '~/hooks/useSelectChain'
 import type { Address } from '~/chains'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { MarketStatBar } from '~/terminal/screens/perps/MarketStatBar'
+import { OpenOrdersTable } from '~/terminal/screens/perps/OpenOrdersTable'
 import { OrderBook } from '~/terminal/screens/perps/OrderBook'
 import { OrderTicket } from '~/terminal/screens/perps/OrderTicket'
 import { PerpsChart } from '~/terminal/screens/perps/PerpsChart'
@@ -45,6 +46,7 @@ import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
 import { useCandles } from '~/terminal/perps/engine/useCandles'
 import { useClosePosition } from '~/terminal/perps/engine/useClosePosition'
 import { useMarkets } from '~/terminal/perps/engine/useMarkets'
+import { useOpenOrders } from '~/terminal/perps/engine/useOpenOrders'
 import { useOrderbook } from '~/terminal/perps/engine/useOrderbook'
 import { usePositions } from '~/terminal/perps/engine/usePositions'
 import { useTicker } from '~/terminal/perps/engine/useTicker'
@@ -100,6 +102,13 @@ export function PerpsScreen(): JSX.Element {
     trader,
     chainId: PERPS_CHAIN,
     refetch: positions.refetch,
+  })
+
+  // Open (resting) orders — engine REST; cancel via DELETE /orders/:orderId (self-refetches).
+  const openOrders = useOpenOrders({
+    market: selected?.address,
+    trader,
+    chainId: PERPS_CHAIN,
   })
 
   // Mark: prefer the engine ticker (Chainlink refFeed), fall back to last trade / book mid.
@@ -251,6 +260,50 @@ export function PerpsScreen(): JSX.Element {
                           : closePosition.status === 'done'
                             ? `Position closed${closePosition.txHash ? ` · ${closePosition.txHash.slice(0, 10)}…` : ''}`
                             : null}
+                  </div>
+                ) : null}
+              </InstrumentPanel>
+            </div>
+
+            {/* Bottom — Open Orders (engine resting orders, spans all columns) */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <InstrumentPanel
+                title="Open Orders"
+                flush
+                meta={openOrders.error ? ['engine offline'] : undefined}
+              >
+                <OpenOrdersTable
+                  orders={openOrders.orders}
+                  connected={connected}
+                  wrongChain={wrongChain}
+                  loading={openOrders.isLoading}
+                  onCancel={(o) => void openOrders.cancel(o.orderId)}
+                  pendingOrderId={openOrders.pendingOrderId}
+                  cancelDisabled={!openOrders.ready}
+                />
+                {/* Cancel status — real engine result / error, never fabricated. */}
+                {openOrders.cancelStatus !== 'idle' || openOrders.cancelError ? (
+                  <div
+                    style={{
+                      padding: '8px 14px',
+                      borderTop: `1px solid ${terminalColors.line3}`,
+                      fontFamily: terminalFonts.mono,
+                      fontSize: 10.5,
+                      textAlign: 'right',
+                      color: openOrders.cancelError
+                        ? terminalColors.redDown
+                        : openOrders.cancelStatus === 'done'
+                          ? terminalColors.greenDeep
+                          : terminalColors.ink3,
+                    }}
+                  >
+                    {openOrders.cancelError
+                      ? openOrders.cancelError
+                      : openOrders.cancelStatus === 'canceling'
+                        ? 'Canceling order…'
+                        : openOrders.cancelStatus === 'done'
+                          ? 'Order cancelled'
+                          : null}
                   </div>
                 ) : null}
               </InstrumentPanel>
