@@ -35,7 +35,7 @@ COPY package.json ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 EXPOSE 4092
-# Health: GET /health (wget is present in node:22-slim).
+# Health: GET /health via node (node:22-slim has no wget/curl).
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD wget -qO- http://localhost:4092/health || exit 1
+  CMD node -e "require('http').get('http://127.0.0.1:4092/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 CMD ["node", "dist/server.js"]
