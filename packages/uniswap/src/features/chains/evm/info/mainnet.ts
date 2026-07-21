@@ -166,7 +166,11 @@ export const SEPOLIA_CHAIN_INFO = {
   pendingTransactionsRetryOptions: undefined,
   rpcUrls: {
     [RPCType.Public]: {
-      http: [getUniRpcEndpointUrl(UniverseChainId.Sepolia)],
+      // HookSwap has no UniRPC gateway session, so the gateway URL 401s / CORS-fails from
+      // the browser (Sepolia is in PUBLIC_RPC_ONLY_CHAINS). Point Public at real, CORS-enabled
+      // public RPCs (both on the CSP connect-src allowlist) so wallet-less on-chain reads work —
+      // the perps MarketRegistry directory and every anonymous read depend on this.
+      http: ['https://ethereum-sepolia-rpc.publicnode.com', 'https://sepolia.gateway.tenderly.co'],
     },
     [RPCType.Default]: {
       http: ['https://sepolia.gateway.tenderly.co'],

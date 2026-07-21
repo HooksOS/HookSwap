@@ -36,11 +36,19 @@ export function isUniRpcOnlyChain(chainId: UniverseChainId): boolean {
  * chain-info Public RPC (e.g. https://rpc.mainnet.chain.robinhood.com), which is
  * never promoted back to UniRPC by `asUniRpcConfig` (it isn't an entry-gateway URL).
  *
- * NOTE: only Robinhood is listed because its bug was reported/verified; the other
- * HookSwap custom chains (Ink/HyperEVM/XLayer/MegaETH/Tempo) have the same
+ * Sepolia is included because it is HookSwapPerps' canonical chain: its browser reads
+ * (MarketRegistry directory, per-market listing fee / bond, balances, positions) all
+ * 401/CORS-failed through the gateway — the "Couldn't read the market registry" state.
+ * Unlike Robinhood, Sepolia's Public RPC previously WAS the gateway URL, so it also needed
+ * a real public endpoint (see mainnet.ts Sepolia rpcUrls[Public]).
+ *
+ * NOTE: the other HookSwap custom chains (Ink/HyperEVM/XLayer/MegaETH/Tempo) have the same
  * gateway-less situation and are candidates to add here if they exhibit it too.
  */
-const PUBLIC_RPC_ONLY_CHAINS: ReadonlySet<UniverseChainId> = new Set([UniverseChainId.Robinhood])
+const PUBLIC_RPC_ONLY_CHAINS: ReadonlySet<UniverseChainId> = new Set([
+  UniverseChainId.Robinhood,
+  UniverseChainId.Sepolia,
+])
 
 export function isPublicRpcOnlyChain(chainId: UniverseChainId): boolean {
   return PUBLIC_RPC_ONLY_CHAINS.has(chainId)

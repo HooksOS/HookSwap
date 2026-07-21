@@ -558,6 +558,8 @@ export default defineConfig(({ mode, isPreview }) => {
 
     server: {
       port: DEFAULT_PORT,
+      // Dev-only: allow tunneled hosts (e.g. *.trycloudflare.com) to reach the dev server.
+      allowedHosts: true,
       proxy: {
         '/config': {
           target: 'https://gating.interface.gateway.uniswap.org',
