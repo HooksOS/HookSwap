@@ -1,0 +1,31 @@
+# HookSwap — isolated stack on the shared Hivelocity box.
+# Own containers (hookswap-*), own network (hookswap-net), own high ports bound to
+# 127.0.0.1 (host nginx proxies the public domains). Log rotation on every service so
+# no container can ever leak disk (the 81GB-json-log lesson). Nothing here touches the
+# existing hookos/protocol stack.
+name: hookswap
+
+networks:
+  hookswap-net:
+    name: hookswap-net
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  locker-indexer:
+    build: ./locker-indexer
+    image: hookswap/locker-indexer:latest
+    container_name: hookswap-locker-indexer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4205:4205"
+    environment:
+      - PORT=4205
+      - LOCKER_REFRESH_MS=300000
+    networks:
+      - hookswap-net
+    logging: *default-logging
