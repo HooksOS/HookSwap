@@ -30,7 +30,7 @@
  */
 import { NONFUNGIBLE_POSITION_MANAGER_ADDRESSES } from '@uniswap/sdk-core'
 import { useEffect, useMemo, useState } from 'react'
-import { useReadContract, useReadContracts, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
+import { useReadContract, useReadContracts, useSimulateContract, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 import { getChainInfo } from 'uniswap/src/features/chains/chainInfo'
 import { useEnabledChains } from 'uniswap/src/features/chains/hooks/useEnabledChains'
 import type { UniverseChainId } from 'uniswap/src/features/chains/types'
@@ -62,6 +62,23 @@ type LockerTab = 'token' | 'v3'
 
 function shortAddr(a?: string): string {
   return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—'
+}
+
+/**
+ * Distil a viem/wagmi simulate error into one compact human line for the "can't lock"
+ * note. Prefers viem's `shortMessage`, strips the multi-line trace, and rewrites the
+ * common "no data"/generic reverts into plain language.
+ */
+function lockRevertReason(err: unknown): string {
+  const e = err as { shortMessage?: string; message?: string } | undefined
+  const raw = (e?.shortMessage || e?.message || '').split('\n')[0].trim()
+  if (!raw) {
+    return 'This token can’t be locked from this account.'
+  }
+  if (/reverted|execution reverted|reason:/i.test(raw) && !/:\s*\S/.test(raw)) {
+    return 'This token can’t be locked — the lock transaction reverts.'
+  }
+  return raw.length > 160 ? `${raw.slice(0, 157)}…` : raw
 }
 
 /** datetime-local value → unix seconds, or undefined if empty/invalid. */
@@ -636,9 +653,39 @@ function TokenLpTab({
     }
   }, [approveReceipt.isSuccess, allowanceRead])
 
+  // Lock tx receipt — on success we refetch the user's locks + balances so the new
+  // lock appears immediately (previously the panels showed the pre-lock state until a
+  // manual reload — the "where is my lock?" refetch lag).
+  const [lockHash, setLockHash] = useState<Hash | undefined>(undefined)
+  const lockReceipt = useWaitForTransactionReceipt({ hash: lockHash, chainId })
+  const locking = Boolean(lockHash) && lockReceipt.isLoading
+
   const baseValid = deployed && connected && validToken && amountValid && futureUnlock && decimals !== undefined
+
+  // Pre-flight simulation — the shallow checks (format + balance + allowance) can't tell
+  // whether the token is *actually* lockable. Simulate the real createTokenLocker call
+  // (only once the allowance covers the amount, else it would revert on the pull) so the
+  // Lock button enables only when the on-chain lock would truly succeed. Catches
+  // fee-on-transfer / paused / blacklisting / non-standard tokens that pass the surface
+  // checks but revert — the user never pays gas + the 0.04 fee on a doomed tx.
+  const simEnabled = baseValid && amountRaw !== undefined && unlockUnix !== undefined && !needsApproval && Boolean(manager && owner)
+  const lockSim = useSimulateContract({
+    address: manager,
+    chainId,
+    abi: tokenLockerManagerAbi,
+    functionName: 'createTokenLocker',
+    args: amountRaw !== undefined && unlockUnix !== undefined ? [assume0xAddress(tokenAddr), amountRaw, unlockUnix] : undefined,
+    value: lockFee,
+    account: owner,
+    query: { enabled: simEnabled, retry: false },
+  })
+  const simOk = lockSim.isSuccess
+  const simChecking = simEnabled && lockSim.isFetching && !lockSim.isSuccess
+  const simReason = simEnabled && !simChecking && lockSim.isError ? lockRevertReason(lockSim.error) : undefined
+
   const canApprove = baseValid && needsApproval && !isPending && !approving
-  const canLock = baseValid && amountRaw !== undefined && allowance !== undefined && !needsApproval && !isPending
+  const canLock =
+    baseValid && amountRaw !== undefined && allowance !== undefined && !needsApproval && !isPending && simOk
 
   const onApprove = async (): Promise<void> => {
     if (!manager || amountRaw === undefined) {
@@ -662,7 +709,7 @@ function TokenLpTab({
     if (!manager || !unlockUnix || amountRaw === undefined || needsApproval) {
       return
     }
-    await writeContractAsync({
+    const hash = await writeContractAsync({
       address: manager,
       chainId,
       abi: tokenLockerManagerAbi,
@@ -670,7 +717,7 @@ function TokenLpTab({
       args: [assume0xAddress(tokenAddr), amountRaw, unlockUnix],
       value: lockFee,
     })
-    setAmount('')
+    setLockHash(hash)
   }
 
   const onPrimary = (): void => {
@@ -682,6 +729,17 @@ function TokenLpTab({
   }
 
   const locks = useTokenLocks(manager, owner, chainId)
+
+  // On a mined lock, refresh the user's locks + balances so the new lock shows at once.
+  useEffect(() => {
+    if (lockReceipt.isSuccess) {
+      locks.refetch()
+      void allowanceRead.refetch()
+      void balanceRead.refetch()
+      setAmount('')
+      setLockHash(undefined)
+    }
+  }, [lockReceipt.isSuccess, locks, allowanceRead, balanceRead])
 
   return (
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -782,12 +840,23 @@ function TokenLpTab({
                             : 'Approve token'
                         : isPending
                           ? 'Confirm in wallet…'
-                          : 'Lock'
+                          : locking
+                            ? 'Locking…'
+                            : simChecking
+                              ? 'Checking lockability…'
+                              : simReason
+                                ? 'Can’t lock this token'
+                                : 'Lock'
             }
             onClick={onPrimary}
-            disabled={!deployed ? true : !connected ? false : needsApproval ? !canApprove : !canLock}
+            disabled={!deployed ? true : !connected ? false : needsApproval ? !canApprove : !canLock || locking}
           />
-          {deployed ? (
+          {/* Honest "why not" — the pre-flight simulation reverted, so the lock would fail. */}
+          {deployed && simReason ? (
+            <div style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.redDown, marginTop: 10, lineHeight: 1.5 }}>
+              This token can’t be locked: {simReason}
+            </div>
+          ) : deployed ? (
             <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.faint, marginTop: 10, lineHeight: 1.5 }}>
               You approve the token once, then lock. Locking transfers the tokens to a dedicated lock contract until the
               unlock time; a one-time lock fee is sent with the lock transaction.
