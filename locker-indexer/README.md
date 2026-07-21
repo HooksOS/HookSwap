@@ -28,7 +28,8 @@ npm run typecheck  # tsc --noEmit
 | `LOCKER_REFRESH_MS` | `300000` | full cross-chain re-index interval |
 | `LOCKER_CHAIN_TIMEOUT_MS` | `45000` | per-chain read timeout (slow chain → stale, others unaffected) |
 | `LOCKER_BATCH_SIZE` | `200` | ids per multicall batch |
-| `LOCKER_TVL_HISTORY_FILE` | `./data/tvl-history.json` | daily TVL series file |
+| `LOCKER_TVL_HISTORY_FILE` | `./data/tvl-history.json` | daily locker TVL series file |
+| `FARMS_TVL_HISTORY_FILE` | `./data/farms-tvl-history.json` | daily farms TVL series file |
 | `LOCKER_RPC_<chainId>` / per-chain alias | public RPC | RPC override (e.g. `SEPOLIA_RPC_URL`, `ROBINHOOD_RPC_URL`, `HYPEREVM_RPC_URL`, `INK_RPC_URL`, `MEGAETH_RPC_URL`, `XLAYER_RPC_URL`, `TEMPO_RPC_URL`) |
 
 Chains indexed: HyperEVM (999), Ink (57073), MegaETH (4326), XLayer (196),
@@ -149,6 +150,89 @@ The daily TVL snapshot series (oldest → newest). One point per UTC day, dedupe
   { "dateISO": "2026-07-20", "updatedAt": 1721400000000,
     "totalTvlUsd": 152340.5, "totalLocks": 40,
     "perChain": [ { "chainId":11155111,"name":"Sepolia","totalLocks":12,"tvlUsd":50000.0,"reachable":true } ] }
+] }
+```
+
+## Farms module
+
+A second module indexes every **StakingRewards farm** (Synthetix-style single-sided
+staking) deployed by each chain's `StakingRewardsFactory`, using the SAME chain
+config + pricing as the locker. Enumeration is pure RPC: `allFarms()` on every
+configured factory → union the children → read each child's views. A chain may have
+**several** factories (a current + a superseded deploy); all are indexed and unioned.
+
+Factories indexed (from `apps/web/src/terminal/farms/addresses.ts` +
+`contracts/deployments/<chain>-suite.json`): Robinhood (4663), HyperEVM (999),
+XLayer (196), MegaETH (4326), Ink (57073), Tempo (4217), and Sepolia (11155111)
+(both its current `0x1443…F376` and superseded `0xb9df…6313` factories). A chain
+with no configured factory is simply omitted from the farms surface.
+
+**Same honesty rules.** `tvlUsd` is present only when the **staking token** prices
+(USD resolves on Robinhood only today; every other chain → omitted). `aprPct` is
+present only when BOTH the staking and reward tokens price AND `totalSupply > 0`
+— never a fabricated yield. A chain whose RPC fails retains its last-known farms
+flagged `stale`.
+
+```jsonc
+// Farm
+{
+  "chainId": 11155111, "chainName": "Sepolia",
+  "factory": "0x…",                 // the StakingRewardsFactory that deployed it
+  "farm": "0x…",                    // the StakingRewards child contract
+  "stakingToken": { "addr":"0x…","symbol":"STK","decimals":18 },
+  "rewardToken":  { "addr":"0x…","symbol":"TST","decimals":18 },
+  "tvlStaked": { "raw":"0","formatted":"0" },          // totalSupply() (staked balance)
+  "tvlUsd": 1234.5,                 // omitted unless the staking token prices
+  "rewardRatePerSec": { "raw":"2777777777777777","formatted":"0.002777…" }, // rewardRate()
+  "rewardsDuration": 3600,          // seconds
+  "periodFinish": 1784062860,       // unix seconds
+  "rewardsRemaining": { "raw":"0","formatted":"0" },   // max(0,periodFinish-now)×rate
+  "rewardBudget": { "raw":"9999999999999997200","formatted":"9.9999…" }, // getRewardForDuration()
+  "status": "ended",                // "active" while now < periodFinish, else "ended"
+  "aprPct": 42.0                    // omitted unless both tokens price AND totalSupply>0
+}
+
+// FarmsStats
+{ "totalFarms": 2, "activeFarms": 0,
+  "totalTvlUsd": 1234.5,            // omitted when nothing priced
+  "chains": 7, "reachableChains": 7 }
+```
+
+### `GET /farms/stats`
+Global farms stats + per-chain breakdown.
+```jsonc
+{ "generatedAt": 1784605215732,
+  "totalFarms": 2, "activeFarms": 0,
+  "totalTvlUsd": 1234.5,           // omitted if nothing could be priced
+  "chains": 7, "reachableChains": 7,
+  "perChain": [ /* FarmChainStatus[] — chainId,name,factories[],rpcUrl,reachable,stale,error?,farmCount,activeFarmCount,tvlUsd?,lastIndexedAt */ ] }
+```
+
+### `GET /farms?chainId=&sort=tvl|apr&limit=&offset=`
+All farms, filterable by `chainId`, sortable, paginated.
+- `sort=tvl` (default): `tvlUsd` desc, then staked raw amount desc (unpriced sink below priced).
+- `sort=apr`: `aprPct` desc (farms without an APR sink to the bottom).
+- `limit` default 100 (max 1000), `offset` default 0.
+```jsonc
+{ "total": 2, "offset": 0, "limit": 100, "farms": [ /* Farm[] */ ] }
+```
+
+### `GET /farm/:chainId/:address`
+A single farm's detail (powers the shareable farm page). `:address` = the
+StakingRewards child address. 404 if not found.
+```jsonc
+{ "farm": { /* Farm */ } }
+```
+
+### `GET /farms/tvl-history`
+The daily farms-TVL snapshot series (oldest → newest). One point per UTC day,
+deduped, accrues from first run. Separate file from the locker series
+(`FARMS_TVL_HISTORY_FILE`, default `./data/farms-tvl-history.json`).
+```jsonc
+{ "points": [
+  { "dateISO": "2026-07-21", "updatedAt": 1784605215735,
+    "totalTvlUsd": 1234.5, "totalFarms": 2, "activeFarms": 0,
+    "perChain": [ { "chainId":11155111,"name":"Sepolia","totalFarms":2,"activeFarms":0,"tvlUsd":1234.5,"reachable":true } ] }
 ] }
 ```
 

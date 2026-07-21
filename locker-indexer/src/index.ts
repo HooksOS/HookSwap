@@ -4,20 +4,27 @@
 // one TVL point per day as cycles complete), then start the read API.
 
 import { ENV } from "./env.js";
-import { CHAINS } from "./chains.js";
+import { CHAINS, farmFactories } from "./chains.js";
 import { LockerIndexer } from "./indexer.js";
 import { TvlHistory } from "./persist.js";
+import { FarmsIndexer } from "./farms/indexer.js";
+import { FarmsTvlHistory } from "./farms/store.js";
 import { startServer } from "./server.js";
 
 async function main(): Promise<void> {
+  const farmChains = CHAINS.filter((c) => farmFactories(c.chainId).length > 0).length;
   console.log(
     `[locker-indexer] boot: port=${ENV.port} chains=${CHAINS.length} ` +
-      `refreshMs=${ENV.refreshMs} tvlHistory=${ENV.tvlHistoryFile}`,
+      `farmChains=${farmChains} refreshMs=${ENV.refreshMs} tvlHistory=${ENV.tvlHistoryFile}`,
   );
 
   const history = new TvlHistory();
   const loaded = history.load();
   console.log(`[locker-indexer] restored ${loaded} daily TVL points`);
+
+  const farmsHistory = new FarmsTvlHistory();
+  const farmsLoaded = farmsHistory.load();
+  console.log(`[locker-indexer] restored ${farmsLoaded} daily farms-TVL points`);
 
   const indexer = new LockerIndexer();
 
@@ -37,7 +44,23 @@ async function main(): Promise<void> {
     );
   });
 
-  await startServer(indexer, history);
+  // Farms module — same shared refresh cadence, independent per-chain isolation.
+  const farmsIndexer = new FarmsIndexer();
+  farmsIndexer.start((snap) => {
+    try {
+      farmsHistory.record(snap);
+    } catch (e) {
+      console.warn("[farms] tvl record failed:", (e as Error).message);
+    }
+    const s = snap.stats;
+    console.log(
+      `[farms] cycle: ${s.totalFarms} farms (${s.activeFarms} active), ` +
+        `${s.reachableChains}/${s.chains} chains reachable, ` +
+        `TVL=${s.totalTvlUsd !== undefined ? `$${s.totalTvlUsd.toFixed(2)}` : "n/a"}`,
+    );
+  });
+
+  await startServer(indexer, history, farmsIndexer, farmsHistory);
 }
 
 main().catch((e) => {

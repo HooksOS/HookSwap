@@ -96,6 +96,36 @@ export function chainName(chainId: number): string {
   return CHAINS.find((c) => c.chainId === chainId)?.name ?? `chain-${chainId}`;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Farms: per-chain StakingRewardsFactory address(es). A chain may have MULTIPLE
+// factories (e.g. a superseded + a current deploy); the farms indexer calls
+// allFarms() on EACH and unions the children. Addresses are lifted verbatim from
+// the frontend (apps/web/src/terminal/farms/addresses.ts FARM_FACTORY_ADDRESSES)
+// + contracts/deployments/<chain>-suite.json ("stakingRewardsFactory"). No chain
+// is invented; a chain absent here honestly reports zero farms.
+// ─────────────────────────────────────────────────────────────────────────────
+export const FARM_FACTORIES: Record<number, `0x${string}`[]> = {
+  // mainnet self-service suite mirrors (frontend addresses.ts)
+  4663: ["0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33"], // Robinhood
+  999: ["0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33"], // HyperEVM
+  196: ["0x7f91048007b653b088282a73d180541f9c228677"], // XLayer
+  4326: ["0xd9d4795f2a12305a12c36455adad011f2d6143ab"], // MegaETH
+  57073: ["0x144331bb4c3026d135896cafec3ae3d667f4f376"], // Ink
+  4217: ["0x250c3448278f7b71e3e9b641f2efeb6074820e25"], // Tempo
+  // Sepolia (11155111) — BOTH the current (security-fixed) factory AND the
+  // superseded pre-fix factory carry real test farms → index/union both
+  // (contracts/deployments/sepolia-suite.json).
+  11155111: [
+    "0x144331bb4c3026d135896cafec3ae3d667f4f376",
+    "0xb9df9afbcf909a16218285889912820c3f2c6313",
+  ],
+};
+
+/** Configured farm factories for a chain (possibly several), or [] if none. */
+export function farmFactories(chainId: number): `0x${string}`[] {
+  return FARM_FACTORIES[chainId] ?? [];
+}
+
 // Canonical Multicall3 — same address on every EVM chain (incl. all HookSwap
 // chains + Sepolia). Passed explicitly because clients are created transport-only
 // (no `chain`), so viem cannot infer a multicall address.

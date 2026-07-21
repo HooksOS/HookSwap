@@ -54,4 +54,8 @@ export const ENV = {
   tvlHistoryFile:
     process.env.LOCKER_TVL_HISTORY_FILE ||
     join(here, "..", "data", "tvl-history.json"),
+  /** JSON file the daily FARMS TVL snapshot series is appended to (survives restart). */
+  farmsTvlHistoryFile:
+    process.env.FARMS_TVL_HISTORY_FILE ||
+    join(here, "..", "data", "farms-tvl-history.json"),
 } as const;
