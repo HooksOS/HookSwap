@@ -1,0 +1,15 @@
+# Keep the image CODE-ONLY: no host node_modules, no secrets, no runtime state.
+node_modules
+.env
+*.env
+bot/.env
+keeper/.env
+data
+*.log
+bot/*.log
+keeper/*.log
+.git
+.gitignore
+bun.lock
+*.md
+scripts

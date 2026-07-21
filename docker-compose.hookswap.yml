@@ -1,8 +1,9 @@
-# HookSwap — isolated stack on the shared Hivelocity box.
+# HookSwap — isolated stack on the shared Hivelocity box (198.244.167.106).
 # Own containers (hookswap-*), own network (hookswap-net), own high ports bound to
-# 127.0.0.1 (host nginx proxies the public domains). Log rotation on every service so
-# no container can ever leak disk (the 81GB-json-log lesson). Nothing here touches the
-# existing hookos/protocol stack.
+# 127.0.0.1 (host nginx terminates TLS + proxies the public domains). Log rotation on
+# every service so no container can leak disk. Secrets live in ./secrets/*.env (mounted
+# at runtime, rsync'd from the old box — never baked into images). Nothing here touches
+# the existing hookos/protocol stack.
 name: hookswap
 
 networks:
@@ -16,6 +17,7 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
+  # ---- locker + farms indexer (read-only RPC; no secrets) — LIVE ----
   locker-indexer:
     build: ./locker-indexer
     image: hookswap/locker-indexer:latest
@@ -26,6 +28,70 @@ services:
     environment:
       - PORT=4205
       - LOCKER_REFRESH_MS=300000
-    networks:
-      - hookswap-net
+    networks: [hookswap-net]
+    logging: *default-logging
+
+  # ---- markets / token data api ----
+  data-api:
+    build: ./data-api
+    image: hookswap/data-api:latest
+    container_name: hookswap-data-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4092:4092"
+    env_file:
+      - ./secrets/data-api.env
+    networks: [hookswap-net]
+    logging: *default-logging
+
+  # ---- perps matching engine (HTTP+WS :4110; 4100 is taken on this box) ----
+  perps-engine:
+    build: ./perps-engine
+    image: hookswap/perps:latest
+    container_name: hookswap-perps-engine
+    restart: unless-stopped
+    command: node_modules/.bin/tsx src/index.ts
+    env_file:
+      - ./secrets/perps-engine.env
+    environment:
+      - PORT=4110
+    ports:
+      - "127.0.0.1:4110:4110"
+    networks: [hookswap-net]
+    logging: *default-logging
+
+  perps-bot:
+    image: hookswap/perps:latest
+    container_name: hookswap-perps-bot
+    restart: unless-stopped
+    command: node_modules/.bin/tsx bot/bot.ts
+    env_file:
+      - ./secrets/perps-bot.env
+    environment:
+      - ENGINE_URL=http://hookswap-perps-engine:4110
+    depends_on: [perps-engine]
+    networks: [hookswap-net]
+    logging: *default-logging
+
+  perps-keeper:
+    image: hookswap/perps:latest
+    container_name: hookswap-perps-keeper
+    restart: unless-stopped
+    command: node_modules/.bin/tsx keeper/keeperMain.ts
+    env_file:
+      - ./secrets/perps-keeper.env
+    networks: [hookswap-net]
+    logging: *default-logging
+
+  # ---- web frontend (static SPA served by nginx; built dir bind-mounted) ----
+  web:
+    image: nginx:alpine
+    container_name: hookswap-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./web/client:/usr/share/nginx/html:ro
+      - ./web/spa.nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [hookswap-net]
     logging: *default-logging

@@ -1,0 +1,21 @@
+# Never ship deps/build output or secrets into the image build context.
+node_modules
+dist
+.env
+*.env
+.env.*
+*.log
+
+# Local state the indexer writes (rebuildable SQLite cache) — never bake into the image.
+indexer.db
+indexer.db-*
+*.sqlite
+*.sqlite-*
+data
+
+# VCS / editor / docs noise.
+.git
+.gitignore
+.dockerignore
+*.md
+ecosystem.config.js

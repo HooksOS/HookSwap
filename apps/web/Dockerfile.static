@@ -1,0 +1,24 @@
+# HookSwap web — OPTION (b): bake the prebuilt static SPA into an image.
+#
+# NOTE: The RECOMMENDED path is OPTION (a) — a plain `nginx:alpine` service in
+# docker-compose.hookswap.yml that BIND-MOUNTS the built client dir read-only (no image
+# rebuild per web deploy; the ~117MB build stays on disk, not in a Docker layer).
+# Use THIS Dockerfile only if you deliberately want a self-contained, versioned image
+# (e.g. to ship the frontend to a registry / another host).
+#
+# The Vite build is produced OUTSIDE this Dockerfile by the pinned toolchain:
+#   SKIP_CONFIG_PULL=true USE_NEW_CONFIGS=false bun x nx build web -c production
+#   -> apps/web/build/client/   (~117MB static)
+# Build context must be `apps/web/` so both build/client and deploy/ are visible:
+#   docker build -f apps/web/Dockerfile.static -t hookswap/web:latest apps/web
+FROM nginx:alpine
+
+# Internal SPA server config (SPA fallback, cache headers, .well-known passthrough).
+COPY deploy/spa.nginx.conf /etc/nginx/conf.d/default.conf
+
+# Prebuilt static client. Requires `nx build web -c production` to have run first.
+COPY build/client/ /usr/share/nginx/html/
+
+EXPOSE 80
+
+# nginx:alpine's default CMD already runs nginx -g 'daemon off;'
