@@ -1,0 +1,146 @@
+# ============================================================================
+# HookSwap AI Knowledge Platform — PRODUCTION overlay
+# ----------------------------------------------------------------------------
+# Layered ON TOP of docker-compose.yml for a single-VPS deploy (15.204.8.186),
+# matching the DEX's existing nginx + TLS + systemd pattern.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+#   (or: make deploy-vps)
+#
+# What this overlay changes vs dev:
+#   * Datastores + app services bind to 127.0.0.1 only (no public datastore ports).
+#   * nginx terminates TLS for ai.hookswap.org (frontend) + api.hookswap.org (backend).
+#   * Resource limits (mem/cpu) on every service.
+#   * OpenSearch security plugin ENABLED (no DISABLE_SECURITY).
+#   * Images pulled from the registry (IMAGE_TAG pinned by CI) rather than rebuilt.
+# ============================================================================
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 2g }
+        reservations: { cpus: "0.5", memory: 512m }
+
+  redis:
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "1gb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in prod}"]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1200m }
+
+  qdrant:
+    ports:
+      - "127.0.0.1:${QDRANT_HTTP_PORT:-6333}:6333"
+      - "127.0.0.1:${QDRANT_GRPC_PORT:-6334}:6334"
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 2g }
+
+  opensearch:
+    environment:
+      # Re-enable the security plugin in production.
+      DISABLE_SECURITY_PLUGIN: "false"
+      OPENSEARCH_JAVA_OPTS: "-Xms${OPENSEARCH_HEAP:-2g} -Xmx${OPENSEARCH_HEAP:-2g}"
+    ports:
+      - "127.0.0.1:${OPENSEARCH_PORT:-9200}:9200"
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 3g }
+
+  opensearch-dashboards:
+    profiles: ["disabled"]   # not exposed in prod (use k8s/ops tooling instead)
+
+  minio:
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1g }
+
+  backend:
+    build: !reset null
+    image: ${REGISTRY:-ghcr.io/hookswap}/ai-backend:${IMAGE_TAG:?pin IMAGE_TAG in prod}
+    ports: !reset []           # not published to host; reached via nginx on the edge network
+    expose: ["8000"]
+    environment:
+      APP_ENV: production
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-4}
+    deploy:
+      replicas: ${BACKEND_REPLICAS:-2}
+      resources:
+        limits: { cpus: "2.0", memory: 2g }
+        reservations: { cpus: "0.5", memory: 512m }
+
+  frontend:
+    build: !reset null
+    image: ${REGISTRY:-ghcr.io/hookswap}/ai-frontend:${IMAGE_TAG:?pin IMAGE_TAG in prod}
+    ports: !reset []
+    expose: ["3000"]
+    environment:
+      NODE_ENV: production
+    deploy:
+      replicas: ${FRONTEND_REPLICAS:-2}
+      resources:
+        limits: { cpus: "1.0", memory: 1g }
+
+  ingestion-workers:
+    build: !reset null
+    image: ${REGISTRY:-ghcr.io/hookswap}/ai-ingestion-workers:${IMAGE_TAG:?pin IMAGE_TAG in prod}
+    environment:
+      APP_ENV: production
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+      resources:
+        limits: { cpus: "2.0", memory: 2g }
+
+  agents-runtime:
+    build: !reset null
+    image: ${REGISTRY:-ghcr.io/hookswap}/ai-agents-runtime:${IMAGE_TAG:?pin IMAGE_TAG in prod}
+    environment:
+      APP_ENV: production
+    deploy:
+      replicas: ${AGENTS_REPLICAS:-1}
+      resources:
+        limits: { cpus: "2.0", memory: 2g }
+
+  # ---------------------------------------------------------------------------
+  # EDGE: nginx TLS termination + reverse proxy (ai.hookswap.org / api.hookswap.org)
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: aiplat-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ${TLS_CERT_DIR:-/etc/letsencrypt}:/etc/letsencrypt:ro
+      - certbot-webroot:/var/www/certbot
+    depends_on:
+      - backend
+      - frontend
+    networks: [edge]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 256m }
+
+  # certbot (webroot renew). Run `make certbot-issue` for first issuance.
+  certbot:
+    image: certbot/certbot:latest
+    container_name: aiplat-certbot
+    volumes:
+      - ${TLS_CERT_DIR:-/etc/letsencrypt}:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+    networks: [edge]
+    profiles: ["tls"]
+
+volumes:
+  certbot-webroot:
