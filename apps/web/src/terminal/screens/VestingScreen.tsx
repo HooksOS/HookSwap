@@ -34,6 +34,7 @@ import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks
 import { useAccount } from '~/hooks/useAccount'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
+import { VestingExplore } from '~/terminal/screens/vesting/VestingExplore'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { vestingManagerAbi } from '~/terminal/vesting/abis'
 import { getVestingAddress } from '~/terminal/vesting/addresses'
@@ -1004,6 +1005,9 @@ export function VestingScreen(): JSX.Element {
         Vest tokens to a team member, investor, or your own treasury on a cliff + linear schedule. Tokens are held by a
         dedicated contract and unlock over time — the beneficiary claims them as they vest.
       </div>
+
+      {/* Ledger analytics — cross-chain vesting indexer (live). Sits above the create/claim tools. */}
+      <VestingExplore />
 
       {/* Stat tiles — real contract reads (honest "—" when not deployed / disconnected). */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
