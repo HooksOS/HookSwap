@@ -30,6 +30,7 @@ npm run typecheck  # tsc --noEmit
 | `LOCKER_BATCH_SIZE` | `200` | ids per multicall batch |
 | `LOCKER_TVL_HISTORY_FILE` | `./data/tvl-history.json` | daily locker TVL series file |
 | `FARMS_TVL_HISTORY_FILE` | `./data/farms-tvl-history.json` | daily farms TVL series file |
+| `VESTING_TVL_HISTORY_FILE` | `./data/vesting-tvl-history.json` | daily vesting locked-value series file |
 | `LOCKER_RPC_<chainId>` / per-chain alias | public RPC | RPC override (e.g. `SEPOLIA_RPC_URL`, `ROBINHOOD_RPC_URL`, `HYPEREVM_RPC_URL`, `INK_RPC_URL`, `MEGAETH_RPC_URL`, `XLAYER_RPC_URL`, `TEMPO_RPC_URL`) |
 
 Chains indexed: HyperEVM (999), Ink (57073), MegaETH (4326), XLayer (196),
@@ -234,6 +235,133 @@ deduped, accrues from first run. Separate file from the locker series
     "totalTvlUsd": 1234.5, "totalFarms": 2, "activeFarms": 0,
     "perChain": [ { "chainId":11155111,"name":"Sepolia","totalFarms":2,"activeFarms":0,"tvlUsd":1234.5,"reachable":true } ] }
 ] }
+```
+
+## Vesting module
+
+Same service also indexes every **HookSwapVestingManager** vesting schedule across
+the chains that have a manager deployed, reusing the locker's chain config +
+pricing. Enumeration is pure RPC: `vestingCount()` → ids `0..N-1`, `getScheduleData(id)`
+(chunked multicall) → the 10-field schedule tuple, then `releasable()` on each
+per-schedule child for live claimable. Managers indexed (from
+`apps/web/src/terminal/vesting/addresses.ts` + the verified Sepolia test deploy):
+Robinhood/HyperEVM (`0x7f91…8677`), XLayer (`0xb8b8…2a56`), MegaETH (`0x7eff…79d0`),
+Ink (`0x250c…20e25`), Tempo (`0xd08e…7a63`), Sepolia (`0x250c…20e25`). A chain with
+no configured manager honestly reports zero schedules.
+
+FACTS ONLY: `valueUsd` (the still-locked/unvested principal in USD) is present only
+when the token prices (Robinhood-only today), never fabricated. A chain whose RPC
+fails retains its last-known schedules and is flagged `stale`.
+
+```jsonc
+// VestingSchedule
+{ "chainId": 11155111, "chainName": "Sepolia", "id": 0,
+  "contractAddress": "0x…",                 // the per-schedule HookSwapVesting child
+  "token": { "addr": "0x…", "symbol": "TST", "decimals": 18 },
+  "beneficiary": "0x…", "creator": "0x…",
+  "start": 1784058996, "cliff": 0, "duration": 3600,
+  "cliffTime": 1784058996, "endTime": 1784062596,   // start+cliff / start+duration
+  "totalAmount": { "raw": "10000000000000000000", "formatted": "10" },
+  "released":    { "raw": "200000000000000000",  "formatted": "0.2" },
+  "claimable":   { "raw": "9800000000000000000", "formatted": "9.8" },  // releasable()
+  "vested":      { "raw": "10000000000000000000","formatted": "10" },   // released+claimable
+  "pctVested": 100, "status": "complete",           // cliff | vesting | complete
+  "valueUsd": 12.3 }                                // omitted when unpriceable
+
+// VestingStats
+{ "totalSchedules": 1, "activeSchedules": 0,
+  "totalLockedUsd": 0,                              // omitted when nothing priced
+  "chains": 7, "reachableChains": 7 }
+```
+
+### `GET /vesting/stats`
+Global vesting stats + per-chain breakdown.
+```jsonc
+{ "generatedAt": 1784651196681, "totalSchedules": 1, "activeSchedules": 0,
+  "chains": 7, "reachableChains": 7,
+  "perChain": [ /* VestingChainStatus[] — chainId,name,manager,rpcUrl,reachable,stale,error?,scheduleCount,activeCount,tvlUsd?,lastIndexedAt */ ] }
+```
+
+### `GET /vesting?chainId=&sort=tvl|created|ending|pct&limit=&offset=`
+All schedules, filterable by `chainId`, sortable, paginated.
+- `sort=tvl` (default): locked `valueUsd` desc, then total raw amount desc.
+- `sort=created`: newest `start` first · `sort=ending`: soonest `endTime` first · `sort=pct`: `pctVested` desc.
+- `limit` default 100 (max 1000), `offset` default 0.
+```jsonc
+{ "total": 1, "offset": 0, "limit": 100, "schedules": [ /* VestingSchedule[] */ ] }
+```
+
+### `GET /vesting/:chainId/:id`
+A single schedule's detail (powers the shareable vesting page). 404 if not found.
+```jsonc
+{ "schedule": { /* VestingSchedule */ } }
+```
+
+### `GET /vesting/tvl-history`
+The daily vesting locked-value snapshot series (oldest → newest). One point per UTC
+day, deduped (`VESTING_TVL_HISTORY_FILE`, default `./data/vesting-tvl-history.json`).
+```jsonc
+{ "points": [
+  { "dateISO": "2026-07-21", "updatedAt": 1784651196681,
+    "totalLockedUsd": 0, "totalSchedules": 1, "activeSchedules": 0,
+    "perChain": [ { "chainId":11155111,"name":"Sepolia","totalSchedules":1,"activeSchedules":0,"tvlUsd":0,"reachable":true } ] }
+] }
+```
+
+## LaunchPad module
+
+Same service also indexes every **HookOSV3Launcher** launch on the chains that have
+a launcher deployed (Robinhood-only today), reusing the locker's chain config +
+pricing. Enumeration is pure RPC: `launchCount()` → ids `0..N-1`, `getLaunch(id)`
+(chunked multicall) → the launch struct, then ERC-20 `name`/`symbol`/`decimals`/
+`totalSupply` on each token (the struct carries neither name nor symbol) and
+`HookOSV3FeeVault.isPermanentlyLocked(token)` for the LP-lock flag. Launcher/FeeVault
+from `apps/web/src/terminal/launchpad/addresses.ts` (Robinhood launcher
+`0x9B8d…e0B8`, feeVault `0x2974…22EF`). A chain with no configured launcher honestly
+reports zero launches.
+
+FACTS ONLY: `marketCapUsd` (= `totalSupply` × price) is present only when the token
+prices (Robinhood-only today), never fabricated. A chain whose RPC fails retains its
+last-known launches and is flagged `stale`.
+
+```jsonc
+// Launch
+{ "chainId": 4663, "chainName": "Robinhood", "id": 3,
+  "token": { "addr": "0x…", "name": "HookSwap Test Token", "symbol": "HSTT",
+             "decimals": 18, "totalSupply": { "raw": "…", "formatted": "1000000000" } },
+  "pool": "0x…", "creator": "0x…", "tokenId": "3",
+  "feeTier": 10000, "dex": 1, "pair": 0, "pairToken": "0x…",
+  "metadataURI": "ipfs://…", "createdAt": 1784107857,
+  "lpLocked": false, "lpUnlockTime": 0,             // from FeeVault.isPermanentlyLocked
+  "marketCapUsd": 5845.07 }                         // omitted when unpriceable
+
+// LaunchpadStats
+{ "totalLaunches": 4, "lpLockedLaunches": 0,
+  "totalMarketCapUsd": 8774.99,                     // omitted when nothing priced
+  "chains": 1, "reachableChains": 1 }
+```
+
+### `GET /launches/stats`
+Global launchpad stats + per-chain breakdown.
+```jsonc
+{ "generatedAt": 1784651198296, "totalLaunches": 4, "lpLockedLaunches": 0,
+  "totalMarketCapUsd": 8774.99, "chains": 1, "reachableChains": 1,
+  "perChain": [ /* LaunchpadChainStatus[] — chainId,name,launcher,feeVault,rpcUrl,reachable,stale,error?,launchCount,lastIndexedAt */ ] }
+```
+
+### `GET /launches?chainId=&sort=mcap|created&limit=&offset=`
+All launches, filterable by `chainId`, sortable, paginated.
+- `sort=mcap` (default): `marketCapUsd` desc, then `createdAt` desc (unpriced sink below).
+- `sort=created`: newest `createdAt` first · `limit` default 100 (max 1000), `offset` default 0.
+```jsonc
+{ "total": 4, "offset": 0, "limit": 100, "launches": [ /* Launch[] */ ] }
+```
+
+### `GET /launch/:chainId/:token`  ·  `GET /launch/:chainId/:id`
+A single launch's detail (the shareable launch page) — by **token address** (the
+primary shareable key) or by numeric **launch id**. 404 if not found.
+```jsonc
+{ "launch": { /* Launch */ } }
 ```
 
 ## Notes

@@ -126,6 +126,52 @@ export function farmFactories(chainId: number): `0x${string}`[] {
   return FARM_FACTORIES[chainId] ?? [];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Vesting: per-chain HookSwapVestingManager address. Lifted verbatim from the
+// frontend (apps/web/src/terminal/vesting/addresses.ts VESTING_ADDRESSES) — the
+// enumerable factory + registry (`vestingCount()` + `getScheduleData(id)`). Sepolia
+// (11155111) is added from its verified test deploy (manager
+// 0x250c3448…, carries a real test schedule) — the frontend map is mainnet-scoped.
+// A chain absent here honestly reports zero schedules.
+// ─────────────────────────────────────────────────────────────────────────────
+export const VESTING_MANAGERS: Record<number, `0x${string}`> = {
+  4663: "0x7f91048007b653b088282a73d180541f9c228677", // Robinhood
+  999: "0x7f91048007b653b088282a73d180541f9c228677", // HyperEVM
+  196: "0xb8b8e647259d5de25754278878893456c72c2a56", // XLayer
+  4326: "0x7effe9dd68035f43ad43ae6c31bc1a47ab4579d0", // MegaETH
+  57073: "0x250c3448278f7b71e3e9b641f2efeb6074820e25", // Ink
+  4217: "0xd08e609277ecb0b7e2ef15df5c1fb11436627a63", // Tempo
+  11155111: "0x250c3448278f7b71e3e9b641f2efeb6074820e25", // Sepolia (test deploy, 1 schedule)
+};
+
+/** Configured HookSwapVestingManager for a chain, or undefined if none. */
+export function vestingManager(chainId: number): `0x${string}` | undefined {
+  return VESTING_MANAGERS[chainId];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LaunchPad: per-chain HookOSV3Launcher + HookOSV3FeeVault. Lifted verbatim from
+// the frontend (apps/web/src/terminal/launchpad/addresses.ts LAUNCHPAD_ADDRESSES /
+// FEEVAULT_ADDRESSES) — Robinhood-only launch scope (the only chain with real
+// launches today). A chain absent here honestly reports zero launches.
+// ─────────────────────────────────────────────────────────────────────────────
+export interface LaunchpadConfig {
+  launcher: `0x${string}`;
+  feeVault: `0x${string}`;
+}
+
+export const LAUNCHPAD_CONFIG: Record<number, LaunchpadConfig> = {
+  4663: {
+    launcher: "0x9B8d992704ddf38729535A641502bcc55734e0B8",
+    feeVault: "0x2974cE6341067398A5C1E6c0C14F99ED1C3122EF",
+  }, // Robinhood
+};
+
+/** Configured HookOSV3Launcher + FeeVault for a chain, or undefined if none. */
+export function launchpadConfig(chainId: number): LaunchpadConfig | undefined {
+  return LAUNCHPAD_CONFIG[chainId];
+}
+
 // Canonical Multicall3 — same address on every EVM chain (incl. all HookSwap
 // chains + Sepolia). Passed explicitly because clients are created transport-only
 // (no `chain`), so viem cannot infer a multicall address.

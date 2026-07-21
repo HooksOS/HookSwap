@@ -9,6 +9,9 @@ import { LockerIndexer } from "./indexer.js";
 import { TvlHistory } from "./persist.js";
 import { FarmsIndexer } from "./farms/indexer.js";
 import { FarmsTvlHistory } from "./farms/store.js";
+import { VestingIndexer } from "./vesting/indexer.js";
+import { VestingTvlHistory } from "./vesting/store.js";
+import { LaunchpadIndexer } from "./launchpad/indexer.js";
 import { startServer } from "./server.js";
 
 async function main(): Promise<void> {
@@ -60,7 +63,46 @@ async function main(): Promise<void> {
     );
   });
 
-  await startServer(indexer, history, farmsIndexer, farmsHistory);
+  // Vesting module — same shared refresh cadence, independent per-chain isolation.
+  const vestingHistory = new VestingTvlHistory();
+  const vestingLoaded = vestingHistory.load();
+  console.log(`[locker-indexer] restored ${vestingLoaded} daily vesting-TVL points`);
+
+  const vestingIndexer = new VestingIndexer();
+  vestingIndexer.start((snap) => {
+    try {
+      vestingHistory.record(snap);
+    } catch (e) {
+      console.warn("[vesting] tvl record failed:", (e as Error).message);
+    }
+    const s = snap.stats;
+    console.log(
+      `[vesting] cycle: ${s.totalSchedules} schedules (${s.activeSchedules} active), ` +
+        `${s.reachableChains}/${s.chains} chains reachable, ` +
+        `locked=${s.totalLockedUsd !== undefined ? `$${s.totalLockedUsd.toFixed(2)}` : "n/a"}`,
+    );
+  });
+
+  // LaunchPad module — same shared cadence, independent per-chain isolation.
+  const launchpadIndexer = new LaunchpadIndexer();
+  launchpadIndexer.start((snap) => {
+    const s = snap.stats;
+    console.log(
+      `[launchpad] cycle: ${s.totalLaunches} launches (${s.lpLockedLaunches} LP-locked), ` +
+        `${s.reachableChains}/${s.chains} chains reachable, ` +
+        `mcap=${s.totalMarketCapUsd !== undefined ? `$${s.totalMarketCapUsd.toFixed(2)}` : "n/a"}`,
+    );
+  });
+
+  await startServer(
+    indexer,
+    history,
+    farmsIndexer,
+    farmsHistory,
+    vestingIndexer,
+    vestingHistory,
+    launchpadIndexer,
+  );
 }
 
 main().catch((e) => {

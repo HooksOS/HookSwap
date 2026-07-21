@@ -10,6 +10,9 @@ import type { LockerIndexer, Lock } from "./indexer.js";
 import type { TvlHistory } from "./persist.js";
 import type { FarmsIndexer, Farm } from "./farms/indexer.js";
 import type { FarmsTvlHistory } from "./farms/store.js";
+import type { VestingIndexer, VestingSchedule } from "./vesting/indexer.js";
+import type { VestingTvlHistory } from "./vesting/store.js";
+import type { LaunchpadIndexer, Launch } from "./launchpad/indexer.js";
 
 function json(res: ServerResponse, code: number, body: unknown): void {
   const payload = JSON.stringify(body, (_k, v) => (typeof v === "bigint" ? v.toString() : v));
@@ -59,11 +62,51 @@ function sortFarms(farms: Farm[], sort: string | null): Farm[] {
   return arr;
 }
 
+function sortVesting(schedules: VestingSchedule[], sort: string | null): VestingSchedule[] {
+  const arr = [...schedules];
+  if (sort === "created") {
+    arr.sort((a, b) => b.start - a.start);
+  } else if (sort === "ending") {
+    // Soonest to finish first (already-complete sink to the bottom).
+    arr.sort((a, b) => a.endTime - b.endTime);
+  } else if (sort === "pct") {
+    arr.sort((a, b) => b.pctVested - a.pctVested);
+  } else {
+    // default: locked USD value desc, then total raw amount desc (unpriced sink below).
+    arr.sort((a, b) => {
+      const dv = (b.valueUsd ?? -1) - (a.valueUsd ?? -1);
+      if (dv !== 0) return dv;
+      const ba = BigInt(a.totalAmount.raw);
+      const bb = BigInt(b.totalAmount.raw);
+      return bb > ba ? 1 : bb < ba ? -1 : 0;
+    });
+  }
+  return arr;
+}
+
+function sortLaunches(launches: Launch[], sort: string | null): Launch[] {
+  const arr = [...launches];
+  if (sort === "created") {
+    arr.sort((a, b) => b.createdAt - a.createdAt);
+  } else {
+    // default: market cap desc, then createdAt desc (unpriced sink below priced).
+    arr.sort((a, b) => {
+      const dv = (b.marketCapUsd ?? -1) - (a.marketCapUsd ?? -1);
+      if (dv !== 0) return dv;
+      return b.createdAt - a.createdAt;
+    });
+  }
+  return arr;
+}
+
 export async function startServer(
   indexer: LockerIndexer,
   history: TvlHistory,
   farmsIndexer: FarmsIndexer,
   farmsHistory: FarmsTvlHistory,
+  vestingIndexer: VestingIndexer,
+  vestingHistory: VestingTvlHistory,
+  launchpadIndexer: LaunchpadIndexer,
 ): Promise<void> {
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     try {
@@ -251,6 +294,130 @@ export async function startServer(
           });
         }
         return json(res, 200, { farm });
+      }
+
+      // ─────────────────────────────────────────────── VESTING endpoints ────────
+      const vestSnap = vestingIndexer.getSnapshot();
+
+      // GET /vesting/stats — global vesting stats + per-chain breakdown.
+      if (path === "/vesting/stats") {
+        return json(res, 200, {
+          generatedAt: vestSnap.generatedAt,
+          ...vestSnap.stats,
+          perChain: vestSnap.chains,
+        });
+      }
+
+      // GET /vesting/tvl-history — the daily vesting locked-value snapshot series.
+      if (path === "/vesting/tvl-history") {
+        return json(res, 200, { points: vestingHistory.series() });
+      }
+
+      // GET /vesting?chainId=&sort=tvl|created|ending|pct&limit=&offset=
+      if (path === "/vesting") {
+        const chainIdParam = url.searchParams.get("chainId");
+        let schedules = vestSnap.schedules;
+        if (chainIdParam) {
+          const cid = Number(chainIdParam);
+          schedules = schedules.filter((s) => s.chainId === cid);
+        }
+        schedules = sortVesting(schedules, url.searchParams.get("sort"));
+        const total = schedules.length;
+        const offset = Math.max(0, Number(url.searchParams.get("offset") || 0) || 0);
+        const limitRaw = Number(url.searchParams.get("limit") || 100) || 100;
+        const limit = Math.min(Math.max(1, limitRaw), 1000);
+        return json(res, 200, {
+          total,
+          offset,
+          limit,
+          schedules: schedules.slice(offset, offset + limit),
+        });
+      }
+
+      // GET /vesting/:chainId/:id — one schedule's detail. 404 if none.
+      m = path.match(/^\/vesting\/(\d+)\/(\d+)$/);
+      if (m) {
+        const cid = Number(m[1]);
+        const id = Number(m[2]);
+        const schedule = vestSnap.schedules.find((s) => s.chainId === cid && s.id === id);
+        if (!schedule) {
+          return json(res, 404, {
+            error: "vesting schedule not found",
+            chainId: cid,
+            chainName: chainName(cid),
+            id,
+          });
+        }
+        return json(res, 200, { schedule });
+      }
+
+      // ─────────────────────────────────────────────── LAUNCHPAD endpoints ──────
+      const launchSnap = launchpadIndexer.getSnapshot();
+
+      // GET /launches/stats — global launchpad stats + per-chain breakdown.
+      if (path === "/launches/stats") {
+        return json(res, 200, {
+          generatedAt: launchSnap.generatedAt,
+          ...launchSnap.stats,
+          perChain: launchSnap.chains,
+        });
+      }
+
+      // GET /launches?chainId=&sort=mcap|created&limit=&offset=
+      if (path === "/launches") {
+        const chainIdParam = url.searchParams.get("chainId");
+        let launches = launchSnap.launches;
+        if (chainIdParam) {
+          const cid = Number(chainIdParam);
+          launches = launches.filter((l) => l.chainId === cid);
+        }
+        launches = sortLaunches(launches, url.searchParams.get("sort"));
+        const total = launches.length;
+        const offset = Math.max(0, Number(url.searchParams.get("offset") || 0) || 0);
+        const limitRaw = Number(url.searchParams.get("limit") || 100) || 100;
+        const limit = Math.min(Math.max(1, limitRaw), 1000);
+        return json(res, 200, {
+          total,
+          offset,
+          limit,
+          launches: launches.slice(offset, offset + limit),
+        });
+      }
+
+      // GET /launch/:chainId/:token — the shareable launch page (by token address).
+      m = path.match(/^\/launch\/(\d+)\/(0x[0-9a-fA-F]{40})$/);
+      if (m) {
+        const cid = Number(m[1]);
+        const addr = m[2];
+        const launch = launchSnap.launches.find(
+          (l) => l.chainId === cid && eqAddr(l.token.addr, addr),
+        );
+        if (!launch) {
+          return json(res, 404, {
+            error: "launch not found",
+            chainId: cid,
+            chainName: chainName(cid),
+            token: addr,
+          });
+        }
+        return json(res, 200, { launch });
+      }
+
+      // GET /launch/:chainId/:id — same launch page by numeric launch id.
+      m = path.match(/^\/launch\/(\d+)\/(\d+)$/);
+      if (m) {
+        const cid = Number(m[1]);
+        const id = Number(m[2]);
+        const launch = launchSnap.launches.find((l) => l.chainId === cid && l.id === id);
+        if (!launch) {
+          return json(res, 404, {
+            error: "launch not found",
+            chainId: cid,
+            chainName: chainName(cid),
+            id,
+          });
+        }
+        return json(res, 200, { launch });
       }
 
       return json(res, 404, { error: "not found", path });

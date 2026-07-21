@@ -58,4 +58,8 @@ export const ENV = {
   farmsTvlHistoryFile:
     process.env.FARMS_TVL_HISTORY_FILE ||
     join(here, "..", "data", "farms-tvl-history.json"),
+  /** JSON file the daily VESTING locked-value snapshot series is appended to. */
+  vestingTvlHistoryFile:
+    process.env.VESTING_TVL_HISTORY_FILE ||
+    join(here, "..", "data", "vesting-tvl-history.json"),
 } as const;
