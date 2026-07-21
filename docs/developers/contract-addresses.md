@@ -1,5 +1,9 @@
 # Contract addresses
 
+> This page covers the **DEX stack** (v2/v3/UR, WETH, init-code hashes, fee tiers). For the full
+> address book — the DEX stack **plus** the self-service suite (locker, farms, vesting, token
+> factory, airdrop, LaunchPad) per chain — see [deployed-contracts.md](./deployed-contracts.md).
+
 The canonical address reference for the HookSwap stack. Values are pulled **verbatim** from
 `contracts/deployments/*.json` (HookSwap-owned deploys) and, for Sepolia, from the canonical
 testnet deployment. A machine-readable copy lives at

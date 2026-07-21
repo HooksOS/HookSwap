@@ -8,8 +8,9 @@ Universal Router** stack across multiple production chains.
 - **Protocols:** v2 + v3. HookSwap ships **v2 and v3 pools only** (no v4) — build against
   v2/v3 flows.
 - **Contracts:** HookSwap-owned deployments with canonical init-code hashes; only the
-  factory/manager addresses differ per chain. See
-  [contract addresses](./developers/contract-addresses.md).
+  factory/manager addresses differ per chain. See the full
+  [deployed-contracts address book](./developers/deployed-contracts.md).
+- **Community:** follow HookSwap on X — [@Hook_Swap](https://x.com/Hook_Swap).
 
 ---
 
@@ -29,7 +30,8 @@ Universal Router** stack across multiple production chains.
 - **Positions** — track and manage your open liquidity positions and uncollected fees.
 - **Token & LP Locker** — lock ERC-20 tokens, v2 LP tokens, or v3 position NFTs until a chosen
   unlock time; v3 locks keep earning trading fees while the principal stays locked. Live on all
-  supported chains.
+  supported chains. Includes **Ledger** analytics (live TVL / locks) and shareable, no-wallet
+  **proof-of-lock** pages (`/lock/:chainId/:id`). See [Locker](./users/locker.md).
 - **Referrals** — register a referral code and earn a share of the swap fee on trades routed with
   your link.
 - **Markets & Analytics** — pools ranked by TVL, volume, and APR, with live price charts and

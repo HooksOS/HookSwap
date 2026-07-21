@@ -5,11 +5,13 @@ Reference for launchpads, SDK consumers, and anyone integrating with HookSwap.
 | Page | What it covers |
 |---|---|
 | [Overview](./overview.md) | Architecture, the deployed stack, canonical init-code hashes |
-| [Contract addresses](./contract-addresses.md) | **The canonical address reference** — every deployed contract per chain |
+| [Contract addresses](./contract-addresses.md) | The DEX-stack address reference (v2/v3/UR, init-code hashes, fee tiers) |
+| [Deployed contracts](./deployed-contracts.md) | **The full canonical address book** — DEX **+** self-service suite (locker, farms, vesting, token factory, airdrop, LaunchPad) per chain |
 | [Launchpad integration](./launchpad-integration.md) | Create + seed a pool so a token becomes routable (v2 + v3 flows) |
 | [SDK](./sdk.md) | The HookSwap SDK — chain IDs + per-chain HookSwap addresses |
 | [Routing](./routing.md) | The HookSwap Trading API; how quoting works |
 | [Data API](./data-api.md) | Public read-only REST/JSON for pools, tokens, search & protocol stats (`data.hookswap.org`) |
+| [Analytics & Indexer API](./analytics-indexer.md) | The locker & farms indexer — Ledger analytics + proof-of-lock data (`data.hookswap.org/locker`) |
 
 ## Key facts
 

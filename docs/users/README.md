@@ -7,6 +7,7 @@ Guides for people trading and providing liquidity on HookSwap.
 | [Getting started](./getting-started.md) | What HookSwap is, connecting a wallet, supported chains |
 | [Swapping](./swapping.md) | How to swap, MEV protection, slippage, price impact |
 | [Liquidity](./liquidity.md) | Adding liquidity / LPing on v2 vs v3, fee tiers, ranges |
+| [Locker](./locker.md) | Locking tokens / LP / v3 positions, Ledger analytics, proof-of-lock pages |
 | [Chains](./chains.md) | Supported chains: chainId, native token, explorer, RPC |
 | [FAQ](./faq.md) | Is it live? Which chains? Fees? Audits? Wallets? No-hooks note |
 
