@@ -83,6 +83,27 @@ services:
     networks: [hookswap-net]
     logging: *default-logging
 
+  # ---- routing / quote adapter (embed SOR; the proven working tree bind-mounted:
+  #      adapter + smart-order-router fork + vendored sdk-core, jsbi-deduped) ----
+  trading-adapter:
+    image: node:22-slim
+    container_name: hookswap-trading-adapter
+    restart: unless-stopped
+    working_dir: /app/hookswap-adapter-embed
+    command: node dist/server.js
+    env_file:
+      - ./adapter/hookswap-adapter-embed/.env
+      - ./adapter/hookswap-adapter-embed/config/rpc.env
+    environment:
+      - PORT=4090
+      - CORS_ALLOW_ORIGIN=https://hookswap.org,https://www.hookswap.org
+    volumes:
+      - ./adapter:/app
+    ports:
+      - "127.0.0.1:4090:4090"
+    networks: [hookswap-net]
+    logging: *default-logging
+
   # ---- web frontend (static SPA served by nginx; built dir bind-mounted) ----
   web:
     image: nginx:alpine
