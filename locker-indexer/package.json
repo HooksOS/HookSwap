@@ -1,0 +1,20 @@
+{
+  "name": "hookswap-locker-indexer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HookSwap Locker data service — enumerates all token/LP locks across the 7 HookSwap chains via RPC (tokenLockerCount + getTokenLockData), aggregates per-token/per-pool + global TVL, records daily TVL snapshots, and serves a read API for the locker analytics UI (explore table, stats, TVL history, shareable lock/pool pages). No mock data: unpriced tokens report native-only, honest nulls otherwise.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  }
+}
