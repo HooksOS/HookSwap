@@ -1366,12 +1366,18 @@ function LandingScreenBody(): JSX.Element {
     <div style={{ background: terminalColors.bgApp, minHeight: '100vh' }}>
       <style>{KEYFRAMES}</style>
       <div style={{ width: '100%', maxWidth: CONTENT_WIDTH, margin: '0 auto', background: terminalColors.bgApp, overflow: 'hidden' }}>
-        {/* Desk ticker tape — sits above the sticky command bar, scrolls with the page. */}
-        <TickerTape
-          items={tickerItems}
-          emptyLabel={tickerEmptyLabel}
-          onSelect={(i) => goToTickerSwap(tickers[i])}
-        />
+        {/* Desk ticker tape — sits above the sticky command bar, scrolls with the page.
+            Wrapped in `tm-root` so the tape's `--tm-*` design tokens resolve here: the
+            LandingScreen root styles with inline terminalColors (not the class), so
+            without this scope `var(--tm-bg)`/`var(--tm-ink-3)` were undefined and the
+            ticker text inherited white — invisible on the paper background. */}
+        <div className="tm-root">
+          <TickerTape
+            items={tickerItems}
+            emptyLabel={tickerEmptyLabel}
+            onSelect={(i) => goToTickerSwap(tickers[i])}
+          />
+        </div>
 
         <Header
           navLinks={navLinks}
