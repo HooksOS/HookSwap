@@ -18,7 +18,7 @@
  */
 import { useMemo, useState } from 'react'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
-import { LedgerAvatar } from '~/terminal/components/LedgerAvatar'
+import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
 import { LedgerTvlChart, type TvlPoint } from '~/terminal/components/LedgerTvlChart'
 import { StatCard } from '~/terminal/components/StatCard'
 import type { VestingSchedule, VestingSnapshot, VestingSort, VestingStatus } from '~/terminal/vesting/analytics/client'
@@ -183,7 +183,12 @@ function ScheduleRow({ s }: { s: VestingSchedule }): JSX.Element {
         borderColor: hover ? terminalColors.greenBorder : terminalColors.line,
       }}
     >
-      <LedgerAvatar seed={s.token.addr} initials={initials(s.token.symbol)} size={34} />
+      <LedgerAvatar
+        seed={s.token.addr}
+        initials={initials(s.token.symbol)}
+        size={34}
+        logoUrl={resolveLedgerLogo(s.chainId, s.token.addr)}
+      />
 
       {/* Token + chain + parties + dates */}
       <div style={{ minWidth: 0, flex: '1 1 200px' }}>
@@ -348,6 +353,18 @@ export function VestingExplore(): JSX.Element {
       .map((p) => ({ label: p.dateISO, value: p.totalTvlUsd }))
   }, [tvlHook.points])
 
+  // Activity fallback — schedule COUNT per snapshot (always present, even unpriced). The
+  // chart plots this when there aren't ≥ 2 priced USD points, so there's always a real
+  // line instead of an empty box. Never a fabricated USD value.
+  const countPoints = useMemo<TvlPoint[]>(() => {
+    if (!tvlHook.points) {
+      return []
+    }
+    return tvlHook.points
+      .filter((p) => Number.isFinite(p.totalSchedules))
+      .map((p) => ({ label: p.dateISO, value: p.totalSchedules }))
+  }, [tvlHook.points])
+
   // Server sorts too; the list is rendered as returned (honest indexer order).
   const schedules = listHook.schedules
 
@@ -394,7 +411,12 @@ export function VestingExplore(): JSX.Element {
           {tvlHook.isLoading ? (
             <div style={{ height: 240, borderRadius: 10, background: terminalColors.panel }} aria-busy="true" />
           ) : (
-            <LedgerTvlChart points={chartPoints} emptyText="Vesting-value history builds as daily snapshots accrue." />
+            <LedgerTvlChart
+              points={chartPoints}
+              countPoints={countPoints}
+              countLabel="Schedules over time"
+              emptyText="Vesting-value history builds as daily snapshots accrue."
+            />
           )}
         </div>
       </InstrumentPanel>

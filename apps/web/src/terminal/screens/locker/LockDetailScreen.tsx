@@ -18,6 +18,7 @@ import { useMemo, useState } from 'react'
 import { Helmet } from 'react-helmet-async/lib/index'
 import { Link, useParams } from 'react-router'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
+import { resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
 import type { Lock } from '~/terminal/lockers/analytics/client'
 import { useLock } from '~/terminal/lockers/analytics/useLock'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
@@ -117,10 +118,24 @@ function explorerAddr(chainId: number, address: string): string | undefined {
 
 /* ------------------------------------------------------------------ small parts */
 
-function Avatar({ seed, initials, size = 46 }: { seed: string; initials: string; size?: number }): JSX.Element {
+function Avatar({
+  seed,
+  initials,
+  size = 46,
+  logoUrl,
+}: {
+  seed: string
+  initials: string
+  size?: number
+  logoUrl?: string
+}): JSX.Element {
+  const [imgFailed, setImgFailed] = useState(false)
+  const showImg = Boolean(logoUrl) && !imgFailed
   return (
     <div
       style={{
+        position: 'relative',
+        overflow: 'hidden',
         width: size,
         height: size,
         borderRadius: '50%',
@@ -137,6 +152,22 @@ function Avatar({ seed, initials, size = 46 }: { seed: string; initials: string;
       }}
     >
       {initials}
+      {showImg ? (
+        <img
+          src={logoUrl}
+          alt=""
+          onError={() => setImgFailed(true)}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            borderRadius: '50%',
+            background: '#fff',
+          }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -374,7 +405,7 @@ function LockCard({ lock, onCopy, copied }: { lock: Lock; onCopy: () => void; co
       <div style={{ padding: '26px 26px 22px' }}>
         {/* header: avatar + symbol + status */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 22 }}>
-          <Avatar seed={lock.token} initials={initials} />
+          <Avatar seed={lock.token} initials={initials} logoUrl={resolveLedgerLogo(lock.chainId, lock.token)} />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: DISPLAY, fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', color: terminalColors.ink }}>

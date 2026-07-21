@@ -18,7 +18,7 @@
  */
 import { useMemo, useState } from 'react'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
-import { LedgerAvatar } from '~/terminal/components/LedgerAvatar'
+import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
 import { LedgerTvlChart, type TvlPoint } from '~/terminal/components/LedgerTvlChart'
 import { StatCard } from '~/terminal/components/StatCard'
 import type { Farm, FarmsSnapshot } from '~/terminal/farms/analytics/client'
@@ -96,9 +96,19 @@ function initials(symbol: string | undefined, len = 2): string {
 function PairAvatar({ farm }: { farm: Farm }): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0, width: 52 }}>
-      <LedgerAvatar seed={farm.stakingToken.addr} initials={initials(farm.stakingToken.symbol, 1)} size={30} />
+      <LedgerAvatar
+        seed={farm.stakingToken.addr}
+        initials={initials(farm.stakingToken.symbol, 1)}
+        size={30}
+        logoUrl={resolveLedgerLogo(farm.chainId, farm.stakingToken.addr)}
+      />
       <div style={{ marginLeft: -10 }}>
-        <LedgerAvatar seed={farm.rewardToken.addr} initials={initials(farm.rewardToken.symbol, 1)} size={30} />
+        <LedgerAvatar
+          seed={farm.rewardToken.addr}
+          initials={initials(farm.rewardToken.symbol, 1)}
+          size={30}
+          logoUrl={resolveLedgerLogo(farm.chainId, farm.rewardToken.addr)}
+        />
       </div>
     </div>
   )
@@ -332,6 +342,18 @@ export function FarmsExplore(): JSX.Element {
       .map((p) => ({ label: p.dateISO, value: p.totalTvlUsd }))
   }, [tvlHook.points])
 
+  // Activity fallback — farm COUNT per snapshot (always present, even unpriced). The
+  // chart plots this when there aren't ≥ 2 priced USD points, so there's always a real
+  // line instead of an empty box. Never a fabricated USD value.
+  const countPoints = useMemo<TvlPoint[]>(() => {
+    if (!tvlHook.points) {
+      return []
+    }
+    return tvlHook.points
+      .filter((p) => Number.isFinite(p.totalFarms))
+      .map((p) => ({ label: p.dateISO, value: p.totalFarms }))
+  }, [tvlHook.points])
+
   // Client-side stable sort by the chosen metric (server sorts too; this keeps priced
   // farms ahead of unpriced ones so the honest "—" rows sink to the bottom).
   const farms = useMemo(() => {
@@ -404,7 +426,12 @@ export function FarmsExplore(): JSX.Element {
           {tvlHook.isLoading ? (
             <div style={{ height: 240, borderRadius: 10, background: terminalColors.panel }} aria-busy="true" />
           ) : (
-            <LedgerTvlChart points={chartPoints} emptyText="Staked-value history builds as daily snapshots accrue." />
+            <LedgerTvlChart
+              points={chartPoints}
+              countPoints={countPoints}
+              countLabel="Farms over time"
+              emptyText="Staked-value history builds as daily snapshots accrue."
+            />
           )}
         </div>
       </InstrumentPanel>

@@ -15,7 +15,7 @@
  */
 import { useMemo, useState } from 'react'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
-import { LedgerAvatar } from '~/terminal/components/LedgerAvatar'
+import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
 import { LedgerTvlChart, type TvlPoint } from '~/terminal/components/LedgerTvlChart'
 import { StatCard } from '~/terminal/components/StatCard'
 import type { PoolAgg, TokenAgg, TVLSnapshot } from '~/terminal/lockers/analytics/client'
@@ -141,7 +141,7 @@ function TokenRow({ t }: { t: TokenAgg }): JSX.Element {
   const initials = (t.symbol || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
   return (
     <LedgerRow>
-      <Avatar seed={t.token} initials={initials} />
+      <Avatar seed={t.token} initials={initials} logoUrl={resolveLedgerLogo(t.chainId, t.token)} />
       <div style={{ minWidth: 0, flex: '1 1 160px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
           <span
@@ -319,6 +319,18 @@ export function LockerExplore(): JSX.Element {
       .map((p) => ({ label: p.dateISO, value: p.totalTvlUsd }))
   }, [tvlHook.points])
 
+  // Activity fallback — lock COUNT per snapshot (always present, even unpriced). The
+  // chart plots this when there aren't ≥ 2 priced USD points, so there's always a real
+  // line instead of an empty box. Never a fabricated USD value.
+  const countPoints = useMemo<TvlPoint[]>(() => {
+    if (!tvlHook.points) {
+      return []
+    }
+    return tvlHook.points
+      .filter((p) => Number.isFinite(p.totalLocks))
+      .map((p) => ({ label: p.dateISO, value: p.totalLocks }))
+  }, [tvlHook.points])
+
   const tokens = useMemo(
     () => (tokensHook.tokens ? [...tokensHook.tokens].sort(byTvl((t) => t.tvlUsd, (t) => t.lockCount)) : undefined),
     [tokensHook.tokens],
@@ -379,7 +391,12 @@ export function LockerExplore(): JSX.Element {
           {tvlHook.isLoading ? (
             <div style={{ height: 240, borderRadius: 10, background: terminalColors.panel }} aria-busy="true" />
           ) : (
-            <LedgerTvlChart points={chartPoints} emptyText="TVL history builds as daily snapshots accrue." />
+            <LedgerTvlChart
+              points={chartPoints}
+              countPoints={countPoints}
+              countLabel="Locks over time"
+              emptyText="TVL history builds as daily snapshots accrue."
+            />
           )}
         </div>
       </InstrumentPanel>

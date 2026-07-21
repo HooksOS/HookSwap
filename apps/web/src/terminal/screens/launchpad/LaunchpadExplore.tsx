@@ -21,7 +21,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
-import { LedgerAvatar } from '~/terminal/components/LedgerAvatar'
+import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
 import { StatCard } from '~/terminal/components/StatCard'
 import type { Launch } from '~/terminal/launchpad/analytics/client'
 import { useLaunches } from '~/terminal/launchpad/analytics/useLaunches'
@@ -132,7 +132,12 @@ function LaunchRow({ l }: { l: Launch }): JSX.Element {
         borderColor: hover ? terminalColors.greenBorder : terminalColors.line,
       }}
     >
-      <LedgerAvatar seed={l.token.addr} initials={initials(l.token.symbol)} size={34} />
+      <LedgerAvatar
+        seed={l.token.addr}
+        initials={initials(l.token.symbol)}
+        size={34}
+        logoUrl={resolveLedgerLogo(l.chainId, l.token.addr)}
+      />
 
       {/* Name/symbol + chain */}
       <div style={{ minWidth: 0, flex: '1 1 200px' }}>
