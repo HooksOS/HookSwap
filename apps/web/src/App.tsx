@@ -46,6 +46,7 @@ function isTerminalLayoutPath(pathname: string): boolean {
     pathname.startsWith('/perps/') ||
     pathname === '/positions' ||
     pathname === '/locker' ||
+    pathname.startsWith('/lock/') ||
     pathname === '/multisender' ||
     pathname === '/token/new' ||
     pathname === '/vesting' ||

@@ -255,4 +255,13 @@ export const lockerApi = {
   ): Promise<LocksResponse> {
     return lockerFetch<LocksResponse>('/locks', { params, signal })
   },
+
+  /**
+   * Single lock by chain + id — the public proof-of-lock detail (`GET /lock/:chainId/:id`).
+   * Returns the real `Lock` or throws `LockerApiError` (`status: 404` when the lock doesn't
+   * exist; `unreachable: true` when the indexer is offline). Never fabricates a lock.
+   */
+  getLock(chainId: number, id: number, signal?: AbortSignal): Promise<Lock> {
+    return lockerFetch<{ lock: Lock }>(`/lock/${chainId}/${id}`, { signal }).then((r) => r.lock)
+  },
 }

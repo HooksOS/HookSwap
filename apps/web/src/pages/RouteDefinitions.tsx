@@ -32,6 +32,7 @@ const TerminalMarketDetailPage = lazy(() => import('~/terminal/TerminalMarketDet
 const TerminalPoolsPage = lazy(() => import('~/terminal/TerminalPoolsPage'))
 const TerminalPositionsPage = lazy(() => import('~/terminal/TerminalPositionsPage'))
 const TerminalLockerPage = lazy(() => import('~/terminal/TerminalLockerPage'))
+const TerminalLockDetailPage = lazy(() => import('~/terminal/TerminalLockDetailPage'))
 const TerminalMultisenderPage = lazy(() => import('~/terminal/TerminalMultisenderPage'))
 const TerminalCreateTokenPage = lazy(() => import('~/terminal/TerminalCreateTokenPage'))
 const TerminalVestingPage = lazy(() => import('~/terminal/TerminalVestingPage'))
@@ -382,6 +383,16 @@ export const routes: RouteDefinition[] = [
     getElement: () => (
       <Suspense fallback={null}>
         <TerminalLockerPage />
+      </Suspense>
+    ),
+  }),
+  createRouteDefinition({
+    path: '/lock/:chainId/:id',
+    getTitle: () => 'Proof of Lock · HookSwap',
+    getDescription: () => 'Verify a token or LP lock on HookSwap.',
+    getElement: () => (
+      <Suspense fallback={null}>
+        <TerminalLockDetailPage />
       </Suspense>
     ),
   }),
