@@ -10,6 +10,9 @@ networks:
   hookswap-net:
     name: hookswap-net
 
+volumes:
+  data-api-db:
+
 x-logging: &default-logging
   driver: json-file
   options:
@@ -41,6 +44,12 @@ services:
       - "127.0.0.1:4092:4092"
     env_file:
       - ./secrets/data-api.env
+    environment:
+      # Override the old box's absolute INDEXER_DB_PATH — point at the mounted volume
+      # so the event-indexer (which drives token USD pricing) can open its SQLite DB.
+      - INDEXER_DB_PATH=/data/indexer.db
+    volumes:
+      - data-api-db:/data
     networks: [hookswap-net]
     logging: *default-logging
 
