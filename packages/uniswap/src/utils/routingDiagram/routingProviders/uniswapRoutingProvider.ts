@@ -1,6 +1,5 @@
 import { Percent, TradeType } from '@uniswap/sdk-core'
 import { TradingApi } from '@universe/api'
-import { UniswapLogo } from 'ui/src/components/icons/UniswapLogo'
 import { DYNAMIC_FEE_AMOUNT, V2_DEFAULT_FEE_TIER } from 'uniswap/src/constants/pools'
 import type { UniverseChainId } from 'uniswap/src/features/chains/types'
 import { Trade } from 'uniswap/src/features/transactions/swap/types/trade'
@@ -132,8 +131,8 @@ export function summarizeSwapSteps(steps: readonly TradingApi.SwapStep[]): {
 }
 
 export const uniswapRoutingProvider: RoutingProvider = {
-  name: 'Uniswap API',
-  icon: UniswapLogo,
+  name: 'HookSwap',
+  icon: undefined,
   iconColor: '$accent1',
 
   getRoutingEntries: (trade: Trade): RoutingDiagramEntry[] => {
@@ -173,7 +172,7 @@ export const uniswapRoutingProvider: RoutingProvider = {
 }
 
 export const uniswapChainedRoutingProvider: RoutingProvider = {
-  name: 'Uniswap API',
+  name: 'HookSwap',
   icon: undefined,
   iconColor: '$neutral1',
 
