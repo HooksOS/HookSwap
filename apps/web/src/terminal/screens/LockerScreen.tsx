@@ -40,7 +40,7 @@ import { erc20Abi, erc721Abi, formatUnits, isAddress, parseUnits, type Address, 
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
-import { StatCard } from '~/terminal/components/StatCard'
+import { LockerExplore } from '~/terminal/screens/locker/LockerExplore'
 import {
   nftPositionManagerAbi,
   tokenLockerAbi,
@@ -1703,88 +1703,6 @@ function SkeletonRows(): JSX.Element {
   )
 }
 
-/* ------------------------------------------------------------------ graphics + analytics */
-
-/** Small padlock glyph for empty states (stroked, muted ink). */
-function PadlockGraphic({ size = 34 }: { size?: number }): JSX.Element {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="4" y="10.2" width="16" height="10.8" rx="2.6" stroke={terminalColors.ink3} strokeWidth="1.5" />
-      <path d="M7.6 10.2V7.4a4.4 4.4 0 0 1 8.8 0v2.8" stroke={terminalColors.ink3} strokeWidth="1.5" />
-      <circle cx="12" cy="15" r="1.5" fill={terminalColors.ink3} />
-    </svg>
-  )
-}
-
-interface LockBreakdown {
-  locked: number
-  unlockable: number
-  total: number
-}
-
-/**
- * Lock analytics card. Time-series "value locked / locks over time" builds up as
- * locks accrue on-chain → honest empty state, never a fabricated series. When the
- * user has REAL locks, a live Locked/Unlockable status split IS shown (computed
- * from on-chain unlock times).
- */
-function LockAnalyticsCard({
-  breakdown,
-  loading,
-}: {
-  breakdown?: LockBreakdown
-  loading: boolean
-}): JSX.Element {
-  const hasData = Boolean(breakdown && breakdown.total > 0)
-  const lockedPct = hasData ? (breakdown!.locked / breakdown!.total) * 100 : 0
-  const unlockablePct = hasData ? (breakdown!.unlockable / breakdown!.total) * 100 : 0
-
-  return (
-    <InstrumentPanel title="LOCK ANALYTICS" meta={[hasData ? 'YOUR LOCKS' : 'NO LOCKS YET']}>
-      {loading ? (
-        <div style={{ height: 14, borderRadius: 999, background: terminalColors.line2 }} aria-busy="true" />
-      ) : hasData ? (
-        <>
-          <div style={{ display: 'flex', height: 14, borderRadius: 999, overflow: 'hidden', background: terminalColors.panel2 }}>
-            {breakdown!.locked > 0 ? (
-              <div title={`Locked · ${breakdown!.locked}`} style={{ width: `${lockedPct}%`, background: terminalColors.ink3 }} />
-            ) : null}
-            {breakdown!.unlockable > 0 ? (
-              <div title={`Unlockable · ${breakdown!.unlockable}`} style={{ width: `${unlockablePct}%`, background: terminalColors.greenUp }} />
-            ) : null}
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', marginTop: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 9, height: 9, borderRadius: '50%', background: terminalColors.ink3 }} />
-              <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink2 }}>Locked</span>
-              <span style={{ fontFamily: MONO, fontSize: 12.5, color: terminalColors.ink }}>{breakdown!.locked}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 9, height: 9, borderRadius: '50%', background: terminalColors.greenUp }} />
-              <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink2 }}>Unlockable</span>
-              <span style={{ fontFamily: MONO, fontSize: 12.5, color: terminalColors.greenDeep }}>{breakdown!.unlockable}</span>
-            </div>
-          </div>
-          <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.faint, marginTop: 12, lineHeight: 1.5 }}>
-            Live status from your on-chain locks. Historical value-locked and locks-over-time charts build as locks accrue.
-          </div>
-        </>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 8, padding: '18px 12px' }}>
-          <PadlockGraphic />
-          <div style={{ fontFamily: SANS, fontSize: 13, fontWeight: 600, color: terminalColors.ink2 }}>
-            No locks yet.
-          </div>
-          <div style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.faint, maxWidth: 300, lineHeight: 1.5 }}>
-            Historical value-locked and lock-count charts build as locks accrue. Your live locks appear in the
-            tabs below.
-          </div>
-        </div>
-      )}
-    </InstrumentPanel>
-  )
-}
-
 /* ------------------------------------------------------------------ the screen */
 
 export function LockerScreen(): JSX.Element {
@@ -1817,54 +1735,6 @@ export function LockerScreen(): JSX.Element {
     query: { enabled: Boolean(tokenManager && chainId) },
   })
   const totalCount = countRead.data as bigint | undefined
-
-  // Lock fee (real read) — denominated in the chain's native gas token.
-  const lockFeeRead = useReadContract({
-    address: tokenManager,
-    chainId,
-    abi: tokenLockerManagerAbi,
-    functionName: 'lockFee',
-    query: { enabled: Boolean(tokenManager && chainId) },
-  })
-  const lockFee = lockFeeRead.data as bigint | undefined
-  const native = chainId ? getChainInfo(chainId).nativeCurrency : undefined
-
-  // The user's real locks (both kinds) — drive "Your locks" + the status split.
-  // wagmi dedupes these identical reads with the per-tab copies (same query keys).
-  const tokenLocks = useTokenLocks(tokenManager, owner, chainId)
-  const v3Locks = useV3Locks(v3Locker, owner, chainId)
-
-  const locksLoading =
-    connected &&
-    deployed &&
-    !tokenLocks.error &&
-    !v3Locks.error &&
-    (tokenLocks.rows === undefined || v3Locks.rows === undefined)
-
-  const breakdown = useMemo((): LockBreakdown | undefined => {
-    if (!connected || !deployed) {
-      return undefined
-    }
-    const rows = [...(tokenLocks.rows ?? []), ...(v3Locks.rows ?? [])]
-    if (rows.length === 0) {
-      return { locked: 0, unlockable: 0, total: 0 }
-    }
-    const now = Math.floor(Date.now() / 1000)
-    const unlockable = rows.filter((r) => r.unlockTime <= now).length
-    return { locked: rows.length - unlockable, unlockable, total: rows.length }
-  }, [connected, deployed, tokenLocks.rows, v3Locks.rows])
-
-  const yourLocksCount = (tokenLocks.rows?.length ?? 0) + (v3Locks.rows?.length ?? 0)
-
-  // Stat-tile display values (honest "—" when disconnected / not deployed).
-  const totalLocksValue = !deployed ? '—' : totalCount !== undefined ? String(totalCount) : undefined
-  const yourLocksValue = !connected || !deployed ? '—' : locksLoading ? undefined : String(yourLocksCount)
-  const lockFeeValue = !deployed
-    ? '—'
-    : lockFee !== undefined
-      ? `${formatUnits(lockFee, native?.decimals ?? 18)} ${native?.symbol ?? ''}`.trim()
-      : undefined
-  const networkValue = deployed ? chainLabel : 'Not live'
 
   const onConnect = (): void => accountDrawer.open()
 
@@ -1901,37 +1771,8 @@ export function LockerScreen(): JSX.Element {
         community — v3 positions keep earning fees while locked.
       </div>
 
-      {/* Stat tiles — real contract reads (honest "—" when not deployed / disconnected). */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-          gap: 12,
-          marginBottom: 16,
-        }}
-      >
-        <StatCard
-          size="lg"
-          label="Total locks"
-          value={totalLocksValue}
-          loading={deployed && countRead.isLoading && totalCount === undefined}
-          error={countRead.error ? 'Failed to load' : undefined}
-        />
-        <StatCard size="lg" label="Your locks" value={yourLocksValue} loading={Boolean(locksLoading)} />
-        <StatCard
-          size="lg"
-          label="Lock fee"
-          value={lockFeeValue}
-          loading={deployed && lockFeeRead.isLoading && lockFee === undefined}
-          error={lockFeeRead.error ? 'Failed to load' : undefined}
-        />
-        <StatCard size="lg" label="Network" value={networkValue} valueColor={deployed ? 'up' : 'ink'} />
-      </div>
-
-      {/* Lock analytics — honest no-locks-yet empty state, or a real status split. */}
-      <div style={{ marginBottom: 20 }}>
-        <LockAnalyticsCard breakdown={breakdown} loading={Boolean(locksLoading)} />
-      </div>
+      {/* Ledger analytics — live locker-indexer data (global TVL, per-token, per-pool). */}
+      <LockerExplore />
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, background: terminalColors.panel2, padding: 4, borderRadius: 11, width: 'fit-content', marginBottom: 20 }}>
