@@ -39,6 +39,7 @@ const TerminalVestingPage = lazy(() => import('~/terminal/TerminalVestingPage'))
 const TerminalFarmsPage = lazy(() => import('~/terminal/TerminalFarmsPage'))
 const TerminalAirdropPage = lazy(() => import('~/terminal/TerminalAirdropPage'))
 const TerminalLaunchPage = lazy(() => import('~/terminal/TerminalLaunchPage'))
+const TerminalLaunchDetailPage = lazy(() => import('~/terminal/TerminalLaunchDetailPage'))
 const TerminalPortfolioPage = lazy(() => import('~/terminal/TerminalPortfolioPage'))
 const TerminalActivityPage = lazy(() => import('~/terminal/TerminalActivityPage'))
 const TerminalAnalyticsPage = lazy(() => import('~/terminal/TerminalAnalyticsPage'))
@@ -453,6 +454,18 @@ export const routes: RouteDefinition[] = [
     getElement: () => (
       <Suspense fallback={null}>
         <TerminalLaunchPage />
+      </Suspense>
+    ),
+  }),
+  createRouteDefinition({
+    // Public, no-wallet shareable launch page. Two path segments so it never collides
+    // with the exact `/launch` create route above.
+    path: '/launch/:chainId/:token',
+    getTitle: () => 'Launch · HookSwap',
+    getDescription: () => 'View a fair-launched token on HookSwap.',
+    getElement: () => (
+      <Suspense fallback={null}>
+        <TerminalLaunchDetailPage />
       </Suspense>
     ),
   }),

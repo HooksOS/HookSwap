@@ -23,6 +23,7 @@ import { useAccount } from '~/hooks/useAccount'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { getLaunchpadAddress } from '~/terminal/launchpad/addresses'
+import { LaunchpadExplore } from '~/terminal/screens/launchpad/LaunchpadExplore'
 import {
   randomSalt,
   useLaunch,
@@ -644,6 +645,10 @@ export function LaunchScreen(): JSX.Element {
         Deploy a token, seed its v3 pool, and lock the LP — in a single transaction. Pick your DEX, pair token, and
         optionally make an initial buy.
       </div>
+
+      {/* LaunchPad "Ledger" analytics — live launchpad indexer (Total Market Cap, stat tiles,
+          sortable launch rows linking to each shareable launch page). Sits atop the create UI. */}
+      <LaunchpadExplore />
 
       {/* Stat tiles */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
