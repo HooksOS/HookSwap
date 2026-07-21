@@ -1,11 +1,14 @@
 /**
- * HookSwap Locker Analytics — "Ledger" TVL area chart (canvas).
+ * HookSwap Terminal — shared "Ledger" TVL area chart (canvas).
  *
- * A glowing green area chart of daily total value locked, fed by the indexer's
- * `/tvl-history` snapshots (already filtered to points that carry a numeric
- * `totalTvlUsd`). Draws the faint background grid at all times; with < 2 priced
- * points it overlays an honest "TVL history builds as snapshots accrue" note
- * instead of a fabricated line. Never draws invented data.
+ * A glowing green area chart of a daily value-over-time series, used by BOTH the
+ * Locker and Farms "Ledger" analytics views. Draws the faint background grid at all
+ * times; with < 2 points it overlays an honest empty note instead of a fabricated
+ * line. Never draws invented data — callers pre-filter to points carrying a real
+ * numeric value (unpriced snapshots are dropped, never zero-filled).
+ *
+ * Extracted from the original locker-only `LockerTvlChart` so the two Ledger views
+ * share one chart implementation.
  */
 import { useEffect, useRef } from 'react'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
@@ -13,11 +16,20 @@ import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 export interface TvlPoint {
   /** X-axis label (the snapshot's UTC date). */
   label: string
-  /** TVL in USD — always a finite number (callers filter out unpriced snapshots). */
+  /** Series value — always a finite number (callers filter out unpriced snapshots). */
   value: number
 }
 
-export function LockerTvlChart({ points, height = 240 }: { points: TvlPoint[]; height?: number }): JSX.Element {
+export function LedgerTvlChart({
+  points,
+  height = 240,
+  emptyText = 'History builds as daily snapshots accrue.',
+}: {
+  points: TvlPoint[]
+  height?: number
+  /** Overlay note shown when there are fewer than 2 points (honest empty state). */
+  emptyText?: string
+}): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const enough = points.length >= 2
@@ -143,7 +155,7 @@ export function LockerTvlChart({ points, height = 240 }: { points: TvlPoint[]; h
             lineHeight: 1.5,
           }}
         >
-          TVL history builds as daily snapshots accrue.
+          {emptyText}
         </div>
       ) : null}
     </div>

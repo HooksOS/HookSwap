@@ -35,6 +35,7 @@ import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/
 import { StatCard } from '~/terminal/components/StatCard'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { getFarmFactory } from '~/terminal/farms/addresses'
+import { FarmsExplore } from '~/terminal/screens/farms/FarmsExplore'
 import { useCreateFarm } from '~/terminal/farms/useCreateFarm'
 import { useFarm, useFarmList } from '~/terminal/farms/useFarm'
 import { assume0xAddress } from '~/utils/wagmi'
@@ -910,6 +911,9 @@ export function FarmsScreen(): JSX.Element {
         Launch a self-service staking farm — deposit a reward budget and stakers earn it over time — or stake into an
         existing farm and claim rewards. Any ERC-20 (including a v2 LP token) works as the staking token.
       </div>
+
+      {/* Ledger analytics — cross-chain farms indexer (live). Sits above the create/manage tools. */}
+      <FarmsExplore />
 
       {/* Stat tiles — real contract reads (honest "—" when not deployed / no farm selected). */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>

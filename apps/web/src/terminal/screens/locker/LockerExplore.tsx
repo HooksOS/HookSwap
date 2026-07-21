@@ -15,13 +15,14 @@
  */
 import { useMemo, useState } from 'react'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
+import { LedgerAvatar } from '~/terminal/components/LedgerAvatar'
+import { LedgerTvlChart, type TvlPoint } from '~/terminal/components/LedgerTvlChart'
 import { StatCard } from '~/terminal/components/StatCard'
 import type { PoolAgg, TokenAgg, TVLSnapshot } from '~/terminal/lockers/analytics/client'
 import { useLockerPools } from '~/terminal/lockers/analytics/useLockerPools'
 import { useLockerStats } from '~/terminal/lockers/analytics/useLockerStats'
 import { useLockerTokens } from '~/terminal/lockers/analytics/useLockerTokens'
 import { useLockerTvlHistory } from '~/terminal/lockers/analytics/useLockerTvlHistory'
-import { LockerTvlChart, type TvlPoint } from '~/terminal/screens/locker/LockerTvlChart'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
@@ -63,41 +64,10 @@ function fmtPct(pct: number | null | undefined): string {
   return `${pct >= 100 ? Math.round(pct) : pct.toFixed(2).replace(/\.?0+$/, '')}%`
 }
 
-/** Deterministic legible avatar colour from an address (stable hue). */
-function avatarColor(seed: string): string {
-  let h = 0
-  const s = seed.toLowerCase()
-  for (let i = 0; i < s.length; i++) {
-    h = (h * 31 + s.charCodeAt(i)) % 360
-  }
-  return `hsl(${h}, 52%, 42%)`
-}
-
 /* ------------------------------------------------------------------ small parts */
 
-function Avatar({ seed, initials }: { seed: string; initials: string }): JSX.Element {
-  return (
-    <div
-      style={{
-        width: 34,
-        height: 34,
-        borderRadius: '50%',
-        flexShrink: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: avatarColor(seed),
-        color: '#fff',
-        fontFamily: MONO,
-        fontSize: 12,
-        fontWeight: 600,
-        letterSpacing: '-0.02em',
-      }}
-    >
-      {initials}
-    </div>
-  )
-}
+/** Shared hue avatar (deterministic colour from the seed). */
+const Avatar = LedgerAvatar
 
 function Badge({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'green' }): JSX.Element {
   const green = tone === 'green'
@@ -409,7 +379,7 @@ export function LockerExplore(): JSX.Element {
           {tvlHook.isLoading ? (
             <div style={{ height: 240, borderRadius: 10, background: terminalColors.panel }} aria-busy="true" />
           ) : (
-            <LockerTvlChart points={chartPoints} />
+            <LedgerTvlChart points={chartPoints} emptyText="TVL history builds as daily snapshots accrue." />
           )}
         </div>
       </InstrumentPanel>
