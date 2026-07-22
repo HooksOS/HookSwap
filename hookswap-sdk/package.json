@@ -1,0 +1,74 @@
+{
+  "name": "@hookswap/sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript SDK for the HookSwap stack — data (locker/farms/vesting/launchpad indexer), swap routing (trading adapter), token/fair launches, and creator fees. Multichain: Robinhood Chain, HyperEVM, MegaETH, Ink, XLayer, Tempo, Sepolia.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@hookos/sdk": "file:../vendor/hookos-sdk"
+  },
+  "peerDependencies": {
+    "viem": ">=2.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0",
+    "viem": "^2.21.0"
+  },
+  "keywords": [
+    "hookswap",
+    "web3",
+    "defi",
+    "dex",
+    "robinhood",
+    "hyperevm",
+    "megaeth",
+    "ink",
+    "xlayer",
+    "tempo",
+    "sepolia",
+    "multichain",
+    "evm",
+    "launchpad",
+    "locker",
+    "farms",
+    "vesting",
+    "swap",
+    "sdk"
+  ],
+  "author": "HookSwap",
+  "homepage": "https://hookswap.org",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HooksOS/hookswap-sdk.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
