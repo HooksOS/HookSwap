@@ -502,6 +502,7 @@ function MarketsScreenBody(): JSX.Element {
         header: 'Pair',
         width: 'minmax(150px,1.6fr)',
         align: 'left',
+        mobileRole: 'title',
         cell: (row) => <PairCell row={row} />,
         sortValue: (row) => `${row.symbol0}/${row.symbol1}`,
       },
@@ -511,6 +512,7 @@ function MarketsScreenBody(): JSX.Element {
         width: 'minmax(90px,1fr)',
         align: 'right',
         mono: true,
+        mobileRole: 'primary',
         cell: (row) =>
           row.price !== undefined && row.price > 0
             ? convertFiatAmountFormatted(row.price, NumberType.FiatTokenPrice)
@@ -524,6 +526,7 @@ function MarketsScreenBody(): JSX.Element {
         width: 'minmax(64px,0.7fr)',
         align: 'right',
         mono: true,
+        mobileRole: 'primary',
         cell: (row) => (row.change1d !== undefined ? formatSignedPct(row.change1d) : '—'),
         cellColor: (row) =>
           row.change1d === undefined
@@ -558,6 +561,7 @@ function MarketsScreenBody(): JSX.Element {
         width: 'minmax(90px,1fr)',
         align: 'right',
         mono: true,
+        mobileRole: 'primary',
         cell: (row) => fiatStats(row.tvl),
         sortValue: (row) => row.tvl,
       },

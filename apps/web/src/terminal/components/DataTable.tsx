@@ -25,6 +25,15 @@ export interface DataTableColumn<Row> {
   cellColor?: (row: Row) => string
   /** Providing this makes the column sortable (click header to toggle asc/desc). */
   sortValue?: (row: Row) => number | string
+  /**
+   * Mobile card-mode role. When ANY column sets this, the table renders as a
+   * native-app **card list** on mobile (≤900px) instead of a horizontal-scroll
+   * grid: `'title'` = the card's left identity block (pair/token + sublabel),
+   * `'primary'` = a labelled stat shown on the right (2–3 max), `'secondary'` =
+   * a muted stat under the title, `'hide'` (or unset) = omitted on mobile.
+   * Columns with no role in a card-mode table are hidden on mobile.
+   */
+  mobileRole?: 'title' | 'primary' | 'secondary' | 'hide'
 }
 
 export interface DataTableSort {
@@ -105,6 +114,17 @@ export function DataTable<Row>({
   const tableMinWidth = minWidth ?? columns.reduce((sum, column) => sum + columnMinWidth(column.width), 12)
   const isLoading = loading || (rows === undefined && !error)
 
+  // Mobile card mode: opt-in when any column declares a `mobileRole`. The wide
+  // grid (`.tm-dt-wide`) is hidden ≤900px and this card list shown instead — see
+  // terminal.css. Tables that set no roles are untouched (still scroll on mobile).
+  const hasCardMode = useMemo(() => columns.some((c) => c.mobileRole), [columns])
+  const titleColumn = useMemo(
+    () => columns.find((c) => c.mobileRole === 'title') ?? columns[0],
+    [columns],
+  )
+  const primaryColumns = useMemo(() => columns.filter((c) => c.mobileRole === 'primary'), [columns])
+  const secondaryColumns = useMemo(() => columns.filter((c) => c.mobileRole === 'secondary'), [columns])
+
   const sortedRows = useMemo(() => {
     if (!rows || !sort) {
       return rows
@@ -140,7 +160,8 @@ export function DataTable<Row>({
   }
 
   return (
-    <div className="tm-table-scroll">
+    <>
+    <div className={hasCardMode ? 'tm-table-scroll tm-dt-wide' : 'tm-table-scroll'}>
       <div role="table" style={{ fontFamily: terminalFonts.sans, minWidth: tableMinWidth }}>
       {/* Header row */}
       <div
@@ -341,5 +362,76 @@ export function DataTable<Row>({
       )}
       </div>
     </div>
+
+    {/* Mobile card list (shown ≤900px; the wide grid above is hidden then). */}
+    {hasCardMode ? (
+      <div className="tm-dt-cards">
+        {comingSoon ? (
+          <ComingSoon variant="panel" subtext={comingSoonSubtext} minHeight={160} />
+        ) : error ? (
+          <div role="alert" className="tm-dt-card__msg" style={{ color: terminalColors.redDown }}>
+            {error}
+          </div>
+        ) : isLoading ? (
+          Array.from({ length: skeletonRows }, (_, i) => (
+            <div key={i} className="tm-dt-card" aria-busy="true">
+              <span className="tm-dt-card__skel" style={{ background: terminalColors.line2, width: '45%' }} />
+              <span className="tm-dt-card__skel" style={{ background: terminalColors.line2, width: 56 }} />
+            </div>
+          ))
+        ) : sortedRows && sortedRows.length > 0 ? (
+          sortedRows.map((row) => {
+            const key = rowKey(row)
+            return (
+              <div
+                key={key}
+                role="row"
+                tabIndex={onRowClick ? 0 : undefined}
+                onClick={onRowClick ? (): void => onRowClick(row) : undefined}
+                onKeyDown={
+                  onRowClick
+                    ? (e): void => {
+                        if (e.key === 'Enter') {
+                          onRowClick(row)
+                        }
+                      }
+                    : undefined
+                }
+                className={onRowClick ? 'tm-dt-card tm-tap' : 'tm-dt-card'}
+                style={{ cursor: onRowClick ? 'pointer' : undefined }}
+              >
+                <div className="tm-dt-card__id">
+                  {titleColumn ? titleColumn.cell(row) : null}
+                  {secondaryColumns.length ? (
+                    <div className="tm-dt-card__sub">
+                      {secondaryColumns.map((col) => (
+                        <span key={col.id} style={{ color: col.cellColor?.(row) }}>
+                          {col.header} {col.cell(row)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="tm-dt-card__stats">
+                  {primaryColumns.map((col) => (
+                    <div key={col.id} className="tm-dt-card__stat">
+                      <span className="tm-dt-card__k">{col.header}</span>
+                      <span className="tm-dt-card__v" style={{ color: col.cellColor?.(row) }}>
+                        {col.cell(row)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })
+        ) : (
+          <div className="tm-dt-card__msg" style={{ color: terminalColors.ink3Alt }}>
+            {emptyMessage}
+          </div>
+        )}
+      </div>
+    ) : null}
+    </>
   )
 }

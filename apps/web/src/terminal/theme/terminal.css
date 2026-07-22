@@ -202,6 +202,87 @@
     opacity: 0.55;
     transition: opacity 0.04s ease;
   }
+  /* Hide the desktop-terminal status row (GAS/BLOCK "—" + ROUTING·EMBED) on mobile —
+     dead data + dev jargon; the live ticker tape above is the app-appropriate strip. */
+  .tm-topstrip-status {
+    display: none;
+  }
+}
+
+/* ============================================================================
+   DataTable — native-app card list on mobile (opt-in via column `mobileRole`).
+   Desktop shows the grid table; ≤900px the grid is hidden and this list shown.
+   ========================================================================== */
+.tm-dt-cards {
+  display: none;
+}
+@media (max-width: 900px) {
+  .tm-dt-wide {
+    display: none;
+  }
+  .tm-dt-cards {
+    display: flex;
+    flex-direction: column;
+  }
+}
+.tm-dt-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px var(--tm-gutter);
+  border-bottom: 1px solid var(--tm-line-3);
+}
+.tm-dt-card:last-child {
+  border-bottom: 0;
+}
+.tm-dt-card__id {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tm-dt-card__sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-family: var(--tm-font-mono);
+  font-size: 11px;
+  color: var(--tm-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.tm-dt-card__stats {
+  display: flex;
+  gap: 18px;
+  flex-shrink: 0;
+}
+.tm-dt-card__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.tm-dt-card__k {
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tm-faint);
+}
+.tm-dt-card__v {
+  font-family: var(--tm-font-mono);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--tm-ink);
+}
+.tm-dt-card__msg {
+  padding: 28px var(--tm-gutter);
+  text-align: center;
+  font-size: 13px;
+}
+.tm-dt-card__skel {
+  height: 12px;
+  border-radius: 4px;
+  display: inline-block;
 }
 
 /* Frosted "material" for the nav + tab bars — translucent, blurred, saturated

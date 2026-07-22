@@ -62,7 +62,11 @@ export function TerminalTopStrip(): JSX.Element {
   return (
     <>
       <TickerTape items={items} emptyLabel={emptyLabel} onSelect={() => navigate('/swap')} />
+      {/* Desktop-terminal status row (GAS/BLOCK have no client source → "—"; ROUTING is
+          dev-facing). Hidden on mobile via `.tm-topstrip-status` so the app-like view
+          keeps only the live ticker above — see terminal.css. */}
       <div
+        className="tm-topstrip-status"
         style={{
           borderBottom: `1px solid ${terminalColors.line}`,
           background: terminalColors.bg,

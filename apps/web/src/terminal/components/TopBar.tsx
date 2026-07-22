@@ -98,7 +98,9 @@ export function TopBar({
         >
           {/* Brand */}
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-            <HookLogo size={24} />
+            {/* Glyph only — HookLogo's own wordmark is suppressed so it doesn't
+                duplicate the styled "HookSwap" wordmark below (was "HookSwap HookSwap"). */}
+            <HookLogo size={24} showText={false} />
             <span
               style={{
                 fontFamily: terminalFonts.display,
