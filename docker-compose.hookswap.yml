@@ -12,6 +12,7 @@ networks:
 
 volumes:
   data-api-db:
+  locker-data:
 
 x-logging: &default-logging
   driver: json-file
@@ -33,6 +34,8 @@ services:
       - LOCKER_REFRESH_MS=300000
     networks: [hookswap-net]
     logging: *default-logging
+    volumes:
+      - locker-data:/app/data
 
   # ---- markets / token data api ----
   data-api:
