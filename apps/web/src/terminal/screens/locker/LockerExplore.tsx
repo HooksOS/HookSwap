@@ -14,11 +14,13 @@
  * locks yet → an honest empty state. Nothing here invents a lock, price, or TVL.
  */
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
 import { LedgerTvlChart, type TvlPoint } from '~/terminal/components/LedgerTvlChart'
 import { StatCard } from '~/terminal/components/StatCard'
-import type { PoolAgg, TokenAgg, TVLSnapshot } from '~/terminal/lockers/analytics/client'
+import type { Lock, PoolAgg, TokenAgg, TVLSnapshot } from '~/terminal/lockers/analytics/client'
+import { useLockerLocks } from '~/terminal/lockers/analytics/useLockerLocks'
 import { useLockerPools } from '~/terminal/lockers/analytics/useLockerPools'
 import { useLockerStats } from '~/terminal/lockers/analytics/useLockerStats'
 import { useLockerTokens } from '~/terminal/lockers/analytics/useLockerTokens'
@@ -106,6 +108,45 @@ function PctBar({ pct }: { pct: number }): JSX.Element {
   )
 }
 
+/**
+ * KPI card for the "Total Locked" slot when the chain has NO USD price anchor (so a USD
+ * total would be fabricated). Instead of a dead "No data yet" tombstone, it shows the real
+ * lock COUNT with an honest note that value is tracked in native amounts — never a $ figure.
+ * Styled to match `StatCard size="lg"` (radius 12, padding 14×16, mono 22px value).
+ */
+function NativeLockedCard({ lockCount }: { lockCount: number }): JSX.Element {
+  return (
+    <div
+      style={{
+        border: `1px solid ${terminalColors.line}`,
+        borderRadius: 12,
+        background: terminalColors.bg,
+        padding: '14px 16px',
+        fontFamily: SANS,
+        boxSizing: 'border-box',
+        minWidth: 0,
+      }}
+    >
+      <div style={{ fontSize: 12, color: terminalColors.ink3Alt }}>Total Locked</div>
+      <div
+        style={{
+          fontFamily: MONO,
+          fontSize: 22,
+          fontWeight: 600,
+          color: terminalColors.ink,
+          marginTop: 5,
+          letterSpacing: '-0.02em',
+        }}
+      >
+        {fmtInt(lockCount)} lock{lockCount === 1 ? '' : 's'}
+      </div>
+      <div style={{ fontSize: 11, color: terminalColors.ink3Alt, marginTop: 4, lineHeight: 1.4 }}>
+        Native amounts — no USD price anchor
+      </div>
+    </div>
+  )
+}
+
 /* ------------------------------------------------------------------ ledger rows */
 
 const rowStyle: React.CSSProperties = {
@@ -119,28 +160,46 @@ const rowStyle: React.CSSProperties = {
   transition: 'transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease',
 }
 
-function LedgerRow({ children }: { children: React.ReactNode }): JSX.Element {
+/**
+ * One roomy Ledger card. When `to` is set the whole row becomes a react-router link to
+ * the proof-of-lock detail page — styled to inherit (no underline / link colour) so it
+ * looks identical to a static row, just clickable. `to` is omitted when no lock id could
+ * be resolved for the aggregate (never links to a fabricated / wrong lock).
+ */
+function LedgerRow({ children, to }: { children: React.ReactNode; to?: string }): JSX.Element {
   const [hover, setHover] = useState(false)
+  const style: React.CSSProperties = {
+    ...rowStyle,
+    transform: hover ? 'translateY(-2px)' : undefined,
+    boxShadow: hover ? '0 8px 22px -14px rgba(11,15,20,.28)' : undefined,
+    borderColor: hover ? terminalColors.greenBorder : terminalColors.line,
+  }
+  const handlers = {
+    onMouseEnter: () => setHover(true),
+    onMouseLeave: () => setHover(false),
+  }
+  if (to) {
+    return (
+      <Link
+        to={to}
+        {...handlers}
+        style={{ ...style, textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}
+      >
+        {children}
+      </Link>
+    )
+  }
   return (
-    <div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        ...rowStyle,
-        transform: hover ? 'translateY(-2px)' : undefined,
-        boxShadow: hover ? '0 8px 22px -14px rgba(11,15,20,.28)' : undefined,
-        borderColor: hover ? terminalColors.greenBorder : terminalColors.line,
-      }}
-    >
+    <div {...handlers} style={style}>
       {children}
     </div>
   )
 }
 
-function TokenRow({ t }: { t: TokenAgg }): JSX.Element {
+function TokenRow({ t, to }: { t: TokenAgg; to?: string }): JSX.Element {
   const initials = (t.symbol || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
   return (
-    <LedgerRow>
+    <LedgerRow to={to}>
       <Avatar seed={t.token} initials={initials} logoUrl={resolveLedgerLogo(t.chainId, t.token)} />
       <div style={{ minWidth: 0, flex: '1 1 160px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
@@ -181,12 +240,12 @@ function TokenRow({ t }: { t: TokenAgg }): JSX.Element {
   )
 }
 
-function PoolRow({ p }: { p: PoolAgg }): JSX.Element {
+function PoolRow({ p, to }: { p: PoolAgg; to?: string }): JSX.Element {
   const a = (p.token0Symbol || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 1).toUpperCase() || '?'
   const b = (p.token1Symbol || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 1).toUpperCase() || '?'
   const pair = `${p.token0Symbol || '?'}/${p.token1Symbol || '?'}`
   return (
-    <LedgerRow>
+    <LedgerRow to={to}>
       <Avatar seed={p.pair} initials={`${a}${b}`} />
       <div style={{ minWidth: 0, flex: '1 1 160px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
@@ -303,10 +362,31 @@ export function LockerExplore(): JSX.Element {
   const tvlHook = useLockerTvlHistory()
   const tokensHook = useLockerTokens()
   const poolsHook = useLockerPools()
+  const locksHook = useLockerLocks()
 
   const [view, setView] = useState<'tokens' | 'pools'>('tokens')
 
   const stats = statsHook.stats
+
+  // Resolve a representative lock id per (chain, token) so aggregate rows can link to the
+  // per-lock proof-of-lock page (`/lock/:chainId/:id`). Locks arrive TVL-sorted, so the
+  // first seen for a key is the most significant lock (exact for single-lock rows like
+  // "HOOK · 1 lock"). A pool aggregate's `pair` == its LP token address == the lock's
+  // `token`, so the same map serves tokens and pools. No match → no link (never fabricated).
+  const lockRefByToken = useMemo<Map<string, string>>(() => {
+    const m = new Map<string, string>()
+    const locks: Lock[] | undefined = locksHook.locks
+    if (!locks) {
+      return m
+    }
+    for (const l of locks) {
+      const key = `${l.chainId}-${l.token.toLowerCase()}`
+      if (!m.has(key)) {
+        m.set(key, `/lock/${l.chainId}/${l.id}`)
+      }
+    }
+    return m
+  }, [locksHook.locks])
 
   // Only snapshots that carry a real USD value can be charted — the rest are unpriced
   // (honest gap, never a fabricated point). With < 2 the chart shows its empty state.
@@ -410,13 +490,18 @@ export function LockerExplore(): JSX.Element {
           marginBottom: 14,
         }}
       >
-        <StatCard
-          size="lg"
-          label="Total Locked (USD)"
-          value={stats ? fmtUsd(stats.totalTvlUsd) : undefined}
-          loading={statsHook.isLoading}
-          comingSoon={Boolean(stats) && stats!.totalTvlUsd === undefined}
-        />
+        {stats && stats.totalTvlUsd === undefined ? (
+          // No USD anchor on the reachable chains → show the real lock COUNT in native
+          // terms rather than a fabricated $ or a dead "No data yet" tile.
+          <NativeLockedCard lockCount={stats.totalLocks} />
+        ) : (
+          <StatCard
+            size="lg"
+            label="Total Locked (USD)"
+            value={stats ? fmtUsd(stats.totalTvlUsd) : undefined}
+            loading={statsHook.isLoading}
+          />
+        )}
         <StatCard size="lg" label="Locks Created" value={stats ? fmtInt(stats.totalLocks) : undefined} loading={statsHook.isLoading} />
         <StatCard
           size="lg"
@@ -490,7 +575,7 @@ export function LockerExplore(): JSX.Element {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {tokens.map((t) => (
-                <TokenRow key={`${t.chainId}-${t.token}`} t={t} />
+                <TokenRow key={`${t.chainId}-${t.token}`} t={t} to={lockRefByToken.get(`${t.chainId}-${t.token.toLowerCase()}`)} />
               ))}
             </div>
           )
@@ -503,7 +588,7 @@ export function LockerExplore(): JSX.Element {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {pools.map((p) => (
-              <PoolRow key={`${p.chainId}-${p.pair}`} p={p} />
+              <PoolRow key={`${p.chainId}-${p.pair}`} p={p} to={lockRefByToken.get(`${p.chainId}-${p.pair.toLowerCase()}`)} />
             ))}
           </div>
         )}

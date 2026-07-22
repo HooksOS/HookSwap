@@ -101,7 +101,7 @@ export const ROBINHOOD_CHAIN_INFO = {
     },
   },
   supportedURVersions: [TradingApi.UniversalRouterVersion._2_0, TradingApi.UniversalRouterVersion._2_1_1],
-  supportsV4: false,
+  supportsV4: true,
   supportsNFTs: true,
   tokens,
   urlParam: CHAIN_ID_TO_URL_PARAM[UniverseChainId.Robinhood],

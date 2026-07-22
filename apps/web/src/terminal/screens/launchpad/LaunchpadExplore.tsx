@@ -23,9 +23,12 @@ import { Link } from 'react-router'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
 import { StatCard } from '~/terminal/components/StatCard'
+import type { Address } from '~/chains'
 import type { Launch } from '~/terminal/launchpad/analytics/client'
 import { useLaunches } from '~/terminal/launchpad/analytics/useLaunches'
 import { useLaunchesStats } from '~/terminal/launchpad/analytics/useLaunchesStats'
+import { getFeeVaultAddress } from '~/terminal/launchpad/addresses'
+import { useLpLocks, type LpLockItem, type LpLockState, type LpLockStatus } from '~/terminal/launchpad/useLpLock'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
@@ -78,27 +81,79 @@ function initials(symbol: string | undefined, len = 2): string {
   return (symbol || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, len).toUpperCase() || '?'
 }
 
+/** Parse the indexer's decimal tokenId string into a bigint; undefined when not a number. */
+function parseTokenId(raw: string | undefined): bigint | undefined {
+  if (!raw || !/^\d+$/.test(raw)) {
+    return undefined
+  }
+  try {
+    return BigInt(raw)
+  } catch {
+    return undefined
+  }
+}
+
 /* ------------------------------------------------------------------ small parts */
 
-/** LP-locked (green) / Unlocked (gold) status pill. */
-function LpPill({ locked }: { locked: boolean }): JSX.Element {
+/**
+ * LP-lock status pill driven by the on-chain FeeVault truth (`status`), falling back to the
+ * indexer's boolean (`fallbackLocked`) only when the contract is 'unknown'. NEVER asserts
+ * "Locked" over a contract "unlocked".
+ */
+function LpPill({
+  status,
+  unlockTime,
+  fallbackLocked,
+}: {
+  status: LpLockState
+  unlockTime?: number
+  fallbackLocked?: boolean
+}): JSX.Element | null {
+  // Resolve 'unknown' via the indexer fallback boolean (or render nothing if absent).
+  let s = status
+  let ut = unlockTime
+  if (s === 'unknown') {
+    if (fallbackLocked === true) {
+      s = 'locked-forever'
+      ut = undefined
+    } else if (fallbackLocked === false) {
+      s = 'unlocked'
+    } else {
+      return null
+    }
+  }
+
+  const base: React.CSSProperties = {
+    fontFamily: MONO,
+    fontSize: 10,
+    fontWeight: 600,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+    padding: '2px 7px',
+    borderRadius: 999,
+    whiteSpace: 'nowrap',
+  }
+
+  if (s === 'loading') {
+    return (
+      <span style={{ ...base, color: terminalColors.ink3, background: terminalColors.panel, border: `1px solid ${terminalColors.line}` }}>
+        LP …
+      </span>
+    )
+  }
+
+  const locked = s === 'locked-forever' || s === 'locked-until'
+  const label = s === 'locked-forever' ? '🔒 Locked Forever' : s === 'locked-until' ? `🔒 Locked · ${fmtDate(ut)}` : 'LP Unlocked'
   return (
     <span
       style={{
-        fontFamily: MONO,
-        fontSize: 10,
-        fontWeight: 600,
-        letterSpacing: '0.04em',
-        textTransform: 'uppercase',
+        ...base,
         color: locked ? terminalColors.greenDeep : terminalColors.warn,
         background: locked ? terminalColors.greenBg : terminalColors.warnBg,
         border: `1px solid ${locked ? terminalColors.greenBorder : terminalColors.warn}`,
-        padding: '2px 7px',
-        borderRadius: 999,
-        whiteSpace: 'nowrap',
       }}
     >
-      {locked ? '🔒 LP Locked' : 'LP Unlocked'}
+      {label}
     </span>
   )
 }
@@ -117,7 +172,7 @@ const rowStyle: React.CSSProperties = {
   transition: 'transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease',
 }
 
-function LaunchRow({ l }: { l: Launch }): JSX.Element {
+function LaunchRow({ l, lock }: { l: Launch; lock?: LpLockStatus }): JSX.Element {
   const [hover, setHover] = useState(false)
   const name = l.token.name || l.token.symbol || 'Unknown'
   return (
@@ -156,7 +211,7 @@ function LaunchRow({ l }: { l: Launch }): JSX.Element {
           >
             {l.token.symbol || '?'}
           </span>
-          <LpPill locked={Boolean(l.lpLocked)} />
+          <LpPill status={lock?.status ?? 'unknown'} unlockTime={lock?.unlockTime} fallbackLocked={l.lpLocked} />
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, minWidth: 0 }}>
           <span
@@ -326,6 +381,23 @@ export function LaunchpadExplore(): JSX.Element {
     })
   }, [launchesHook.launches, sort])
 
+  // On-chain LP-lock truth from the FeeVault. The vault is per-chain and today only one
+  // chain (Robinhood) has a deployed FeeVault, so query the single chain that has one and
+  // include only its tokens; rows on other chains resolve to 'unknown' → LpPill falls back
+  // to the indexer's lpLocked flag.
+  const lockChainId = useMemo(() => {
+    return (launches ?? []).find((l) => getFeeVaultAddress(l.chainId) !== undefined)?.chainId
+  }, [launches])
+  const lockItems = useMemo<LpLockItem[]>(() => {
+    if (lockChainId === undefined || !launches) {
+      return []
+    }
+    return launches
+      .filter((l) => l.chainId === lockChainId)
+      .map((l) => ({ token: l.token.addr as Address, tokenId: parseTokenId(l.tokenId), dex: l.dex }))
+  }, [launches, lockChainId])
+  const lpLocks = useLpLocks({ chainId: lockChainId, items: lockItems })
+
   // Fully offline only when the stats call itself failed (the spine of the section).
   const offline = statsHook.error
 
@@ -454,7 +526,7 @@ export function LaunchpadExplore(): JSX.Element {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {launches.map((l) => (
-              <LaunchRow key={`${l.chainId}-${l.id}`} l={l} />
+              <LaunchRow key={`${l.chainId}-${l.id}`} l={l} lock={lpLocks[l.token.addr.toLowerCase()]} />
             ))}
           </div>
         )}

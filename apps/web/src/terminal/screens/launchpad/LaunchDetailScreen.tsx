@@ -8,10 +8,17 @@
  * ADDRESS (the canonical shareable URL) or the numeric launch id — the indexer accepts
  * both.
  *
+ * VISUAL LANGUAGE: HookSwap "B · Ledger" daylight token-page look — cool-paper page,
+ * white rounded cards with hairline borders, IBM Plex Mono for every number/ticker/
+ * address, deep acid-green accent. It is a SHARE CARD, not a trading terminal: there is
+ * deliberately NO live price chart and NO buy/sell widget — there is no live trade feed
+ * for a launch share page and fabricating one would violate the facts-only rule.
+ *
  * DATA POLICY (facts-only, no fabricated data): every value is the indexer's.
  * `marketCapUsd` is OMITTED by the indexer when unpriceable → rendered as an honest "—",
  * never $0. Loading → skeleton; 404 → honest "this launch doesn't exist"; indexer offline
  * → honest offline note. Nothing here invents a launch, token, price, supply, or date.
+ * The LP-lock badge reads the FeeVault CONTRACT (source of truth), not the indexer field.
  *
  * NOTE ON OG UNFURL: the `<Helmet>` tags below are set CLIENT-SIDE, so JS-less crawlers
  * (which read the VPS's static index.html) won't see per-launch meta — per-launch OG needs
@@ -23,8 +30,10 @@ import { Helmet } from 'react-helmet-async/lib/index'
 import { Link, useParams } from 'react-router'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
+import type { Address } from '~/chains'
 import type { Launch } from '~/terminal/launchpad/analytics/client'
 import { useLaunch } from '~/terminal/launchpad/analytics/useLaunch'
+import { useLpLock } from '~/terminal/launchpad/useLpLock'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { ExplorerDataType, getExplorerLink } from 'uniswap/src/utils/linking'
 import type { UniverseChainId } from 'uniswap/src/features/chains/types'
@@ -135,9 +144,10 @@ function Avatar({
         background: avatarColor(seed),
         color: '#fff',
         fontFamily: MONO,
-        fontSize: size * 0.36,
+        fontSize: size * 0.34,
         fontWeight: 600,
         letterSpacing: '-0.02em',
+        boxShadow: `0 0 0 1px ${terminalColors.line}`,
       }}
     >
       {initials}
@@ -161,7 +171,103 @@ function Avatar({
   )
 }
 
-function LpPill({ locked }: { locked: boolean }): JSX.Element {
+/** Neutral identity pill (chain / DEX / fee tier / launch #). Sans by default, mono for values. */
+function Pill({ children, mono = false }: { children: React.ReactNode; mono?: boolean }): JSX.Element {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        fontFamily: mono ? MONO : SANS,
+        fontSize: 11.5,
+        fontWeight: 600,
+        letterSpacing: mono ? '-0.01em' : '0.01em',
+        color: terminalColors.ink2,
+        background: terminalColors.panel2,
+        border: `1px solid ${terminalColors.line2}`,
+        padding: '3px 10px',
+        borderRadius: 999,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+    </span>
+  )
+}
+
+/**
+ * LP-lock badge — reads the FeeVault contract as the source of truth via the shared
+ * `useLpLock` hook (`isPermanentlyLocked` + the `positions.locker` external-locker seam).
+ * NEVER asserts "Locked" when the chain says unlocked (today's Robinhood launches are
+ * genuinely unlocked on-chain → this renders "LP Unlocked" for them). Only 'unknown'
+ * (no deployed FeeVault / read error) falls back to the indexer's `lpLocked` boolean —
+ * never over-asserting Locked.
+ */
+/** Parse the indexer's decimal tokenId string into a bigint; undefined when not a number. */
+function parseTokenId(raw: string | undefined): bigint | undefined {
+  if (!raw || !/^\d+$/.test(raw)) {
+    return undefined
+  }
+  try {
+    return BigInt(raw)
+  } catch {
+    return undefined
+  }
+}
+
+function LpLockBadge({
+  chainId,
+  token,
+  tokenId,
+  dex,
+  fallbackLocked,
+}: {
+  chainId: number
+  token: Address
+  tokenId?: bigint
+  dex?: number
+  fallbackLocked?: boolean
+}): JSX.Element | null {
+  const { status, unlockTime } = useLpLock({ chainId, token, tokenId, dex })
+
+  if (status === 'loading') {
+    return <LpBadgeChip tone="neutral">LP …</LpBadgeChip>
+  }
+
+  // Map the on-chain status to a truthful display; 'unknown' falls back to the indexer flag.
+  let locked: boolean
+  let effectiveUnlock = 0
+  if (status === 'locked-forever') {
+    locked = true
+  } else if (status === 'locked-until') {
+    locked = true
+    effectiveUnlock = unlockTime ?? 0
+  } else if (status === 'unlocked') {
+    locked = false
+  } else if (fallbackLocked === true) {
+    locked = true
+  } else if (fallbackLocked === false) {
+    locked = false
+  } else {
+    return null
+  }
+
+  if (locked) {
+    const label = effectiveUnlock > 0 ? `🔒 Locked · ${fmtDate(effectiveUnlock)}` : '🔒 Locked Forever'
+    return <LpBadgeChip tone="green">{label}</LpBadgeChip>
+  }
+  return <LpBadgeChip tone="warn">LP Unlocked</LpBadgeChip>
+}
+
+/** The visual chip used by `LpLockBadge` (green = locked, gold = unlocked, neutral = pending). */
+function LpBadgeChip({ tone, children }: { tone: 'green' | 'warn' | 'neutral'; children: React.ReactNode }): JSX.Element {
+  const palette =
+    tone === 'green'
+      ? { color: terminalColors.greenDeep, background: terminalColors.greenBg, border: terminalColors.greenBorder }
+      : tone === 'warn'
+        ? { color: terminalColors.warn, background: terminalColors.warnBg, border: '#EAD9A8' }
+        : { color: terminalColors.ink3, background: terminalColors.panel, border: terminalColors.line }
   return (
     <span
       style={{
@@ -171,55 +277,63 @@ function LpPill({ locked }: { locked: boolean }): JSX.Element {
         fontFamily: MONO,
         fontSize: 12,
         fontWeight: 600,
-        letterSpacing: '0.02em',
-        color: locked ? terminalColors.greenDeep : terminalColors.warn,
-        background: locked ? terminalColors.greenBg : terminalColors.warnBg,
-        border: `1px solid ${locked ? terminalColors.greenBorder : '#EAD9A8'}`,
+        letterSpacing: '0.01em',
         padding: '4px 11px',
         borderRadius: 999,
         whiteSpace: 'nowrap',
+        color: palette.color,
+        background: palette.background,
+        border: `1px solid ${palette.border}`,
       }}
     >
-      {locked ? '🔒 LP Locked' : 'LP Unlocked'}
+      {children}
     </span>
   )
 }
 
-/** One labelled figure in the stat row. */
-function Stat({
+/** One elevated KPI card — white surface, hairline border, uppercase label + value. */
+function KpiCard({
   label,
   value,
   href,
   mono = true,
-  color,
 }: {
   label: string
   value: string
   href?: string
   mono?: boolean
-  color?: string
 }): JSX.Element {
-  const valueNode = (
-    <span
+  const valueStyle: React.CSSProperties = {
+    fontFamily: mono ? MONO : SANS,
+    fontSize: 15,
+    fontWeight: 600,
+    letterSpacing: mono ? '-0.02em' : '0',
+    color: href ? terminalColors.greenDeep : terminalColors.ink,
+    textDecoration: 'none',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    display: 'block',
+  }
+  return (
+    <div
       style={{
-        fontFamily: mono ? MONO : SANS,
-        fontSize: 15,
-        fontWeight: 600,
-        letterSpacing: mono ? '-0.02em' : '0',
-        color: color ?? terminalColors.ink,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 7,
+        minWidth: 0,
+        background: terminalColors.bg,
+        border: `1px solid ${terminalColors.line}`,
+        borderRadius: 12,
+        padding: '13px 15px',
       }}
     >
-      {value}
-    </span>
-  )
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
       <span
         style={{
           fontFamily: SANS,
-          fontSize: 11,
+          fontSize: 10.5,
           fontWeight: 600,
-          letterSpacing: '0.02em',
+          letterSpacing: '0.04em',
           textTransform: 'uppercase',
           color: terminalColors.ink3,
         }}
@@ -227,13 +341,13 @@ function Stat({
         {label}
       </span>
       {href ? (
-        <a href={href} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
-          <span style={{ fontFamily: mono ? MONO : SANS, fontSize: 15, fontWeight: 600, letterSpacing: mono ? '-0.02em' : '0', color: terminalColors.greenDeep }}>
-            {value}
-          </span>
+        <a href={href} target="_blank" rel="noopener noreferrer" style={valueStyle} title={value}>
+          {value}
         </a>
       ) : (
-        valueNode
+        <span style={valueStyle} title={value}>
+          {value}
+        </span>
       )}
     </div>
   )
@@ -250,7 +364,7 @@ const PAGE_WRAP: React.CSSProperties = {
 }
 
 function CenterCard({ children }: { children: React.ReactNode }): JSX.Element {
-  return <div style={{ width: '100%', maxWidth: 620 }}>{children}</div>
+  return <div style={{ width: '100%', maxWidth: 640 }}>{children}</div>
 }
 
 function ExploreFooter(): JSX.Element {
@@ -268,7 +382,7 @@ function ExploreFooter(): JSX.Element {
 function StateBox({ title, body, retry }: { title: string; body: string; retry?: () => void }): JSX.Element {
   return (
     <InstrumentPanel corners style={{ padding: 0 }}>
-      <div style={{ padding: '40px 28px', textAlign: 'center' }}>
+      <div style={{ padding: '48px 28px', textAlign: 'center' }}>
         <div style={{ fontFamily: DISPLAY, fontSize: 22, fontWeight: 600, letterSpacing: '-0.02em', color: terminalColors.ink, marginBottom: 10 }}>
           {title}
         </div>
@@ -388,43 +502,120 @@ function LaunchCard({ launch, onCopy, copied }: { launch: Launch; onCopy: () => 
   return (
     <InstrumentPanel corners style={{ padding: 0 }}>
       <div style={{ padding: '26px 26px 22px' }}>
-        {/* header: avatar + symbol + LP status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 22 }}>
-          <Avatar seed={launch.token.addr} initials={initials} logoUrl={resolveLedgerLogo(launch.chainId, launch.token.addr)} />
+        {/* ---------- identity hero ---------- */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+          <Avatar
+            seed={launch.token.addr}
+            initials={initials}
+            size={60}
+            logoUrl={resolveLedgerLogo(launch.chainId, launch.token.addr)}
+          />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontFamily: DISPLAY, fontSize: 24, fontWeight: 600, letterSpacing: '-0.02em', color: terminalColors.ink }}>
+              <span style={{ fontFamily: DISPLAY, fontSize: 28, fontWeight: 600, letterSpacing: '-0.02em', color: terminalColors.ink, lineHeight: 1.05 }}>
                 {launch.token.symbol || 'Unknown'}
               </span>
-              <LpPill locked={Boolean(launch.lpLocked)} />
+              <LpLockBadge
+                chainId={launch.chainId}
+                token={launch.token.addr as Address}
+                tokenId={parseTokenId(launch.tokenId)}
+                dex={launch.dex}
+                fallbackLocked={launch.lpLocked}
+              />
             </div>
-            <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3, marginTop: 3 }}>
-              {launch.token.name || 'Fair launch'} · {launch.chainName} · Launch #{launch.id}
+            <div
+              style={{
+                fontFamily: SANS,
+                fontSize: 13.5,
+                color: terminalColors.ink2,
+                marginTop: 4,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {launch.token.name || 'Fair launch'}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginTop: 11 }}>
+              <Pill>{launch.chainName}</Pill>
+              <Pill>{dexLabel}</Pill>
+              <Pill mono>{fmtFeeTier(launch.feeTier)}</Pill>
+              <Pill mono>#{launch.id}</Pill>
             </div>
           </div>
         </div>
 
-        {/* stat grid */}
+        {/* ---------- market-cap hero figure ---------- */}
+        <div
+          style={{
+            marginTop: 20,
+            padding: '16px 18px',
+            background: terminalColors.panel,
+            border: `1px solid ${terminalColors.line2}`,
+            borderRadius: 14,
+          }}
+        >
+          <div
+            style={{
+              fontFamily: SANS,
+              fontSize: 10.5,
+              fontWeight: 600,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: terminalColors.ink3,
+            }}
+          >
+            Market cap
+          </div>
+          <div
+            style={{
+              fontFamily: MONO,
+              fontSize: 40,
+              fontWeight: 600,
+              letterSpacing: '-0.03em',
+              color: terminalColors.ink,
+              lineHeight: 1.1,
+              marginTop: 4,
+            }}
+          >
+            {fmtUsd(launch.marketCapUsd)}
+          </div>
+        </div>
+
+        {/* ---------- KPI cards ---------- */}
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-            gap: '18px 20px',
-            padding: '18px 0',
-            borderTop: `1px solid ${terminalColors.line2}`,
-            borderBottom: `1px solid ${terminalColors.line2}`,
+            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+            gap: 12,
+            marginTop: 16,
           }}
         >
-          <Stat label="Market cap" value={fmtUsd(launch.marketCapUsd)} />
-          <Stat label="Total supply" value={`${fmtAmount(launch.token.totalSupply.formatted)} ${launch.token.symbol}`} />
-          <Stat label="DEX" value={dexLabel} mono={false} />
-          <Stat label="Fee tier" value={fmtFeeTier(launch.feeTier)} />
-          <Stat label="Creator" value={shortAddr(launch.creator)} href={creatorUrl} />
-          <Stat label="Launched on" value={fmtDate(launch.createdAt)} mono={false} />
+          <KpiCard label="Total supply" value={`${fmtAmount(launch.token.totalSupply.formatted)} ${launch.token.symbol}`} />
+          <KpiCard label="DEX" value={dexLabel} mono={false} />
+          <KpiCard label="Fee tier" value={fmtFeeTier(launch.feeTier)} />
+          <KpiCard label="Creator" value={shortAddr(launch.creator)} href={creatorUrl} />
+          <KpiCard label="Launched on" value={fmtDate(launch.createdAt)} mono={false} />
+          <KpiCard label="Market cap" value={fmtUsd(launch.marketCapUsd)} />
         </div>
 
-        {/* actions */}
-        <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>
+        {/* ---------- contract references ---------- */}
+        <div
+          style={{
+            marginTop: 16,
+            background: terminalColors.bg,
+            border: `1px solid ${terminalColors.line}`,
+            borderRadius: 12,
+            overflow: 'hidden',
+          }}
+        >
+          <ContractRow label="Token" value={shortAddr(launch.token.addr)} href={tokenUrl} />
+          <div style={{ height: 1, background: terminalColors.line2 }} />
+          <ContractRow label="Pool" value={shortAddr(launch.pool)} href={poolUrl} />
+        </div>
+
+        {/* ---------- actions ---------- */}
+        <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
           <button
             type="button"
             onClick={onCopy}
@@ -437,7 +628,7 @@ function LaunchCard({ launch, onCopy, copied }: { launch: Launch; onCopy: () => 
               background: terminalColors.brandGreen,
               border: 'none',
               borderRadius: 10,
-              padding: '11px 16px',
+              padding: '12px 16px',
               cursor: 'pointer',
             }}
           >
@@ -458,19 +649,13 @@ function LaunchCard({ launch, onCopy, copied }: { launch: Launch; onCopy: () => 
                 background: terminalColors.bg,
                 border: `1px solid ${terminalColors.line}`,
                 borderRadius: 10,
-                padding: '11px 16px',
+                padding: '12px 16px',
                 textDecoration: 'none',
               }}
             >
               View token ↗
             </a>
           ) : null}
-        </div>
-
-        {/* contract references */}
-        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <ContractRow label="Token" value={shortAddr(launch.token.addr)} href={tokenUrl} />
-          <ContractRow label="Pool" value={shortAddr(launch.pool)} href={poolUrl} />
         </div>
 
         <div style={{ textAlign: 'center' }}>
@@ -483,14 +668,25 @@ function LaunchCard({ launch, onCopy, copied }: { launch: Launch; onCopy: () => 
 
 function ContractRow({ label, value, href }: { label: string; value: string; href?: string }): JSX.Element {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-      <span style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.ink3 }}>{label}</span>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '11px 15px' }}>
+      <span
+        style={{
+          fontFamily: SANS,
+          fontSize: 11.5,
+          fontWeight: 600,
+          letterSpacing: '0.02em',
+          textTransform: 'uppercase',
+          color: terminalColors.ink3,
+        }}
+      >
+        {label}
+      </span>
       {href ? (
-        <a href={href} target="_blank" rel="noopener noreferrer" style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.greenDeep, textDecoration: 'none' }}>
+        <a href={href} target="_blank" rel="noopener noreferrer" style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 600, color: terminalColors.greenDeep, textDecoration: 'none' }}>
           {value} ↗
         </a>
       ) : (
-        <span style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.ink2 }}>{value}</span>
+        <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 600, color: terminalColors.ink2 }}>{value}</span>
       )}
     </div>
   )
@@ -499,37 +695,40 @@ function ContractRow({ label, value, href }: { label: string; value: string; hre
 /* ------------------------------------------------------------------ skeleton */
 
 function LaunchSkeleton(): JSX.Element {
-  const bar = (w: number | string, h: number): JSX.Element => (
-    <div style={{ width: w, height: h, borderRadius: 5, background: terminalColors.line2 }} />
+  const bar = (w: number | string, h: number, r = 6): JSX.Element => (
+    <div style={{ width: w, height: h, borderRadius: r, background: terminalColors.line2 }} />
   )
   return (
     <InstrumentPanel corners style={{ padding: 0 }}>
       <div style={{ padding: '26px 26px 22px' }} aria-busy="true">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 22 }}>
-          <div style={{ width: 46, height: 46, borderRadius: '50%', background: terminalColors.line2 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {bar(120, 20)}
-            {bar(180, 12)}
+        {/* identity */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+          <div style={{ width: 60, height: 60, borderRadius: '50%', background: terminalColors.line2, flexShrink: 0 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9, flex: 1 }}>
+            {bar(130, 24)}
+            {bar(180, 13)}
+            <div style={{ display: 'flex', gap: 7, marginTop: 2 }}>
+              {bar(70, 20, 999)}
+              {bar(80, 20, 999)}
+              {bar(54, 20, 999)}
+            </div>
           </div>
         </div>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-            gap: '18px 20px',
-            padding: '18px 0',
-            borderTop: `1px solid ${terminalColors.line2}`,
-            borderBottom: `1px solid ${terminalColors.line2}`,
-          }}
-        >
+        {/* hero market cap */}
+        <div style={{ marginTop: 20, padding: '16px 18px', background: terminalColors.panel, border: `1px solid ${terminalColors.line2}`, borderRadius: 14, display: 'flex', flexDirection: 'column', gap: 9 }}>
+          {bar(72, 11)}
+          {bar(160, 34)}
+        </div>
+        {/* kpi cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginTop: 16 }}>
           {Array.from({ length: 6 }, (_, i) => (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {bar(64, 10)}
-              {bar(96, 15)}
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8, background: terminalColors.bg, border: `1px solid ${terminalColors.line}`, borderRadius: 12, padding: '13px 15px' }}>
+              {bar(60, 10)}
+              {bar(92, 15)}
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 20 }}>{bar('100%', 42)}</div>
+        <div style={{ marginTop: 16 }}>{bar('100%', 46, 10)}</div>
       </div>
     </InstrumentPanel>
   )

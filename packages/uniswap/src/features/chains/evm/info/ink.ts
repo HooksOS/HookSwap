@@ -92,7 +92,7 @@ export const INK_CHAIN_INFO = {
     },
   },
   supportedURVersions: [TradingApi.UniversalRouterVersion._2_0],
-  supportsV4: false,
+  supportsV4: true,
   supportsNFTs: false,
   tokens,
   urlParam: CHAIN_ID_TO_URL_PARAM[UniverseChainId.Ink],

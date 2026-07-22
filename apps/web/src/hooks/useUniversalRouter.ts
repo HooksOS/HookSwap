@@ -1,5 +1,6 @@
 import { TransactionResponse } from '@ethersproject/abstract-provider'
 import { BigNumber } from '@ethersproject/bignumber'
+import { Protocol } from '@uniswap/router-sdk'
 import { Percent } from '@uniswap/sdk-core'
 import { FlatFeeOptions, SwapRouter, UniversalRouterVersion } from '@uniswap/universal-router-sdk'
 import { FeeOptions, toHex } from '@uniswap/v3-sdk'
@@ -25,7 +26,7 @@ import { formatCommonPropertiesForTrade, formatSwapSignedAnalyticsEventPropertie
 import { useMultichainContext } from '~/state/multichain/useMultichainContext'
 import { ClassicTrade, TradeFillType } from '~/state/routing/types'
 import { useUserSlippageTolerance } from '~/state/user/hooks'
-import { hookswapUniversalRouterAddress } from '~/constants/hookswapUniversalRouter'
+import { hookswapUniversalRouterAddress, hookswapV4UniversalRouterAddress } from '~/constants/hookswapUniversalRouter'
 import { calculateGasMargin } from '~/utils/calculateGasMargin'
 import { UserRejectedRequestError, WrongChainError } from '~/utils/errors'
 import { isZero } from '~/utils/isZero'
@@ -115,9 +116,23 @@ export function useUniversalRouterSwapCallback({
         fee: options.feeOptions,
         flatFee: options.flatFeeOptions,
       })
+      // A v4 route emits V4_SWAP commands that only a v4-capable (canonical) Universal
+      // Router can execute — HookSwap's own URs were deployed with v4PoolManager=0 and
+      // would revert. Route v4 trades to the canonical v4 UR; keep v2/v3 on the own UR.
+      const isV4Trade = trade.swaps.some((s) => s.route.protocol === Protocol.V4)
+      let routerAddress: string | undefined
+      if (isV4Trade) {
+        routerAddress = hookswapV4UniversalRouterAddress(chainId)
+        if (!routerAddress) {
+          throw new Error(`No v4-capable Universal Router configured for chain ${chainId}`)
+        }
+      } else {
+        routerAddress = hookswapUniversalRouterAddress(UniversalRouterVersion.V1_2, chainId)
+      }
+
       const tx = {
         from: account.address,
-        to: hookswapUniversalRouterAddress(UniversalRouterVersion.V1_2, chainId),
+        to: routerAddress,
         data,
         // TODO(https://github.com/Uniswap/universal-router-sdk/issues/113): universal-router-sdk returns a non-hexlified value.
         ...(value && !isZero(value) ? { value: toHex(value) } : {}),

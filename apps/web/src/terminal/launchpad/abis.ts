@@ -286,3 +286,20 @@ export const hookOSV3FeeVaultAbi = [
     ],
   },
 ] as const
+
+/* ------------------------------------------------- LP Position Manager (NFT) */
+
+/**
+ * Minimal position-manager ABI — only `ownerOf(tokenId)`, used to detect an LP position
+ * NFT held by an immutable custody holder (permanent lock by custody). Matches the ERC-721
+ * `ownerOf` on the Uniswap V3 / HookSwap NonfungiblePositionManagers.
+ */
+export const positionManagerAbi = [
+  {
+    type: 'function',
+    name: 'ownerOf',
+    stateMutability: 'view',
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    outputs: [{ name: 'owner', type: 'address' }],
+  },
+] as const
