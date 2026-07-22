@@ -4,16 +4,10 @@
 > address book — the DEX stack **plus** the self-service suite (locker, farms, vesting, token
 > factory, airdrop, LaunchPad) per chain — see [deployed-contracts.md](./deployed-contracts.md).
 
-The canonical address reference for the HookSwap stack. Values are pulled **verbatim** from
-`contracts/deployments/*.json` (HookSwap-owned deploys) and, for Sepolia, from the canonical
-testnet deployment. A machine-readable copy lives at
-[`launchpad-integration/addresses.json`](../../launchpad-integration/addresses.json).
+The canonical address reference for the HookSwap DEX stack — the contracts you integrate
+against (factories, routers, quoter, position manager, WETH) per chain.
 
-- **Deployer** (all 6 custom chains): `0xc14C897c6bff88a5Eeac31F795693b9230205125`
 - **Permit2** (every chain, canonical CREATE2): `0x000000000022D473030F116dDEE9F6B43aC78BA3`
-- **Init code hashes** (canonical, identical everywhere):
-  - v2 pair: `0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f`
-  - v3 pool: `0xe34f199b19b2b4f47f68442619d555527d244f78a3297ea89325f843f87b8b54`
 
 ## Deterministic group — MegaETH (4326), Robinhood (4663), Ink (57073)
 

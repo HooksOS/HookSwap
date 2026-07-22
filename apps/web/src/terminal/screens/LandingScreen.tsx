@@ -1829,66 +1829,6 @@ function LandingScreenBody(): JSX.Element {
           </div>
         </div>
 
-        {/* ------------------------------------------------- FEATURE GRID */}
-        <div style={{ padding: `14px ${padX}px 20px`, borderTop: `1px solid ${terminalColors.line2}` }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginTop: 26 }}>
-            <div style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 27, letterSpacing: '-0.02em', color: terminalColors.ink }}>
-              Everything in one terminal
-            </div>
-            <Eyebrow>Launch · Trade · Earn · Track</Eyebrow>
-          </div>
-          <div style={{ fontFamily: SANS, fontSize: 14.5, color: terminalColors.ink2, marginTop: 6 }}>
-            Trade, earn, and track across HookSwap&apos;s own v2 + v3 deployments on every chain.
-          </div>
-
-          {FEATURE_GROUPS.map((group) => (
-            <div key={group.label}>
-              <div style={{ display: 'grid', gridTemplateColumns: featureCols(group.features.length), gap: 14, marginTop: 20 }}>
-                {group.features.map((feature, fi) => (
-                  <button
-                    key={feature.title}
-                    type="button"
-                    onClick={() => navigate(feature.path)}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = terminalColors.greenBg
-                      e.currentTarget.style.borderColor = terminalColors.greenBorder
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = terminalColors.bg
-                      e.currentTarget.style.borderColor = terminalColors.line
-                    }}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'flex-start',
-                      textAlign: 'left',
-                      background: terminalColors.bg,
-                      border: `1px solid ${terminalColors.line}`,
-                      borderRadius: 10,
-                      padding: 18,
-                      cursor: 'pointer',
-                      minWidth: 0,
-                      transition: 'background 140ms ease, border-color 140ms ease',
-                    }}
-                  >
-                    <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', color: terminalColors.faint }}>
-                      {String(fi + 1).padStart(2, '0')} · {group.label}
-                    </span>
-                    <span style={{ fontFamily: SANS, fontWeight: 600, fontSize: 16, color: terminalColors.ink, marginTop: 22 }}>
-                      {feature.title}
-                    </span>
-                    <span style={{ fontFamily: SANS, fontSize: 13, color: terminalColors.ink3, lineHeight: 1.45, marginTop: 7, flex: 1 }}>
-                      {feature.desc}
-                    </span>
-                    <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: terminalColors.brandGreen, marginTop: 14 }}>
-                      {feature.cta} →
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
 
         {/* ---------------------------------------------- WHY HOOKSWAP (replaces hook marketplace) */}
         <div style={{ padding: `20px ${padX}px 20px` }}>
