@@ -229,14 +229,19 @@ export async function startServer(
         return json(res, 200, { pool: agg ?? null, locks: sortLocks(locks, "tvl") });
       }
 
-      // GET /lock/:chainId/:id
-      m = path.match(/^\/lock\/(\d+)\/(\d+)$/);
+      // GET /lock/:chainId/:idOrToken — :idOrToken is a numeric lock id OR the locked
+      // token ADDRESS (self-describing shareable URL). Address resolves to that token's
+      // lock (first match, matching the Explore link).
+      m = path.match(/^\/lock\/(\d+)\/([^/]+)$/);
       if (m) {
         const cid = Number(m[1]);
-        const id = Number(m[2]);
-        const lock = snap.locks.find((l) => l.chainId === cid && l.id === id);
+        const ref = m[2];
+        const isAddr = /^0x[0-9a-fA-F]{40}$/.test(ref);
+        const lock = isAddr
+          ? snap.locks.find((l) => l.chainId === cid && l.token.toLowerCase() === ref.toLowerCase())
+          : snap.locks.find((l) => l.chainId === cid && l.id === Number(ref));
         if (!lock) {
-          return json(res, 404, { error: "lock not found", chainId: cid, id });
+          return json(res, 404, { error: "lock not found", chainId: cid, ref });
         }
         return json(res, 200, { lock });
       }

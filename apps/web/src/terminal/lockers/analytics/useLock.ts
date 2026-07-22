@@ -21,16 +21,19 @@ export interface UseLock {
 }
 
 /** Whether the chain + id pair is a well-formed lookup (non-negative integers). */
-function isValidRef(chainId: number, id: number): boolean {
-  return Number.isInteger(chainId) && chainId > 0 && Number.isInteger(id) && id >= 0
+function isValidRef(chainId: number, idOrToken: number | string): boolean {
+  if (!(Number.isInteger(chainId) && chainId > 0)) {
+    return false
+  }
+  return typeof idOrToken === 'number' ? Number.isInteger(idOrToken) && idOrToken >= 0 : idOrToken.trim().length > 0
 }
 
-export function useLock(chainId: number, id: number): UseLock {
-  const enabled = isValidRef(chainId, id)
+export function useLock(chainId: number, idOrToken: number | string): UseLock {
+  const enabled = isValidRef(chainId, idOrToken)
 
   const query = useQuery({
-    queryKey: ['locker-lock', chainId, id],
-    queryFn: ({ signal }) => lockerApi.getLock(chainId, id, signal),
+    queryKey: ['locker-lock', chainId, idOrToken],
+    queryFn: ({ signal }) => lockerApi.getLock(chainId, idOrToken, signal),
     enabled,
     staleTime: 30_000,
     refetchOnWindowFocus: false,

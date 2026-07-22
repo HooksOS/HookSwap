@@ -261,7 +261,7 @@ export const lockerApi = {
    * Returns the real `Lock` or throws `LockerApiError` (`status: 404` when the lock doesn't
    * exist; `unreachable: true` when the indexer is offline). Never fabricates a lock.
    */
-  getLock(chainId: number, id: number, signal?: AbortSignal): Promise<Lock> {
-    return lockerFetch<{ lock: Lock }>(`/lock/${chainId}/${id}`, { signal }).then((r) => r.lock)
+  getLock(chainId: number, idOrToken: number | string, signal?: AbortSignal): Promise<Lock> {
+    return lockerFetch<{ lock: Lock }>(`/lock/${chainId}/${idOrToken}`, { signal }).then((r) => r.lock)
   },
 }

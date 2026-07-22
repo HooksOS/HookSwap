@@ -382,7 +382,7 @@ export function LockerExplore(): JSX.Element {
     for (const l of locks) {
       const key = `${l.chainId}-${l.token.toLowerCase()}`
       if (!m.has(key)) {
-        m.set(key, `/lock/${l.chainId}/${l.id}`)
+        m.set(key, `/lock/${l.chainId}/${l.token}`)
       }
     }
     return m

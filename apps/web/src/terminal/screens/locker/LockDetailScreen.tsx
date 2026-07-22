@@ -325,9 +325,9 @@ function ExploreFooter(): JSX.Element {
 export function LockDetailScreen(): JSX.Element {
   const params = useParams<{ chainId: string; id: string }>()
   const chainId = Number(params.chainId)
-  const id = Number(params.id)
+  const idOrToken = params.id ?? ''
 
-  const { lock, isLoading, notFound, error, refetch } = useLock(chainId, id)
+  const { lock, isLoading, notFound, error, refetch } = useLock(chainId, idOrToken)
 
   const [copied, setCopied] = useState(false)
   const onCopy = (): void => {
