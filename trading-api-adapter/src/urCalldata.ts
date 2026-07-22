@@ -28,6 +28,11 @@ const EXECUTE_NO_DEADLINE = '0x24856bc3' //   execute(bytes,bytes[])
 const COMMAND_TYPE_MASK = 0x3f
 
 // Only these swap commands carry the trailing `minHopPriceX36` in the deployed fork.
+// NOTE (v4): V4_SWAP (command 0x10) is NOT patched here and passes through unchanged. embedRouter.ts
+// quoteV4Single now DOES assemble UR-v4 swap calldata (V4Planner), but ONLY for chains whose v4 UR is
+// standard — Sepolia's canonical v4 UR needs no shim. Robinhood's v4 UR (0x8876…C0904) is itself a
+// minHopPriceX36 fork whose V4_SWAP action encoding is NOT yet verified on-chain, so embedRouter gates
+// RH to quote-only (V4_SWAP_CALLDATA_UNVERIFIED_CHAINS) — this shim can't fix 0x10 anyway.
 const V3_SWAP_EXACT_IN = 0x00
 const V3_SWAP_EXACT_OUT = 0x01
 const V2_SWAP_EXACT_IN = 0x08

@@ -105,7 +105,21 @@ export interface V2PoolInRoute {
   amountOut?: string
 }
 
-export type PoolInRoute = V2PoolInRoute | V3PoolInRoute
+export interface V4PoolInRoute {
+  type?: string // 'v4-pool'
+  tokenIn?: TokenInRoute
+  tokenOut?: TokenInRoute
+  fee?: string
+  tickSpacing?: string
+  hooks?: string
+  sqrtRatioX96?: string
+  liquidity?: string
+  tickCurrent?: string
+  amountIn?: string
+  amountOut?: string
+}
+
+export type PoolInRoute = V2PoolInRoute | V3PoolInRoute | V4PoolInRoute
 
 export interface QuoteInput {
   amount?: string

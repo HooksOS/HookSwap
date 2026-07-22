@@ -100,6 +100,24 @@ export interface ChainStatus {
   lastIndexedAt: number | null; // ms epoch of last successful index
 }
 
+/**
+ * Native-denominated locked total for one (chain, token). No USD is ever involved
+ * here — this is the real on-chain summed locked amount (raw base units + a
+ * human-readable form), so chains with no USD price anchor (e.g. HOOK on Robinhood)
+ * still have a real, plottable locked figure. Excludes LP locks (those aggregate
+ * into pools); one entry per non-LP token per chain.
+ */
+export interface NativeLockedToken {
+  chainId: number;
+  chainName: string;
+  token: `0x${string}`;
+  symbol: string;
+  decimals: number;
+  /** Summed locked amount across all locks of this token on this chain (raw + formatted). */
+  totalLocked: Amount;
+  lockCount: number;
+}
+
 export interface GlobalStats {
   totalLocks: number;
   /** Sum of priced lock values. Omitted when no lock could be priced. */
@@ -110,6 +128,12 @@ export interface GlobalStats {
   newLocks24h: number;
   chains: number;
   reachableChains: number;
+  /**
+   * Per-(chain, token) native-denominated locked totals (never a USD figure).
+   * Enables a real native locked curve/aggregate on unpriceable chains. Empty
+   * array when there are no non-LP token locks.
+   */
+  nativeLockedByToken: NativeLockedToken[];
 }
 
 export interface LockerSnapshot {
@@ -490,6 +514,58 @@ function buildPoolAggs(locks: Lock[]): PoolAgg[] {
   return out.sort((x, y) => (y.tvlUsd ?? -1) - (x.tvlUsd ?? -1) || y.lockCount - x.lockCount);
 }
 
+/**
+ * Native-denominated locked totals per (chain, token) — no pricing, only real
+ * on-chain summed amounts. Excludes LP locks (they aggregate into pools). This is
+ * the honest fallback for chains with no USD anchor.
+ */
+function buildNativeLockedByToken(locks: Lock[]): NativeLockedToken[] {
+  const map = new Map<
+    string,
+    {
+      chainId: number;
+      chainName: string;
+      token: `0x${string}`;
+      symbol: string;
+      decimals: number;
+      raw: bigint;
+      lockCount: number;
+    }
+  >();
+  for (const l of locks) {
+    if (l.isLpToken) continue; // LP locks aggregate into pools, not per-token natives
+    const key = `${l.chainId}:${l.token.toLowerCase()}`;
+    let a = map.get(key);
+    if (!a) {
+      a = {
+        chainId: l.chainId,
+        chainName: l.chainName,
+        token: l.token,
+        symbol: l.symbol,
+        decimals: l.decimals,
+        raw: 0n,
+        lockCount: 0,
+      };
+      map.set(key, a);
+    }
+    a.raw += BigInt(l.amount.raw);
+    a.lockCount += 1;
+  }
+  const out: NativeLockedToken[] = [];
+  for (const a of map.values()) {
+    out.push({
+      chainId: a.chainId,
+      chainName: a.chainName,
+      token: a.token,
+      symbol: a.symbol,
+      decimals: a.decimals,
+      totalLocked: amt(a.raw, a.decimals),
+      lockCount: a.lockCount,
+    });
+  }
+  return out.sort((x, y) => y.lockCount - x.lockCount);
+}
+
 function buildStats(locks: Lock[], chains: ChainStatus[], nowSec: number): GlobalStats {
   let priced = 0;
   let unpriced = 0;
@@ -513,6 +589,7 @@ function buildStats(locks: Lock[], chains: ChainStatus[], nowSec: number): Globa
     newLocks24h: new24h,
     chains: chains.length,
     reachableChains: chains.filter((c) => c.reachable).length,
+    nativeLockedByToken: buildNativeLockedByToken(locks),
   };
 }
 

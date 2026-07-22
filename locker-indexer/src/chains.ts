@@ -172,6 +172,45 @@ export function launchpadConfig(chainId: number): LaunchpadConfig | undefined {
   return LAUNCHPAD_CONFIG[chainId];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LaunchPad LP custody-lock recognition (parity with the frontend
+// apps/web/src/terminal/launchpad/{addresses,useLpLock}.ts). A launch's LP
+// position NFT owned by one of these IMMUTABLE-custody holders — contracts with NO
+// decreaseLiquidity/burn/withdraw/transferFrom path, so the NFT can never leave and
+// only fees are ever collected — is permanently locked BY CUSTODY. This is a
+// POSITIVE signal only (OR'd with the FeeVault lock flag); it NEVER overrides a
+// genuine unlocked reading. Verified on-chain (Robinhood 4663). Registry-style /
+// extensible: add a chain by adding its holders here.
+// ─────────────────────────────────────────────────────────────────────────────
+export const RECOGNIZED_LP_CUSTODY_ADDRESSES: Record<number, `0x${string}`[]> = {
+  4663: [
+    "0x2974cE6341067398A5C1E6c0C14F99ED1C3122EF", // HookOSV3FeeVault (v3 launches)
+    "0xa3df1c2969452ad3F0C3ca041430E2a8EE2ffa80", // LPFeeSplitter (flagship $HOOK, v4)
+  ],
+};
+
+/** Immutable-custody LP holders for a chain (locked-by-custody allowlist), or []. */
+export function recognizedLpCustody(chainId: number): `0x${string}`[] {
+  return RECOGNIZED_LP_CUSTODY_ADDRESSES[chainId] ?? [];
+}
+
+// Launch LP position-manager NFT (NPM) keyed by the launch's `dex` enum, per chain.
+// A launch's LP position NFT lives on the NPM of the DEX it seeded on, so ownerOf
+// (for the custody-lock check above) must be read on the RIGHT manager. Verified
+// on-chain (Robinhood 4663): dex 0 = Uniswap v3 NPM, dex 1 = HookSwap v3 NPM.
+// Registry-style / extensible: add a chain (and its per-dex NPMs) here.
+export const LAUNCHPAD_NPM_BY_DEX: Record<number, Record<number, `0x${string}`>> = {
+  4663: {
+    0: "0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3", // UniswapV3 NPM (dex 0)
+    1: "0xbd817036c5bF69Cb27D3A342129e39f9f908577d", // HookSwap NPM (dex 1)
+  },
+};
+
+/** The LP position-manager NFT for a launch's `dex` on a chain, or undefined. */
+export function launchpadNpmForDex(chainId: number, dex: number): `0x${string}` | undefined {
+  return LAUNCHPAD_NPM_BY_DEX[chainId]?.[dex];
+}
+
 // Canonical Multicall3 — same address on every EVM chain (incl. all HookSwap
 // chains + Sepolia). Passed explicitly because clients are created transport-only
 // (no `chain`), so viem cannot infer a multicall address.

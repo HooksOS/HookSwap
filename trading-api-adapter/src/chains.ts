@@ -36,8 +36,23 @@ export interface ChainConfig {
   universalRouter: string
   multicall2: string
   permit2: string
-  /** protocols to request from routing-api for this chain. v2+v3 only (no v4). */
-  protocols: Array<'v2' | 'v3'>
+  /** protocols to request for this chain. v4 is added only where canonical Uniswap v4 exists. */
+  protocols: Array<'v2' | 'v3' | 'v4'>
+  // ---- canonical Uniswap v4 infra (V4-ENABLEMENT-PLAN.md §4) — set ONLY on capable chains ----
+  /** IV4Quoter (single-hop `quoteExactInputSingle`/`quoteExactOutputSingle`). */
+  v4Quoter?: string
+  /** v4 PoolManager (singleton). Informational; the quoter reads it. */
+  v4PoolManager?: string
+  /** StateView (getSlot0 / getLiquidity). Informational for now. */
+  v4StateView?: string
+  /** canonical v4-capable Universal Router (executes V4_SWAP). HookSwap's own UR keeps v2/v3. */
+  universalRouterV4?: string
+  /**
+   * Configured v4 single-hop pools for this chain (esp. HOOKED pools that the hookless
+   * fee-tier enumeration can't discover — e.g. HOOK on Robinhood). Each is a full v4 PoolKey.
+   * Only add entries whose fields are on-chain VERIFIED — never fabricate a pool key.
+   */
+  v4Pools?: Array<{ currency0: string; currency1: string; fee: number; tickSpacing: number; hooks: string }>
   /** contracts fully live? HyperEVM v3 quoter still pending per deployments/hyperevm.json. */
   ready: boolean
   /**
@@ -68,7 +83,12 @@ export const CHAINS: Record<number, ChainConfig> = {
     universalRouter: '0x3D30133F4d4A80684F02d8310faF572E3dc193b3',
     multicall2: '0xfEb3eA6212761c1891389e77ee5Bf27c3b385E1A',
     permit2: PERMIT2,
-    protocols: ['v2', 'v3'],
+    protocols: ['v2', 'v3', 'v4'],
+    // canonical Uniswap v4 (V4-ENABLEMENT-PLAN.md §4)
+    v4Quoter: '0x94bdc671f0c35f44a1daa53143fd1f868d1623b9',
+    v4PoolManager: '0xacb7e78fa05d562e0a5d3089ec896d57d057d38e',
+    v4StateView: '0x726f84e1dfb8d375a365e0808282f40d52d3e4e8',
+    universalRouterV4: '0x47837eb80db5908eabba9105626d9b348bea7b02',
     ready: true,
   },
 
@@ -89,7 +109,27 @@ export const CHAINS: Record<number, ChainConfig> = {
     universalRouter: '0x3D30133F4d4A80684F02d8310faF572E3dc193b3',
     multicall2: '0xfEb3eA6212761c1891389e77ee5Bf27c3b385E1A',
     permit2: PERMIT2,
-    protocols: ['v2', 'v3'],
+    protocols: ['v2', 'v3', 'v4'],
+    // canonical Uniswap v4 (V4-ENABLEMENT-PLAN.md §4). NOTE: this v4 UR (0x8876…C0904) is
+    // itself a `minHopPriceX36` fork — its V4_SWAP handling must be verified on-chain before
+    // RH v4 SWAP execution is enabled (see urCalldata.ts). v4 QUOTING is unaffected.
+    v4Quoter: '0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94',
+    v4PoolManager: '0x8366a39cc670b4001a1121b8f6a443a643e40951',
+    v4StateView: '0xF3334192D15450CdD385c8B70e03f9A6bD9E673b',
+    universalRouterV4: '0x8876789976dEcBfCbBbe364623C63652db8C0904',
+    // v4Pools (ON-CHAIN VERIFIED): the only live HOOK pool = USDG/HOOK. HOOK is NOT a hooked pool
+    // (hooks=0x0), but its fee 650000 / tickSpacing 13000 are NON-STANDARD, so it is discoverable
+    // ONLY via this configured entry (the {100/500/3000/10000} tier enumeration would miss it).
+    // Near-illiquid today → dust quotes only until liquidity is seeded (expected).
+    v4Pools: [
+      {
+        currency0: '0x5fc5360d0400a0fd4f2af552add042d716f1d168', // USDG
+        currency1: '0x85d4e6f147bfb5729378e451f32cf5287de75f97', // HOOK
+        fee: 650000,
+        tickSpacing: 13000,
+        hooks: '0x0000000000000000000000000000000000000000',
+      },
+    ],
     ready: true,
     // Seeded WETH/tHOOK v2 pool (contracts/seed/broadcast/SeedPools.s.sol/4663/run-latest.json).
     seededTokens: [{ address: '0x3b5a01Efc59f3465b8Eb04697f97CFE0BA700D9D', symbol: 'tHOOK', name: 'Test Hook Token', decimals: 18 }],
@@ -112,7 +152,12 @@ export const CHAINS: Record<number, ChainConfig> = {
     universalRouter: '0x3D30133F4d4A80684F02d8310faF572E3dc193b3',
     multicall2: '0xfEb3eA6212761c1891389e77ee5Bf27c3b385E1A',
     permit2: PERMIT2,
-    protocols: ['v2', 'v3'],
+    protocols: ['v2', 'v3', 'v4'],
+    // canonical Uniswap v4 (V4-ENABLEMENT-PLAN.md §4)
+    v4Quoter: '0x3972c00f7ed4885e145823eb7c655375d275a1c5',
+    v4PoolManager: '0x360e68faccca8ca495c1b759fd9eee466db9fb32',
+    v4StateView: '0x76fd297e2d437cd7f76d50f01afe6160f86e9990',
+    universalRouterV4: '0x112908dac86e20e7241b0927479ea3bf935d1fa0',
     ready: true,
   },
 
@@ -133,7 +178,12 @@ export const CHAINS: Record<number, ChainConfig> = {
     universalRouter: '0x6d8a0783213B3b06648DB3708a89732af3661005',
     multicall2: '0xA24cD888adAF42011a49d8Eaedb2Fe751C54e7E2',
     permit2: PERMIT2,
-    protocols: ['v2', 'v3'],
+    protocols: ['v2', 'v3', 'v4'],
+    // canonical Uniswap v4 (V4-ENABLEMENT-PLAN.md §4)
+    v4Quoter: '0x8928074ca1b241d8ec02815881c1af11e8bc5219',
+    v4PoolManager: '0x360e68faccca8ca495c1b759fd9eee466db9fb32',
+    v4StateView: '0x76fd297e2d437cd7f76d50f01afe6160f86e9990',
+    universalRouterV4: '0xda00ae15d3a71466517129255255db7c0c0956d3',
     ready: true,
   },
 
@@ -176,7 +226,12 @@ export const CHAINS: Record<number, ChainConfig> = {
     universalRouter: '0x62aE013cb2b232C20094B466C94bb39714eF661E',
     multicall2: '0xfEb3eA6212761c1891389e77ee5Bf27c3b385E1A',
     permit2: PERMIT2,
-    protocols: ['v2', 'v3'],
+    protocols: ['v2', 'v3', 'v4'],
+    // canonical Uniswap v4 (V4-ENABLEMENT-PLAN.md §4)
+    v4Quoter: '0x20e6487c371a2086f841ef453f85378223df4f4e',
+    v4PoolManager: '0x33620f62c5b9b2086dd6b62f4a297a9f30347029',
+    v4StateView: '0x21b954fba3f5ddebe77ef2d47a3100c066908b2a',
+    universalRouterV4: '0xa2dc7d0266f0cc50b3eeaf36c9bfcecff1beea91',
     // quoter now filled; kept false because native gas = pathUSD (ERC-20), an
     // unusual model that needs on-chain validation before GA (see tempo.json).
     ready: false,
@@ -200,7 +255,24 @@ export const CHAINS: Record<number, ChainConfig> = {
     universalRouter: '0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b',
     multicall2: '0xca11bde05977b3631167028862be2a173976ca11',
     permit2: PERMIT2,
-    protocols: ['v2', 'v3'],
+    protocols: ['v2', 'v3', 'v4'],
+    // canonical Uniswap v4 (V4-ENABLEMENT-PLAN.md §4). Sepolia = mandatory validation chain.
+    v4Quoter: '0x61b3f2011a92d183c7dbadbda940a7555ccf9227',
+    v4PoolManager: '0xE03A1074c86CFeDd5C142C4F04F1a1536e203543',
+    v4StateView: '0xe1dd9c3fa50edb962e442f60dfbc432e24537e4c',
+    universalRouterV4: '0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b',
+    // v4Pools (ON-CHAIN VERIFIED): a real liquid native-ETH/0x389f pool — the v4 quoting
+    // validation pool for Sepolia (proven: 0.001 ETH in -> 319171.74 out). fee 10000 / tickSpacing
+    // 200 IS a standard tier (enumeration would also find it), but configured here for determinism.
+    v4Pools: [
+      {
+        currency0: '0x0000000000000000000000000000000000000000', // native ETH
+        currency1: '0x389f67f7ee5331a0e9e0857dcf6b6ce89291565c',
+        fee: 10000,
+        tickSpacing: 200,
+        hooks: '0x0000000000000000000000000000000000000000',
+      },
+    ],
     ready: true,
   },
 }

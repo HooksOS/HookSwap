@@ -8,7 +8,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { dirname } from "path";
 import { ENV } from "./env.js";
-import type { LockerSnapshot } from "./indexer.js";
+import type { LockerSnapshot, NativeLockedToken } from "./indexer.js";
 
 const SNAPSHOT_VERSION = 1;
 
@@ -28,6 +28,13 @@ export interface TVLSnapshot {
   totalTvlUsd?: number;
   totalLocks: number;
   perChain: PerChainTvl[];
+  /**
+   * Per-(chain, token) native-denominated locked totals for this day (raw +
+   * formatted) — never a USD figure. Lets the frontend plot a real native
+   * locks-over-time curve on chains with no USD price anchor (where totalTvlUsd is
+   * honestly omitted). Optional for backward-compat with pre-existing history files.
+   */
+  nativeLockedByToken?: NativeLockedToken[];
 }
 
 interface HistoryFile {
@@ -79,6 +86,7 @@ export class TvlHistory {
         tvlUsd: c.tvlUsd,
         reachable: c.reachable,
       })),
+      nativeLockedByToken: snap.stats.nativeLockedByToken,
     };
     const idx = this.points.findIndex((p) => p.dateISO === dateISO);
     if (idx >= 0) this.points[idx] = point;

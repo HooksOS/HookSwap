@@ -25,6 +25,7 @@ import {
 } from '@uniswap/smart-order-router'
 import { CurrencyAmount, Percent, Token, TradeType, type Currency } from '@uniswap/sdk-core'
 import { Protocol } from '@uniswap/router-sdk'
+import { Actions, URVersion, V4Planner } from '@uniswap/v4-sdk'
 import { ethers } from 'ethers'
 import type { ChainConfig } from './chains'
 import { resolveRpcUrl } from './chains'
@@ -48,6 +49,80 @@ const NATIVE_ADDRESSES = new Set([
 
 function isNativeAddress(address: string): boolean {
   return NATIVE_ADDRESSES.has(address.toLowerCase())
+}
+
+// ---------------------------------------------------------------------------
+// Uniswap v4 single-hop quoting (direct on-chain, separate from the SOR v2/v3 path).
+// ---------------------------------------------------------------------------
+
+/** v4 uses address(0) for the native currency; it always sorts as currency0. */
+const V4_ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
+
+/** Universal Router `V4_SWAP` command (top bit = FLAG_ALLOW_REVERT, unset here). */
+const UR_COMMAND_V4_SWAP = 0x10
+
+/**
+ * Universal Router entrypoint used to assemble v4 swap calldata. The deadline variant
+ * (selector 0x3593564c) matches every deployed HookSwap UR + the canonical Sepolia v4 UR.
+ */
+const UR_EXECUTE_IFACE = new ethers.utils.Interface([
+  'function execute(bytes commands, bytes[] inputs, uint256 deadline)',
+])
+
+/**
+ * Chains whose v4 Universal Router is a NON-standard `minHopPriceX36` fork whose `V4_SWAP`
+ * (0x10) action decoding has NOT been verified on-chain yet. We DO NOT emit v4 swap calldata
+ * for these — quote-only until a testnet swap proves the deployed fork's V4_SWAP layout.
+ * `patchMinHopPriceCalldata` only patches v2/v3 commands (0x00/0x01/0x08/0x09), NOT 0x10, so it
+ * cannot make RH v4 calldata correct either. Robinhood (4663): v4 UR 0x8876…C0904 is such a fork.
+ * (Sepolia/Ink/MegaETH/XLayer/Tempo v4 URs are standard → calldata is emitted.)
+ */
+const V4_SWAP_CALLDATA_UNVERIFIED_CHAINS = new Set<number>([4663])
+
+/**
+ * Canonical v4 periphery `IV4Quoter` single-hop interface (state-modifying → call via callStatic).
+ * Takes ONE `QuoteExactSingleParams` struct: `{ PoolKey poolKey; bool zeroForOne; uint128 exactAmount;
+ * bytes hookData; }` where `PoolKey = (address currency0, address currency1, uint24 fee,
+ * int24 tickSpacing, address hooks)`. Returns `(uint256 amount, uint256 gasEstimate)` — `amount` is
+ * the OUTPUT for quoteExactInputSingle and the required INPUT for quoteExactOutputSingle.
+ */
+const V4_QUOTER_ABI = [
+  'function quoteExactInputSingle(((address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, bool zeroForOne, uint128 exactAmount, bytes hookData) params) returns (uint256 amount, uint256 gasEstimate)',
+  'function quoteExactOutputSingle(((address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, bool zeroForOne, uint128 exactAmount, bytes hookData) params) returns (uint256 amount, uint256 gasEstimate)',
+]
+
+/** Standard hookless fee tiers enumerated when no v4 pool is explicitly configured for a pair. */
+const V4_STD_FEE_TIERS: Array<{ fee: number; tickSpacing: number }> = [
+  { fee: 100, tickSpacing: 1 },
+  { fee: 500, tickSpacing: 10 },
+  { fee: 3000, tickSpacing: 60 },
+  { fee: 10000, tickSpacing: 200 },
+]
+
+interface V4PoolKey {
+  currency0: string
+  currency1: string
+  fee: number
+  tickSpacing: number
+  hooks: string
+}
+
+/**
+ * Pick the better of two classic-quote responses. For EXACT_INPUT the larger `quote` (output amount)
+ * wins; for EXACT_OUTPUT the smaller `quote` (required input) wins. Returns whichever exists when
+ * only one is present, or undefined when neither is.
+ */
+function pickBetterQuote(
+  a: RoutingApiQuoteResponse | undefined,
+  b: RoutingApiQuoteResponse | undefined,
+  tradeType: TradeType,
+): RoutingApiQuoteResponse | undefined {
+  if (!a) return b
+  if (!b) return a
+  const av = ethers.BigNumber.from(a.quote)
+  const bv = ethers.BigNumber.from(b.quote)
+  if (tradeType === TradeType.EXACT_INPUT) return av.gte(bv) ? a : b
+  return av.lte(bv) ? a : b
 }
 
 interface ChainContext {
@@ -118,6 +193,27 @@ export class EmbedRoutingProvider implements RoutingProvider {
 
   async quoteExactRoute(params: QuoteExactRouteParams): Promise<RoutingApiQuoteResponse | undefined> {
     const { chain } = params
+    const tradeType = params.tradeType === 'exactIn' ? TradeType.EXACT_INPUT : TradeType.EXACT_OUTPUT
+
+    // Split the requested protocols: v2/v3 go to the in-process SOR (AlphaRouter); v4 uses the
+    // direct on-chain single-hop V4Quoter path. Both run independently; we return the better quote.
+    const v2v3Protocols = params.protocols.filter((p): p is 'v2' | 'v3' => p === 'v2' || p === 'v3')
+    const wantsV4 = params.protocols.includes('v4') && Boolean(chain.v4Quoter)
+
+    const [v2v3Result, v4Result] = await Promise.all([
+      v2v3Protocols.length ? this.quoteV2V3(params, v2v3Protocols) : Promise.resolve(undefined),
+      wantsV4 ? this.quoteV4Single(chain, params).catch(() => undefined) : Promise.resolve(undefined),
+    ])
+
+    return pickBetterQuote(v2v3Result, v4Result, tradeType)
+  }
+
+  /** v2/v3 routing via the in-process SOR (unchanged behavior, extracted from quoteExactRoute). */
+  private async quoteV2V3(
+    params: QuoteExactRouteParams,
+    protocolNames: Array<'v2' | 'v3'>,
+  ): Promise<RoutingApiQuoteResponse | undefined> {
+    const { chain } = params
     const { router, provider } = this.getChainContext(chain)
 
     const [tokenIn, tokenOut] = await Promise.all([
@@ -131,7 +227,7 @@ export class EmbedRoutingProvider implements RoutingProvider {
     const quoteCurrency = tradeType === TradeType.EXACT_INPUT ? tokenOut : tokenIn
     const amount = CurrencyAmount.fromRawAmount(amountCurrency, params.amount)
 
-    const protocols = params.protocols.map((p) => (p === 'v2' ? Protocol.V2 : Protocol.V3))
+    const protocols = protocolNames.map((p) => (p === 'v2' ? Protocol.V2 : Protocol.V3))
 
     // Only assemble swap calldata (Universal Router) when we know the recipient.
     let swapConfig: SwapOptions | undefined
@@ -162,6 +258,269 @@ export class EmbedRoutingProvider implements RoutingProvider {
     }
 
     return mapSwapRouteToResponse(route, tradeType)
+  }
+
+  /**
+   * Direct on-chain Uniswap v4 SINGLE-HOP quote via the canonical `IV4Quoter` (per-chain
+   * `chain.v4Quoter`). Enumerates candidate PoolKeys — configured `chain.v4Pools` for the pair first,
+   * else hookless standard fee tiers — and `callStatic`s each, keeping the best (highest output for
+   * exactIn / lowest input for exactOut). Returns a classic quote response with a single `v4-pool`
+   * route hop, or `undefined` when no candidate pool quotes (honest — never fabricates a price).
+   *
+   * When `params.recipient` is set (same gate as the v2/v3 path) AND the chain's v4 UR is standard,
+   * assembles executable UR `V4_SWAP` calldata (`@uniswap/v4-sdk` `V4Planner`) into `methodParameters`.
+   * Robinhood's v4 UR is an unverified min-hop fork → gated to quote-only (see
+   * `V4_SWAP_CALLDATA_UNVERIFIED_CHAINS`). If calldata assembly throws, we still return the quote
+   * WITHOUT `methodParameters` — never a fabricated/guessed calldata.
+   */
+  private async quoteV4Single(
+    chain: ChainConfig,
+    params: QuoteExactRouteParams,
+  ): Promise<RoutingApiQuoteResponse | undefined> {
+    const tokenInAddr = params.tokenInAddress
+    const tokenOutAddr = params.tokenOutAddress
+    const tradeType = params.tradeType
+    const amountRaw = params.amount
+    if (!chain.v4Quoter) {
+      return undefined
+    }
+    const { provider } = this.getChainContext(chain)
+    const quoter = new ethers.Contract(chain.v4Quoter, V4_QUOTER_ABI, provider)
+
+    // Candidate v4 currency addresses per side. Native → address(0). Wrapped-native → try BOTH the
+    // wrapped token AND native (v4 pools commonly hold native rather than the wrapper).
+    const inCandidates = this.v4CurrencyCandidates(chain, tokenInAddr)
+    const outCandidates = this.v4CurrencyCandidates(chain, tokenOutAddr)
+
+    // Decimals for the route metadata (native uses chain.nativeDecimals; no on-chain read for it).
+    const [inDecimals, outDecimals] = await Promise.all([
+      this.v4CurrencyDecimals(chain, provider, tokenInAddr),
+      this.v4CurrencyDecimals(chain, provider, tokenOutAddr),
+    ])
+
+    const exactAmount = ethers.BigNumber.from(amountRaw)
+
+    let best:
+      | {
+          amount: ethers.BigNumber
+          gas?: ethers.BigNumber
+          poolKey: V4PoolKey
+          currencyIn: string
+          currencyOut: string
+          zeroForOne: boolean
+        }
+      | undefined
+
+    for (const cin of inCandidates) {
+      for (const cout of outCandidates) {
+        if (cin.toLowerCase() === cout.toLowerCase()) {
+          continue
+        }
+        // v4 currency0 < currency1 by address; native (address 0) always sorts first.
+        const zeroForOne = cin.toLowerCase() < cout.toLowerCase()
+        const currency0 = zeroForOne ? cin : cout
+        const currency1 = zeroForOne ? cout : cin
+
+        for (const poolKey of this.candidatePoolKeys(chain, currency0, currency1)) {
+          const args = { poolKey, zeroForOne, exactAmount: exactAmount.toString(), hookData: '0x' }
+          try {
+            const res =
+              tradeType === 'exactIn'
+                ? await quoter.callStatic.quoteExactInputSingle(args)
+                : await quoter.callStatic.quoteExactOutputSingle(args)
+            const amount = ethers.BigNumber.from(res.amount ?? res[0])
+            const gas = res.gasEstimate != null ? ethers.BigNumber.from(res.gasEstimate) : undefined
+            if (amount.isZero()) {
+              continue
+            }
+            const better = !best || (tradeType === 'exactIn' ? amount.gt(best.amount) : amount.lt(best.amount))
+            if (better) {
+              best = { amount, gas, poolKey, currencyIn: cin, currencyOut: cout, zeroForOne }
+            }
+          } catch {
+            // Pool doesn't exist / reverts (no liquidity) → skip this candidate.
+          }
+        }
+      }
+    }
+
+    if (!best) {
+      return undefined
+    }
+
+    const poolRoute: RoutingApiPoolInRoute = {
+      type: 'v4-pool',
+      address: '', // v4 pools have no ERC20 pair address; identity is the PoolKey below.
+      tokenIn: { chainId: chain.chainId, decimals: String(inDecimals), address: best.currencyIn },
+      tokenOut: { chainId: chain.chainId, decimals: String(outDecimals), address: best.currencyOut },
+      fee: String(best.poolKey.fee),
+      tickSpacing: String(best.poolKey.tickSpacing),
+      hooks: best.poolKey.hooks,
+      amountIn: tradeType === 'exactIn' ? exactAmount.toString() : best.amount.toString(),
+      amountOut: tradeType === 'exactIn' ? best.amount.toString() : exactAmount.toString(),
+    }
+
+    // `quote` is the computed side: output amount (exactIn) or required input amount (exactOut);
+    // `quoteDecimals` is that side's currency decimals — matching the SOR mapping contract.
+    const quoteDecimals = tradeType === 'exactIn' ? outDecimals : inDecimals
+
+    // Assemble executable UR `V4_SWAP` calldata only when we know the recipient (same gate as the
+    // v2/v3 path) and the chain has a v4-capable UR. RH's v4 UR is an unverified min-hop fork → gated.
+    let methodParameters: { calldata: string; value: string; to: string } | undefined
+    if (params.recipient && chain.universalRouterV4 && !V4_SWAP_CALLDATA_UNVERIFIED_CHAINS.has(chain.chainId)) {
+      try {
+        methodParameters = this.buildV4SwapCalldata(chain, best, tradeType, exactAmount, params)
+      } catch {
+        // Honest: assembly failed → return the quote WITHOUT calldata (never emit guessed calldata).
+        methodParameters = undefined
+      }
+    }
+
+    return {
+      quoteId: undefined,
+      quote: best.amount.toString(),
+      quoteDecimals: String(quoteDecimals),
+      quoteGasAdjusted: best.amount.toString(), // no gas-USD pool for v4 yet → unadjusted (honest).
+      gasUseEstimate: best.gas?.toString(),
+      gasUseEstimateUSD: undefined,
+      gasPriceWei: undefined,
+      blockNumber: undefined,
+      route: [[poolRoute]],
+      routeString: undefined,
+      methodParameters,
+    }
+  }
+
+  /**
+   * Build Universal Router `V4_SWAP` calldata for a single-hop v4 route using `@uniswap/v4-sdk`
+   * `V4Planner` (UR 2.0 action encoding). Action sequence:
+   *   exactIn  → SWAP_EXACT_IN_SINGLE(poolKey, zeroForOne, amountIn,  amountOutMinimum, hookData='0x')
+   *              + SETTLE_ALL(inputCurrency,  amountIn)
+   *              + TAKE_ALL(outputCurrency, amountOutMinimum)
+   *   exactOut → SWAP_EXACT_OUT_SINGLE(poolKey, zeroForOne, amountOut, amountInMaximum,  hookData='0x')
+   *              + SETTLE_ALL(inputCurrency,  amountInMaximum)
+   *              + TAKE_ALL(outputCurrency, amountOut)
+   * finalize() → abi.encode(bytes actions, bytes[] params) = the single V4_SWAP input.
+   * Wrapped in UR `execute(bytes commands=0x10, bytes[] inputs=[actions|params], uint256 deadline)`.
+   * Native (address(0)) is used directly (v4 does not wrap). `value` = native input amount, else 0.
+   */
+  private buildV4SwapCalldata(
+    chain: ChainConfig,
+    best: { poolKey: V4PoolKey; currencyIn: string; currencyOut: string; zeroForOne: boolean; amount: ethers.BigNumber },
+    tradeType: 'exactIn' | 'exactOut',
+    exactAmount: ethers.BigNumber,
+    params: QuoteExactRouteParams,
+  ): { calldata: string; value: string; to: string } {
+    // Slippage in basis points (default 0.5%). amountOutMinimum = out·(1-slip); amountInMaximum = in·(1+slip).
+    const bps = Math.max(0, Math.min(10_000, Math.round((params.slippageTolerancePct ?? 0.5) * 100)))
+    const amountIn = tradeType === 'exactIn' ? exactAmount : best.amount
+    const amountOut = tradeType === 'exactIn' ? best.amount : exactAmount
+    const amountOutMinimum = amountOut.mul(10_000 - bps).div(10_000)
+    const amountInMaximum = amountIn.mul(10_000 + bps).div(10_000)
+
+    const poolKeyStruct = {
+      currency0: best.poolKey.currency0,
+      currency1: best.poolKey.currency1,
+      fee: best.poolKey.fee,
+      tickSpacing: best.poolKey.tickSpacing,
+      hooks: best.poolKey.hooks,
+    }
+
+    const planner = new V4Planner()
+    if (tradeType === 'exactIn') {
+      planner.addAction(
+        Actions.SWAP_EXACT_IN_SINGLE,
+        [
+          {
+            poolKey: poolKeyStruct,
+            zeroForOne: best.zeroForOne,
+            amountIn: amountIn.toString(),
+            amountOutMinimum: amountOutMinimum.toString(),
+            hookData: '0x',
+          },
+        ],
+        URVersion.V2_0,
+      )
+      planner.addAction(Actions.SETTLE_ALL, [best.currencyIn, amountIn.toString()])
+      planner.addAction(Actions.TAKE_ALL, [best.currencyOut, amountOutMinimum.toString()])
+    } else {
+      planner.addAction(
+        Actions.SWAP_EXACT_OUT_SINGLE,
+        [
+          {
+            poolKey: poolKeyStruct,
+            zeroForOne: best.zeroForOne,
+            amountOut: amountOut.toString(),
+            amountInMaximum: amountInMaximum.toString(),
+            hookData: '0x',
+          },
+        ],
+        URVersion.V2_0,
+      )
+      planner.addAction(Actions.SETTLE_ALL, [best.currencyIn, amountInMaximum.toString()])
+      planner.addAction(Actions.TAKE_ALL, [best.currencyOut, amountOut.toString()])
+    }
+
+    const v4Input = planner.finalize() // abi.encode(bytes actions, bytes[] params)
+    const commands = ethers.utils.hexlify([UR_COMMAND_V4_SWAP])
+    const deadline = ethers.BigNumber.from(Math.floor(Date.now() / 1000) + (params.deadlineSeconds ?? 1800))
+    const calldata = UR_EXECUTE_IFACE.encodeFunctionData('execute', [commands, [v4Input], deadline])
+
+    // `value` = native (address(0)) input the UR must be sent. For exactOut the max is amountInMaximum;
+    // NOTE: a native-input exactOut leaves any unspent ETH in the router (no SWEEP refund appended) —
+    // acceptable for the validated exactIn path; exactOut native refund is a follow-up.
+    const inputIsNative = isNativeAddress(best.currencyIn)
+    const value = inputIsNative ? (tradeType === 'exactIn' ? amountIn : amountInMaximum).toString() : '0'
+
+    // Standard v4 URs: patch is a safe no-op for V4_SWAP (0x10); mirrors the v2/v3 calldata path.
+    const patched = patchMinHopPriceCalldata(calldata)
+
+    return { calldata: patched, value, to: chain.universalRouterV4 as string }
+  }
+
+  /** v4 currency candidates for a token side (native → [0]; wrapped-native → [wrapped, 0]; else [token]). */
+  private v4CurrencyCandidates(chain: ChainConfig, address: string): string[] {
+    if (isNativeAddress(address)) {
+      return [V4_ADDRESS_ZERO]
+    }
+    if (address.toLowerCase() === chain.wrappedNative.address.toLowerCase()) {
+      return [ethers.utils.getAddress(chain.wrappedNative.address), V4_ADDRESS_ZERO]
+    }
+    return [ethers.utils.getAddress(address)]
+  }
+
+  /** Decimals for a v4 currency (native → chain.nativeDecimals; wrapped-native → its decimals; else on-chain). */
+  private async v4CurrencyDecimals(
+    chain: ChainConfig,
+    provider: ethers.providers.JsonRpcProvider,
+    address: string,
+  ): Promise<number> {
+    if (isNativeAddress(address)) {
+      return chain.nativeDecimals
+    }
+    if (address.toLowerCase() === chain.wrappedNative.address.toLowerCase()) {
+      return chain.wrappedNative.decimals
+    }
+    return this.getDecimals(chain, provider, address)
+  }
+
+  /**
+   * Candidate PoolKeys for a sorted (currency0, currency1) pair: configured `chain.v4Pools` matching
+   * the pair (order-insensitive) if any — these carry real hook addresses (e.g. HOOK on Robinhood) —
+   * else the hookless standard fee tiers. Never invents a hooked pool key.
+   */
+  private candidatePoolKeys(chain: ChainConfig, currency0: string, currency1: string): V4PoolKey[] {
+    const configured = (chain.v4Pools ?? []).filter((p) => {
+      const a = p.currency0.toLowerCase()
+      const b = p.currency1.toLowerCase()
+      const c0 = currency0.toLowerCase()
+      const c1 = currency1.toLowerCase()
+      return (a === c0 && b === c1) || (a === c1 && b === c0)
+    })
+    if (configured.length) {
+      return configured.map((p) => ({ currency0, currency1, fee: p.fee, tickSpacing: p.tickSpacing, hooks: p.hooks }))
+    }
+    return V4_STD_FEE_TIERS.map((t) => ({ currency0, currency1, fee: t.fee, tickSpacing: t.tickSpacing, hooks: V4_ADDRESS_ZERO }))
   }
 }
 

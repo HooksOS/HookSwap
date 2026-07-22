@@ -16,6 +16,7 @@ import {
   TradeType,
   V2PoolInRoute,
   V3PoolInRoute,
+  V4PoolInRoute,
 } from './tradingApiTypes'
 import { RoutingApiPoolInRoute, RoutingApiQuoteResponse } from './routingClient'
 
@@ -29,6 +30,23 @@ function toTokenInRoute(t: { chainId: number; decimals: string; address: string;
 }
 
 function toPoolInRoute(p: RoutingApiPoolInRoute): PoolInRoute {
+  if (p.type === 'v4-pool') {
+    // v4 pools have no ERC20 pair `address`; identity is the PoolKey (fee/tickSpacing/hooks).
+    const v4: V4PoolInRoute = {
+      type: 'v4-pool',
+      tokenIn: toTokenInRoute(p.tokenIn),
+      tokenOut: toTokenInRoute(p.tokenOut),
+      fee: p.fee,
+      tickSpacing: p.tickSpacing,
+      hooks: p.hooks,
+      sqrtRatioX96: p.sqrtRatioX96,
+      liquidity: p.liquidity,
+      tickCurrent: p.tickCurrent,
+      amountIn: p.amountIn,
+      amountOut: p.amountOut,
+    }
+    return v4
+  }
   if (p.type === 'v3-pool') {
     const v3: V3PoolInRoute = {
       type: 'v3-pool',

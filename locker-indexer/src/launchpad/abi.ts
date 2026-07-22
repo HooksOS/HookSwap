@@ -73,6 +73,19 @@ export const FEEVAULT_ABI = [
   },
 ] as const;
 
+// LP position-manager NFT (Uniswap v3 / HookSwap v3 NPM). Only ownerOf is read —
+// a launch's LP position NFT owned by an immutable-custody holder (FeeVault /
+// LPFeeSplitter) is permanently locked by custody (positive signal only).
+export const POSITION_MANAGER_ABI = [
+  {
+    type: "function",
+    name: "ownerOf",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+] as const;
+
 export const ERC20_FULL_ABI = [
   {
     type: "function",

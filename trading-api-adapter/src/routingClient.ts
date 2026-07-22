@@ -28,15 +28,18 @@ import { EmbedRoutingProvider } from './embedRouter'
  * are already the same v2/v3 pool shapes the Trading API uses, so translation is mostly 1:1.
  */
 export interface RoutingApiPoolInRoute {
-  type: 'v2-pool' | 'v3-pool'
+  type: 'v2-pool' | 'v3-pool' | 'v4-pool'
   address: string
   tokenIn: { chainId: number; decimals: string; address: string; symbol?: string }
   tokenOut: { chainId: number; decimals: string; address: string; symbol?: string }
-  // v3
+  // v3 / v4
   sqrtRatioX96?: string
   liquidity?: string
   tickCurrent?: string
   fee?: string
+  // v4 only
+  tickSpacing?: string
+  hooks?: string
   // v2
   reserve0?: { token: { address: string }; quotient: string }
   reserve1?: { token: { address: string }; quotient: string }
@@ -68,7 +71,7 @@ export interface QuoteExactRouteParams {
   tradeType: 'exactIn' | 'exactOut'
   /** raw base-unit amount */
   amount: string
-  protocols: Array<'v2' | 'v3'>
+  protocols: Array<'v2' | 'v3' | 'v4'>
   recipient?: string
   slippageTolerancePct?: number
   deadlineSeconds?: number

@@ -21,9 +21,10 @@
     "ethers": "^5.7.2",
     "@uniswap/router-sdk": "^1.9.0",
     "@uniswap/sdk-core": "file:../vendor/sdk-core",
-    "@uniswap/smart-order-router": "file:../../smart-order-router"
+    "@uniswap/smart-order-router": "file:../../smart-order-router",
+    "@uniswap/v4-sdk": "1.29.1"
   },
-  "//embed": "EMBED mode (ROUTING_MODE=embed) needs the 3 deps above. @uniswap/sdk-core is the vendored in-repo fork; @uniswap/smart-order-router is the HooksOS fork (must be present at ../../smart-order-router or vendored) — it carries the deployed factory/quoter/router addresses for chainIds 999/4663/4326/57073/196/4217. NONE/PROXY modes don't import these.",
+  "//embed": "EMBED mode (ROUTING_MODE=embed) needs the deps above. @uniswap/sdk-core is the vendored in-repo fork; @uniswap/smart-order-router is the HooksOS fork (must be present at ../../smart-order-router or vendored) — it carries the deployed factory/quoter/router addresses for chainIds 999/4663/4326/57073/196/4217. @uniswap/v4-sdk (1.29.1, matches the web app + repo root) is for v4 single-hop UR calldata assembly (currently the v4 path is quote-only; the dep is declared for the follow-up exec work). NONE/PROXY modes don't import these.",
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^20.11.0",

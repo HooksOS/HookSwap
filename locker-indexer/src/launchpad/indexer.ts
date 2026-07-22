@@ -6,6 +6,8 @@
 //   3) name()/symbol()/decimals()/totalSupply() on each launch token (the struct
 //      carries neither name nor symbol),
 //   4) FeeVault.isPermanentlyLocked(token) → LP-lock flag,
+//   4b) ownerOf(tokenId) on the launch's LP position-manager NFT (by `dex`) → mark
+//      locked when an immutable-custody holder owns it (positive signal only),
 //   5) USD price via the shared pricing module (Robinhood-only) → marketCapUsd.
 // Produces normalized `Launch` entities + a `LaunchpadStats` aggregate.
 //
@@ -18,10 +20,17 @@
 //   with no configured launcher honestly reports zero launches (never invented).
 
 import { createPublicClient, formatUnits, getAddress, http, type PublicClient } from "viem";
-import { CHAINS, MULTICALL3, launchpadConfig, type ChainConfig } from "../chains.js";
+import {
+  CHAINS,
+  MULTICALL3,
+  launchpadConfig,
+  launchpadNpmForDex,
+  recognizedLpCustody,
+  type ChainConfig,
+} from "../chains.js";
 import { ENV } from "../env.js";
 import { priceUsdBatch } from "../pricing.js";
-import { ERC20_FULL_ABI, FEEVAULT_ABI, LAUNCHER_ABI } from "./abi.js";
+import { ERC20_FULL_ABI, FEEVAULT_ABI, LAUNCHER_ABI, POSITION_MANAGER_ABI } from "./abi.js";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -63,7 +72,12 @@ export interface Launch {
   metadataURI: string;
   /** Unix seconds the launch was created. */
   createdAt: number;
-  /** FeeVault.isPermanentlyLocked(token).locked — LP principal locked forever. Omitted if unreadable. */
+  /**
+   * LP principal locked forever. True when the FeeVault reports
+   * isPermanentlyLocked(token).locked OR the launch's LP position NFT is owned by an
+   * immutable-custody holder (RECOGNIZED_LP_CUSTODY_ADDRESSES — a positive signal
+   * that never overrides a genuine unlocked). Omitted only if both are unreadable.
+   */
   lpLocked?: boolean;
   /** unlockTime from isPermanentlyLocked (0 when permanently locked). Omitted if unreadable. */
   lpUnlockTime?: number;
@@ -334,6 +348,38 @@ async function indexChainLaunches(
     }
   }
 
+  // 4b) Custody-lock recognition: read ownerOf(tokenId) on each launch's LP
+  //     position-manager NFT (chosen by its `dex`), and mark the launch locked when
+  //     the owner is an immutable-custody holder (FeeVault / LPFeeSplitter) with no
+  //     withdraw/transfer/decrease path → the NFT can never leave = permanently
+  //     locked by custody. POSITIVE signal only: it ORs with the FeeVault lock flag
+  //     below and NEVER overrides a genuine unlocked reading. Parity with the
+  //     frontend useLpLock hook.
+  const custodySet = new Set(recognizedLpCustody(cfg.chainId).map((a) => a.toLowerCase()));
+  const custodyLockedById = new Set<number>();
+  if (custodySet.size > 0) {
+    const checkable = raws.filter((r) => launchpadNpmForDex(cfg.chainId, r.dex) !== undefined);
+    for (const ch of chunk(checkable, ENV.batchSize)) {
+      const contracts = ch.map((r) => ({
+        address: launchpadNpmForDex(cfg.chainId, r.dex) as `0x${string}`,
+        abi: POSITION_MANAGER_ABI,
+        functionName: "ownerOf" as const,
+        args: [r.tokenId] as const,
+      }));
+      const res = await client.multicall({
+        multicallAddress: MULTICALL3,
+        allowFailure: true,
+        contracts,
+      });
+      ch.forEach((r, i) => {
+        const rr = res[i];
+        if (rr?.status === "success" && typeof rr.result === "string") {
+          if (custodySet.has((rr.result as string).toLowerCase())) custodyLockedById.add(r.id);
+        }
+      });
+    }
+  }
+
   // 5) USD prices for every launch token (only Robinhood resolves; others → undefined).
   let prices = new Map<string, number | undefined>();
   try {
@@ -380,9 +426,16 @@ async function indexChainLaunches(
       metadataURI: r.metadataURI,
       createdAt: Number(r.createdAt),
     };
+    const custodyLocked = custodyLockedById.has(r.id);
     if (lock) {
-      launch.lpLocked = lock.locked;
+      // OR the custody signal with the FeeVault flag — a positive signal never
+      // overrides a genuine unlocked (it can only flip false → true when an
+      // immutable-custody holder actually owns the LP position NFT).
+      launch.lpLocked = lock.locked || custodyLocked;
       launch.lpUnlockTime = lock.unlockTime;
+    } else if (custodyLocked) {
+      // FeeVault unreadable but custody proves the lock → still report locked.
+      launch.lpLocked = true;
     }
     if (marketCapUsd !== undefined) launch.marketCapUsd = marketCapUsd;
     return launch;
