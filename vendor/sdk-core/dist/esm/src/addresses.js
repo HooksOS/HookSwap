@@ -402,11 +402,17 @@ const SONEIUM_ADDRESSES = {
 const XLAYER_ADDRESSES = {
     v3CoreFactoryAddress: '0xAB34Bb3767020059A35e71D03f13E9e4fbCD07aC',
     multicallAddress: '0xA24cD888adAF42011a49d8Eaedb2Fe751C54e7E2',
-    quoterAddress: '0xE8526A0429aeC9a5253ac854F8b6dC964E677EE4',
+    quoterAddress: '0xE8526A0429aeC9a5253ac854F8b6dC964E677EE4', // QuoterV2
     v3MigratorAddress: '0xD412b66afAd16a247a12a1eF31A1c6d37BBb9B6f',
     nonfungiblePositionManagerAddress: '0x45DB3eaE624dBcA631A9C6C1406DA0B8F6Fb275A',
     tickLensAddress: '0xA87a98a930d90fb8e68D497afE3ADe02B949fc10',
     swapRouter02Address: '0x3D30133F4d4A80684F02d8310faF572E3dc193b3',
+    // Canonical Uniswap v4 on XLayer (196) — on-chain verified (eth_getCode + extsload/owner).
+    // Shares the CREATE2 PoolManager address with Ink (distinct owner). See V4-ENABLEMENT-PLAN.md §4.
+    v4PoolManagerAddress: '0x360e68faccca8ca495c1b759fd9eee466db9fb32',
+    v4PositionManagerAddress: '0xcf1eafc6928dc385a342e7c6491d371d2871458b',
+    v4StateView: '0x76fd297e2d437cd7f76d50f01afe6160f86e9990',
+    v4QuoterAddress: '0x8928074ca1b241d8ec02815881c1af11e8bc5219',
 };
 const LINEA_ADDRESSES = {
     v3CoreFactoryAddress: '0x31FAfd4889FA1269F7a13A66eE0fB458f27D72A9',
@@ -424,26 +430,36 @@ const LINEA_ADDRESSES = {
 };
 // HookSwap own deployment on Tempo (contracts/deployments/tempo.json). COMPLETE.
 // Full v2+v3+UR stack deployed (deployer nonce != 0 on Tempo → some addrs non-deterministic).
-// v2+v3 only; no v4.
+// v4: canonical Uniswap v4 also live on Tempo (see below).
 const TEMPO_ADDRESSES = {
     v3CoreFactoryAddress: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
     multicallAddress: '0xfEb3eA6212761c1891389e77ee5Bf27c3b385E1A',
-    quoterAddress: '0x15cD41B273865feD20BC8B5cDF4423D7678ac78E',
+    quoterAddress: '0x15cD41B273865feD20BC8B5cDF4423D7678ac78E', // QuoterV2
     v3MigratorAddress: '0x45DB3eaE624dBcA631A9C6C1406DA0B8F6Fb275A',
     nonfungiblePositionManagerAddress: '0xbd817036c5bF69Cb27D3A342129e39f9f908577d',
     tickLensAddress: '0xf248c369C125094cDB95E8AbeE095c11758C8F14',
     swapRouter02Address: '0x3D30133F4d4A80684F02d8310faF572E3dc193b3',
+    // Canonical Uniswap v4 on Tempo (4217) — on-chain verified. See V4-ENABLEMENT-PLAN.md §4.
+    v4PoolManagerAddress: '0x33620f62c5b9b2086dd6b62f4a297a9f30347029',
+    v4PositionManagerAddress: '0x3fc79444f8eacc1894775493ff3fa41f1e35ce11',
+    v4StateView: '0x21b954fba3f5ddebe77ef2d47a3100c066908b2a',
+    v4QuoterAddress: '0x20e6487c371a2086f841ef453f85378223df4f4e',
 };
-// HookSwap own deployment (contracts/deployments/megaeth.json).
-// Deterministic deploy — identical addresses on MegaETH/Robinhood/Ink. v2+v3 only; no v4.
+// HookSwap own v2+v3 deployment (contracts/deployments/megaeth.json).
+// v3 addrs deterministic across MegaETH/Robinhood/Ink. v4 = canonical Uniswap v4 (below).
 const MEGAETH_ADDRESSES = {
     v3CoreFactoryAddress: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
     multicallAddress: '0xfEb3eA6212761c1891389e77ee5Bf27c3b385E1A',
-    quoterAddress: '0x15cD41B273865feD20BC8B5cDF4423D7678ac78E',
+    quoterAddress: '0x15cD41B273865feD20BC8B5cDF4423D7678ac78E', // QuoterV2
     v3MigratorAddress: '0x45DB3eaE624dBcA631A9C6C1406DA0B8F6Fb275A',
     nonfungiblePositionManagerAddress: '0xbd817036c5bF69Cb27D3A342129e39f9f908577d',
     tickLensAddress: '0xf248c369C125094cDB95E8AbeE095c11758C8F14',
     swapRouter02Address: '0xE8526A0429aeC9a5253ac854F8b6dC964E677EE4',
+    // Canonical Uniswap v4 on MegaETH (4326) — on-chain verified. See V4-ENABLEMENT-PLAN.md §4.
+    v4PoolManagerAddress: '0xacb7e78fa05d562e0a5d3089ec896d57d057d38e',
+    v4PositionManagerAddress: '0x9ae0921e981aaa7308f176f8d4f9129b9247c89d',
+    v4StateView: '0x726f84e1dfb8d375a365e0808282f40d52d3e4e8',
+    v4QuoterAddress: '0x94bdc671f0c35f44a1daa53143fd1f868d1623b9',
 };
 const ARC_ADDRESSES = {
     v3CoreFactoryAddress: '0xf0db7b58379503491d857db50ac9ece64c653918',
@@ -457,34 +473,46 @@ const ARC_ADDRESSES = {
     v4StateView: '0xf3334192d15450cdd385c8b70e03f9a6bd9e673b',
     v4QuoterAddress: '0x8dc178efb8111bb0973dd9d722ebeff267c98f94',
 };
-// HookSwap own deployment (contracts/deployments/robinhood.json).
-// Deterministic deploy — identical addresses on MegaETH/Robinhood/Ink. v2+v3 only; no v4.
+// HookSwap own v2+v3 deployment (contracts/deployments/robinhood.json).
+// v3 addrs deterministic across MegaETH/Robinhood/Ink. v4 = canonical Uniswap v4 (below);
+// HOOK (0x85d4..5f97) lives in this v4 PoolManager. See V4-ENABLEMENT-PLAN.md.
 const ROBINHOOD_ADDRESSES = {
     v3CoreFactoryAddress: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
     multicallAddress: '0xfEb3eA6212761c1891389e77ee5Bf27c3b385E1A',
-    quoterAddress: '0x15cD41B273865feD20BC8B5cDF4423D7678ac78E',
+    quoterAddress: '0x15cD41B273865feD20BC8B5cDF4423D7678ac78E', // QuoterV2
     v3MigratorAddress: '0x45DB3eaE624dBcA631A9C6C1406DA0B8F6Fb275A',
     nonfungiblePositionManagerAddress: '0xbd817036c5bF69Cb27D3A342129e39f9f908577d',
     tickLensAddress: '0xf248c369C125094cDB95E8AbeE095c11758C8F14',
     swapRouter02Address: '0xE8526A0429aeC9a5253ac854F8b6dC964E677EE4',
+    // Canonical Uniswap v4 on Robinhood (4663) — on-chain verified. See V4-ENABLEMENT-PLAN.md §4.
+    v4PoolManagerAddress: '0x8366a39cc670b4001a1121b8f6a443a643e40951',
+    v4PositionManagerAddress: '0x58daec3116aae6D93017bAAea7749052E8a04fA7',
+    v4StateView: '0xF3334192D15450CdD385c8B70e03f9A6bD9E673b',
+    v4QuoterAddress: '0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94',
 };
-// HookSwap own deployment (contracts/deployments/ink.json).
-// Deterministic deploy — identical addresses on MegaETH/Robinhood/Ink. v2+v3 only; no v4.
+// HookSwap own v2+v3 deployment (contracts/deployments/ink.json).
+// v3 addrs deterministic across MegaETH/Robinhood/Ink. v4 = canonical Uniswap v4 (below).
 const INK_ADDRESSES = {
     v3CoreFactoryAddress: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
     multicallAddress: '0xfEb3eA6212761c1891389e77ee5Bf27c3b385E1A',
-    quoterAddress: '0x15cD41B273865feD20BC8B5cDF4423D7678ac78E',
+    quoterAddress: '0x15cD41B273865feD20BC8B5cDF4423D7678ac78E', // QuoterV2
     v3MigratorAddress: '0x45DB3eaE624dBcA631A9C6C1406DA0B8F6Fb275A',
     nonfungiblePositionManagerAddress: '0xbd817036c5bF69Cb27D3A342129e39f9f908577d',
     tickLensAddress: '0xf248c369C125094cDB95E8AbeE095c11758C8F14',
     swapRouter02Address: '0xE8526A0429aeC9a5253ac854F8b6dC964E677EE4',
+    // Canonical Uniswap v4 on Ink (57073) — on-chain verified. Shares CREATE2 PoolManager
+    // address with XLayer (distinct owner). See V4-ENABLEMENT-PLAN.md §4.
+    v4PoolManagerAddress: '0x360e68faccca8ca495c1b759fd9eee466db9fb32',
+    v4PositionManagerAddress: '0x1b35d13a2e2528f192637f14b05f0dc0e7deb566',
+    v4StateView: '0x76fd297e2d437cd7f76d50f01afe6160f86e9990',
+    v4QuoterAddress: '0x3972c00f7ed4885e145823eb7c655375d275a1c5',
 };
 // HookSwap own deployment on HyperEVM (chain 999) — contracts/deployments/hyperevm.json. COMPLETE.
 // Non-deterministic (deployer nonce != 0 on HyperEVM; big-blocks mode). v2+v3 only; no v4.
 const HYPEREVM_ADDRESSES = {
     v3CoreFactoryAddress: '0x45DB3eaE624dBcA631A9C6C1406DA0B8F6Fb275A',
     multicallAddress: '0x15cD41B273865feD20BC8B5cDF4423D7678ac78E',
-    quoterAddress: '0x3b5a01Efc59f3465b8Eb04697f97CFE0BA700D9D',
+    quoterAddress: '0x3b5a01Efc59f3465b8Eb04697f97CFE0BA700D9D', // QuoterV2
     v3MigratorAddress: '0xB5A7BF488f2407479E116f713f116546F67c803b',
     nonfungiblePositionManagerAddress: '0x86426094d82bC1fd40F0901965b23D30837Dc66b',
     tickLensAddress: '0x3D30133F4d4A80684F02d8310faF572E3dc193b3',

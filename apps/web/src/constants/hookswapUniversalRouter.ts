@@ -37,3 +37,43 @@ export function hookswapUniversalRouterAddress(version: UniversalRouterVersion, 
   const own = HOOKSWAP_UNIVERSAL_ROUTER[chainId as UniverseChainId]
   return own ?? UNIVERSAL_ROUTER_ADDRESS(version, chainId)
 }
+
+/**
+ * Canonical Uniswap **v4-capable** Universal Routers, per chain — on-chain verified
+ * (each `poolManager()` resolves to that chain's v4 PoolManager). See
+ * `V4-ENABLEMENT-PLAN.md` §4. HookSwap's OWN URs (`HOOKSWAP_UNIVERSAL_ROUTER` above)
+ * were deployed with `v4PoolManager = address(0)` and CANNOT execute `V4_SWAP`, so a
+ * **v4 route must use the canonical v4 UR here**, not the own UR. v2/v3 routes keep
+ * using the own UR. (Sepolia delegates to the SDK, but is pinned here for clarity.)
+ */
+const HOOKSWAP_V4_UNIVERSAL_ROUTER: Partial<Record<UniverseChainId, string>> = {
+  [UniverseChainId.Robinhood]: '0x8876789976dEcBfCbBbe364623C63652db8C0904',
+  [UniverseChainId.Ink]: '0x112908dac86e20e7241b0927479ea3bf935d1fa0',
+  [UniverseChainId.MegaETH]: '0x47837eb80db5908eabba9105626d9b348bea7b02',
+  [UniverseChainId.XLayer]: '0xda00ae15d3a71466517129255255db7c0c0956d3',
+  [UniverseChainId.Tempo]: '0xa2dc7d0266f0cc50b3eeaf36c9bfcecff1beea91',
+  [UniverseChainId.Sepolia]: '0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b',
+}
+
+/** Universal Router address to use for a **v4** route on `chainId` (undefined = chain has no canonical Uniswap v4). */
+export function hookswapV4UniversalRouterAddress(chainId: number): string | undefined {
+  return HOOKSWAP_V4_UNIVERSAL_ROUTER[chainId as UniverseChainId]
+}
+
+/**
+ * Universal Routers that are the Robinhood **`minHopPriceX36` fork** (non-canonical:
+ * V2/V3 swap inputs decode 6 fields, not 5). BOTH the RH v2/v3 UR (`0x3D3013…`) and
+ * the RH v4 UR (`0x8876…`) are this fork — verified on-chain. The adapter's
+ * `patchMinHopPriceCalldata` shim MUST run for these and MUST NOT run for standard
+ * URs (Sepolia/Ink/MegaETH/XLayer/Tempo). Gate the shim on THIS, not on own-vs-canonical.
+ */
+const MINHOP_FORK_UNIVERSAL_ROUTERS: ReadonlySet<string> = new Set(
+  ['0x3D30133F4d4A80684F02d8310faF572E3dc193b3', '0x8876789976dEcBfCbBbe364623C63652db8C0904'].map((a) =>
+    a.toLowerCase(),
+  ),
+)
+
+/** True if `routerAddress` is a Robinhood `minHopPriceX36`-fork UR that needs the 6-field calldata shim. */
+export function isMinHopForkUniversalRouter(routerAddress: string): boolean {
+  return MINHOP_FORK_UNIVERSAL_ROUTERS.has(routerAddress.toLowerCase())
+}
