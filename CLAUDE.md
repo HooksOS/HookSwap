@@ -10,6 +10,11 @@
 - If something is not yet verified, say **"not verified yet"** and go verify it — do not fill the gap with a plausible-sounding answer.
 - This applies to status reports, "what's built", data sources (real vs mock), addresses, and every recommendation. No exceptions. This rule is permanent.
 
+## ⛔ MANDATORY INFRA RULE — NEW BOX ONLY (from Reggie, 2026-07-22, indefinite)
+- **ALL server work happens on the NEW Hivelocity box `198.244.167.106`** (ssh `ubuntu@`, key `~/.ssh/hivelocity_hookos`). **Do NOT touch the OLD box `15.204.8.186`** — Reggie is tearing it down / deleting all files.
+- ⚠️ **Blockers surfaced 2026-07-22 before the old box can be safely deleted (do NOT `rm` until resolved):** (1) the old box is currently the ONLY web build env (build tree + pinned bun 1.3.11 / node 22.22.2 at `~/HookSwap-build`); the new box has NEITHER → a build env must be stood up on the new box first, or web SPA deploys stop. (2) the old box holds `~/protocol/.env DEPLOYER_PRIVATE_KEY = 0xDD68…2996` (12.99 Sepolia ETH + funded on mainnets) + other wallet keys (`ov3-stack`, etc.) → secure/migrate those keys before deletion or the funds are lost.
+- Deploy targets on the new box: web = nginx bind-mount `~/hookswap/web/client` (backup + rsync overlay); adapter = `~/hookswap/adapter` (bind-mount, rebuild); locker-indexer/data-api = `~/hookswap/<svc>` + `docker compose up -d --build`.
+
 ## North Star
 - **Name:** HookSwap · **URL:** https://hookswap.org
 - **Brand system:** "Atlas" from the handoff kit — Paper `#f4f5f1`, Card `#fff`, Ink `#0d100c`, primary accent "Acid ink" `#0c8a42` (green text/CTAs), Acid fill `#38e07b`, danger `#c0291f`, gold `#c79212`. Fonts: Inter (UI) + JetBrains Mono (numbers).
