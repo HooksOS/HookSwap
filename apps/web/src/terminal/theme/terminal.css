@@ -203,9 +203,10 @@
     transition: opacity 0.04s ease;
   }
   /* Hide the desktop-terminal status row (GAS/BLOCK "—" + ROUTING·EMBED) on mobile —
-     dead data + dev jargon; the live ticker tape above is the app-appropriate strip. */
+     dead data + dev jargon; the live ticker tape above is the app-appropriate strip.
+     `!important` beats the element's inline `display:flex` (inline > stylesheet). */
   .tm-topstrip-status {
-    display: none;
+    display: none !important;
   }
 }
 
