@@ -29,6 +29,7 @@ import { useLaunches } from '~/terminal/launchpad/analytics/useLaunches'
 import { useLaunchesStats } from '~/terminal/launchpad/analytics/useLaunchesStats'
 import { getFeeVaultAddress } from '~/terminal/launchpad/addresses'
 import { useLpLocks, type LpLockItem, type LpLockState, type LpLockStatus } from '~/terminal/launchpad/useLpLock'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
@@ -172,9 +173,127 @@ const rowStyle: React.CSSProperties = {
   transition: 'transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease',
 }
 
+/** Small label→value stat chip used in the mobile stacked-card layout. */
+function MobileStat({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        padding: '8px 10px',
+        borderRadius: 9,
+        border: `1px solid ${terminalColors.line}`,
+        background: terminalColors.panel,
+        minWidth: 0,
+      }}
+    >
+      <span
+        style={{
+          fontFamily: SANS,
+          fontSize: 10,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          color: terminalColors.faint,
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          fontFamily: MONO,
+          fontSize: 13.5,
+          fontWeight: 600,
+          letterSpacing: '-0.02em',
+          color: valueColor ?? terminalColors.ink,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+const mobileStatGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(92px, 1fr))',
+  gap: 8,
+}
+
 function LaunchRow({ l, lock }: { l: Launch; lock?: LpLockStatus }): JSX.Element {
   const [hover, setHover] = useState(false)
+  const isMobile = useIsMobileViewport()
   const name = l.token.name || l.token.symbol || 'Unknown'
+
+  // Mobile: stacked card — identity block full-width on top, stats as a label→value
+  // chip grid below; whole card tappable (no hover-only affordances).
+  if (isMobile) {
+    return (
+      <Link
+        to={`/launch/${l.chainId}/${l.token.addr}`}
+        className="tm-tap"
+        style={{ ...rowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 12 }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+          <LedgerAvatar
+            seed={l.token.addr}
+            initials={initials(l.token.symbol)}
+            size={34}
+            logoUrl={resolveLedgerLogo(l.chainId, l.token.addr)}
+          />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <span
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: terminalColors.ink,
+                  letterSpacing: '-0.01em',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {l.token.symbol || '?'}
+              </span>
+              <LpPill status={lock?.status ?? 'unknown'} unlockTime={lock?.unlockTime} fallbackLocked={l.lpLocked} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, minWidth: 0 }}>
+              <span
+                style={{
+                  fontFamily: SANS,
+                  fontSize: 12,
+                  color: terminalColors.ink3,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {name}
+              </span>
+              <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint, whiteSpace: 'nowrap' }}>
+                {l.chainName}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div style={mobileStatGridStyle}>
+          <MobileStat
+            label="Market cap"
+            value={fmtUsd(l.marketCapUsd)}
+            valueColor={l.marketCapUsd !== undefined ? terminalColors.ink : terminalColors.faint}
+          />
+          <MobileStat label="Fee tier" value={fmtFeeTier(l.feeTier)} valueColor={terminalColors.ink2} />
+          <MobileStat label="Created" value={fmtDate(l.createdAt)} valueColor={terminalColors.ink2} />
+        </div>
+      </Link>
+    )
+  }
+
   return (
     <Link
       to={`/launch/${l.chainId}/${l.token.addr}`}

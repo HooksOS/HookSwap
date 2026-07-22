@@ -1,26 +1,38 @@
 /**
- * HookSwap Terminal — client-side one-shot pool launch (HookOSV3Launcher).
+ * HookSwap Terminal — client-side one-shot pool launch, powered by the vendored `@hookos/sdk`.
  *
- * Self-contained CLIENT-SIDE flow (NO backend, NO Permit2, NO approval): a single
- * payable `launch(p)` deploys a fresh token, opens its v3 pool, and (optionally)
- * performs the creator's initial buy — all in one tx. LP position is registered in
- * the HookOSV3FeeVault (principal locked forever, fees split per-dex).
+ * HookSwap dogfoods its own launch SDK here: instead of hand-wiring the `HookOSV3Launcher` ABI +
+ * a Robinhood-only address table, this hook drives `hookos.v3` (the SDK's V3 launch module). The
+ * SDK resolves the launcher / fee-vault per chain, so `/launch` now works on every HookOS-supported
+ * chain (Base 8453 · Robinhood 4663 · MegaETH 4326 · HyperEVM 999 · BNB 56 · Ethereum 1). On any
+ * other chain `useHookOS` returns undefined → this hook reports `ready:false` → the screen gates
+ * honestly ("not available on this network").
  *
- * `msg.value` = `quoteLaunchCost(lockOnHookSwap, initialBuyEth)` — the contract
- * computes the total cost (base fee + lock fee + initial buy) on-chain.
+ * Flow: a single payable `launch(p)` deploys a fresh token, opens its v3 pool, and (optionally)
+ * performs the creator's initial buy — all in one tx. The SDK mines the CREATE2 salt (token == token0)
+ * via `buildLaunchParams`, then sends `launch()` and parses the `PoolSeeded` event, so the created
+ * token / pool / positionId come straight back from the result (no getLaunch round-trip needed).
  *
- * Fee collection lives on the FeeVault contract: `pending(token)` to preview,
- * `collect(token)` to claim, `withdrawPending()` for deferred ETH.
+ * DATA POLICY (no mock data):
+ *   • Fees — REAL on-chain reads via the SDK (getEffectiveLaunchFee / getLaunchFeeUsd / quoteLaunchCost).
+ *   • Result — parsed from the launch tx's PoolSeeded event by the SDK.
+ *   • My launches + pending fees — batched on-chain reads (FeeVault); honest empty states.
  */
-import { useEffect, useMemo, useState } from 'react'
-import { useReadContract, useReadContracts, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useReadContract, useReadContracts, useWriteContract } from 'wagmi'
+import {
+  getHookOSV3Addresses,
+  V3Dex as SdkV3Dex,
+  V3PairToken as SdkV3PairToken,
+  type V3BuildLaunchOptions,
+} from '@hookos/sdk'
 import { type Address, type Hash } from '~/chains'
 import { hookOSV3LauncherAbi, hookOSV3FeeVaultAbi } from '~/terminal/launchpad/abis'
-import { getLaunchpadAddress, getFeeVaultAddress } from '~/terminal/launchpad/addresses'
+import { useHookOS } from '~/terminal/launchpad/useHookOS'
 
 /** Zero bytes32 — the default salt when the user doesn't randomize one. */
 export const ZERO_SALT = `0x${'0'.repeat(64)}` as const
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 /** How many recent launches `useMyLaunches` scans back over (block-read budget). */
 export const MY_LAUNCHES_SCAN = 50
 const INT24_MIN = -8_388_608
@@ -30,6 +42,21 @@ const INT24_MAX = 8_388_607
 export const V3Dex = { UniswapV3: 0, HookSwap: 1 } as const
 /** PairToken enum values matching the contract. */
 export const PairToken = { WETH: 0, HOOK: 1 } as const
+
+/**
+ * Resolve the deployed HookOS V3 launcher + fee-vault addresses for a chain from the SDK.
+ * Returns empty when V3 isn't deployed there (the SDK returns null for a zero launcher).
+ */
+function v3AddressesFor(chainId?: number): { launcher?: Address; feeVault?: Address } {
+  if (chainId === undefined) {
+    return {}
+  }
+  const a = getHookOSV3Addresses(chainId)
+  if (!a) {
+    return {}
+  }
+  return { launcher: a.launcher as Address, feeVault: a.feeVault as Address }
+}
 
 /** The raw `launch(p)` inputs, exactly as the form collects them (strings). */
 export interface LaunchConfigInput {
@@ -53,7 +80,7 @@ export interface LaunchConfigInput {
   lockOnHookSwap: boolean
 }
 
-/** The typed `p` tuple passed to `launch` (viem-encodable). */
+/** The typed, validated launch config (viem-encodable), the shape the SDK options are built from. */
 export interface LaunchParamsTuple {
   name: string
   symbol: string
@@ -75,7 +102,7 @@ export interface UseLaunch {
   ready: boolean
   launcher?: Address
   feeVault?: Address
-  /** Base launch fee in wei (from effectiveLaunchFee), or undefined while loading. */
+  /** Base launch fee in wei (from getEffectiveLaunchFee), or undefined while loading. */
   baseFeeWei?: bigint
   /** Launch fee in USD (e.g. 8e18 = $8), or undefined while loading. */
   launchFeeUsd?: bigint
@@ -89,8 +116,10 @@ export interface UseLaunch {
   inputsValid: boolean
   canLaunch: boolean
   launch: () => Promise<void>
+  /** True while the SDK builds params + mines the CREATE2 salt (before the wallet prompt). */
   isWritePending: boolean
   launchHash?: Hash
+  /** True while the launch tx is signed + broadcast + mined by the SDK. */
   isConfirming: boolean
   isDone: boolean
 
@@ -173,7 +202,10 @@ export function randomSalt(): `0x${string}` {
 }
 
 /**
- * Build and validate the typed `p` tuple from raw inputs.
+ * Build and validate the typed launch config from raw form inputs. Note: with the SDK path the
+ * CREATE2 `salt` is mined by `buildLaunchParams` (the form value is advisory) and `sqrtPriceX96`
+ * is advisory too (the launcher derives price from `tickLower`) — both are still validated here so
+ * the form defaults stay well-formed and the review panel can render them.
  */
 function buildParams(input: LaunchConfigInput): { cfg?: LaunchParamsTuple; error?: string } {
   const name = input.name.trim()
@@ -256,133 +288,118 @@ function buildParams(input: LaunchConfigInput): { cfg?: LaunchParamsTuple; error
 }
 
 export function useLaunch({ chainId, owner, input }: { chainId?: number; owner?: Address; input: LaunchConfigInput }): UseLaunch {
-  const launcher = getLaunchpadAddress(chainId)
-  const feeVault = getFeeVaultAddress(chainId)
-  const ready = Boolean(launcher)
-
-  /* --------------------------------------------------------------- reads */
-
-  const baseFeeRead = useReadContract({
-    address: launcher,
-    chainId,
-    abi: hookOSV3LauncherAbi,
-    functionName: 'effectiveLaunchFee',
-    query: { enabled: ready },
-  })
-  const baseFeeWei = baseFeeRead.data as bigint | undefined
-
-  const feeUsdRead = useReadContract({
-    address: launcher,
-    chainId,
-    abi: hookOSV3LauncherAbi,
-    functionName: 'launchFeeUsd',
-    query: { enabled: ready },
-  })
-  const launchFeeUsd = feeUsdRead.data as bigint | undefined
-
-  const hookPairRead = useReadContract({
-    address: launcher,
-    chainId,
-    abi: hookOSV3LauncherAbi,
-    functionName: 'hookPairEnabled',
-    query: { enabled: ready },
-  })
-  const hookPairEnabled = hookPairRead.data as boolean | undefined
-
-  const launchCountRead = useReadContract({
-    address: launcher,
-    chainId,
-    abi: hookOSV3LauncherAbi,
-    functionName: 'launchCount',
-    query: { enabled: ready },
-  })
+  const hookos = useHookOS(chainId)
+  const ready = Boolean(hookos)
+  const launcher = hookos ? (hookos.v3.launcherAddress as Address) : undefined
+  const { feeVault } = v3AddressesFor(chainId)
 
   /* --------------------------------------------------------------- cfg build + validation */
 
   const { cfg, error: validationError } = useMemo(() => buildParams(input), [input])
 
-  // quoteLaunchCost(lockOnHookSwap, initialBuyEth) — total msg.value.
-  const quoteCostRead = useReadContract({
+  /* --------------------------------------------------------------- reads (SDK) */
+
+  // effectiveLaunchFee + launchFeeUsd — SDK reads over the SDK's own public RPC (no wallet needed).
+  const feeQuery = useQuery({
+    queryKey: ['hookos-v3', 'fees', chainId],
+    queryFn: async () => {
+      const [effective, usd] = await Promise.all([
+        hookos!.v3.getEffectiveLaunchFee(),
+        hookos!.v3.getLaunchFeeUsd(),
+      ])
+      return { effective, usd }
+    },
+    enabled: ready,
+  })
+  const baseFeeWei = feeQuery.data?.effective
+  const launchFeeUsd = feeQuery.data?.usd
+
+  // quoteLaunchCost(lockOnHookSwap, initialBuyEth) — total msg.value (base fee + lock fee + dev buy).
+  const quoteQuery = useQuery({
+    queryKey: ['hookos-v3', 'quote', chainId, cfg?.lockOnHookSwap ?? null, cfg ? cfg.initialBuyEth.toString() : null],
+    queryFn: () => hookos!.v3.quoteLaunchCost(cfg!.lockOnHookSwap, cfg!.initialBuyEth),
+    enabled: ready && cfg !== undefined,
+  })
+  const totalValue = quoteQuery.data
+
+  // hookPairEnabled — not surfaced by the SDK's V3 module; read via the launcher ABI (same
+  // bytecode on every chain) against the SDK-resolved launcher address. HOOK is gated OFF at v1.
+  const hookPairRead = useReadContract({
     address: launcher,
     chainId,
     abi: hookOSV3LauncherAbi,
-    functionName: 'quoteLaunchCost',
-    args: cfg ? [cfg.lockOnHookSwap, cfg.initialBuyEth] : undefined,
-    query: { enabled: ready && cfg !== undefined },
+    functionName: 'hookPairEnabled',
+    query: { enabled: ready && Boolean(launcher) },
   })
-  const totalValue = quoteCostRead.data as bigint | undefined
+  const hookPairEnabled = hookPairRead.data as boolean | undefined
 
-  /* --------------------------------------------------------------- write */
+  /* --------------------------------------------------------------- launch (SDK write) */
 
-  const { writeContractAsync, isPending: isWritePending } = useWriteContract()
-
+  type Phase = 'idle' | 'preparing' | 'launching' | 'done' | 'error'
+  const [phase, setPhase] = useState<Phase>('idle')
   const [launchHash, setLaunchHash] = useState<Hash | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
-  const [latestId, setLatestId] = useState<bigint | undefined>(undefined)
+  const [created, setCreated] = useState<{ token: Address; pool: Address; tokenId: bigint } | undefined>(undefined)
 
-  const launchReceipt = useWaitForTransactionReceipt({ hash: launchHash, chainId })
-  const isConfirming = Boolean(launchHash) && launchReceipt.isLoading
-  const isDone = Boolean(launchHash) && launchReceipt.isSuccess
+  const isWritePending = phase === 'preparing'
+  const isConfirming = phase === 'launching'
+  const isDone = phase === 'done'
 
-  useEffect(() => {
-    if (!launchReceipt.isSuccess) {
-      return
-    }
-    void launchCountRead.refetch().then((res) => {
-      const count = res.data as bigint | undefined
-      if (count !== undefined && count > 0n) {
-        setLatestId(count - 1n)
-      }
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [launchReceipt.isSuccess])
-
-  // Read the just-created launch back, guarded to creator == owner.
-  const latestLaunchRead = useReadContract({
-    address: launcher,
-    chainId,
-    abi: hookOSV3LauncherAbi,
-    functionName: 'getLaunch',
-    args: latestId !== undefined ? [latestId] : undefined,
-    query: { enabled: ready && isDone && latestId !== undefined },
-  })
-  // getLaunch returns a tuple struct
-  const latest = latestLaunchRead.data as
-    | { token: Address; pool: Address; creator: Address; tokenId: bigint; feeTier: number; dex: number; locker: Address; pair: number; pairToken: Address; metadataURI: string; createdAt: bigint }
-    | undefined
-  const createdMatchesOwner =
-    latest !== undefined && owner !== undefined && latest.creator.toLowerCase() === owner.toLowerCase()
-  const createdToken = createdMatchesOwner ? latest.token : undefined
-  const createdPool = createdMatchesOwner ? latest.pool : undefined
-  const createdTokenId = createdMatchesOwner ? latest.tokenId : undefined
+  const createdToken = created?.token
+  const createdPool = created?.pool
+  const createdTokenId = created?.tokenId
 
   const inputsValid = Boolean(ready && owner && cfg !== undefined && totalValue !== undefined)
   const canLaunch = inputsValid && !isWritePending && !isConfirming && !isDone
 
   const launch = async (): Promise<void> => {
-    if (!canLaunch || !launcher || cfg === undefined || totalValue === undefined) {
+    if (!hookos || !owner || cfg === undefined) {
+      return
+    }
+    if (isWritePending || isConfirming || isDone) {
       return
     }
     setError(undefined)
+    setPhase('preparing')
     try {
-      const hash = await writeContractAsync({
-        address: launcher,
-        chainId,
-        abi: hookOSV3LauncherAbi,
-        functionName: 'launch',
-        args: [cfg] as never,
-        value: totalValue,
-      })
-      setLaunchHash(hash)
+      // Map the validated form config → the SDK's high-level build options. The SDK mines the
+      // CREATE2 salt (token == token0) and assembles the on-chain LaunchParams tuple for us.
+      const opts: V3BuildLaunchOptions = {
+        name: cfg.name,
+        symbol: cfg.symbol,
+        metadataURI: cfg.metadataURI,
+        totalSupply: cfg.totalSupply,
+        tickLower: cfg.tickLower,
+        tickUpper: cfg.tickUpper,
+        creator: owner,
+        initialBuyEth: cfg.initialBuyEth,
+        initialBuyMinOut: cfg.initialBuyMinOut,
+        initialBuyDeadline: cfg.initialBuyDeadline,
+        dex: cfg.dex as SdkV3Dex,
+        pair: cfg.pair as SdkV3PairToken,
+        lockOnHookSwap: cfg.lockOnHookSwap,
+        sqrtPriceX96: cfg.sqrtPriceX96,
+      }
+      const built = await hookos.v3.buildLaunchParams(opts)
+
+      // Salt mined + params built — now sign + broadcast + mine. `value` defaults to
+      // quoteLaunchCost() inside the SDK; we pass the already-quoted total for consistency.
+      setPhase('launching')
+      const res = await hookos.v3.launch(built.params, totalValue)
+      setLaunchHash(res.txResult.hash as Hash)
+      setCreated({ token: res.token as Address, pool: res.pool as Address, tokenId: res.tokenId })
+      setPhase('done')
     } catch (e) {
       setError(toMessage(e))
+      setPhase('error')
     }
   }
 
   const reset = (): void => {
+    setPhase('idle')
     setLaunchHash(undefined)
     setError(undefined)
-    setLatestId(undefined)
+    setCreated(undefined)
   }
 
   return useMemo(
@@ -455,12 +472,18 @@ export interface UseMyLaunches {
   refetch: () => void
 }
 
-/** All recent launches (no creator filter — public listing). */
+/**
+ * All recent launches (no creator filter — public listing).
+ *
+ * NOTE: these directory reads stay on the batched wagmi multicall (`getLaunch` / `launchCount`)
+ * rather than the SDK's one-call-per-launch getters — the multicall is a single round-trip and
+ * lower-risk to keep. The launcher address is now SDK-resolved, so this is multi-chain.
+ */
 export function useRecentLaunches({ chainId, limit = 20 }: { chainId?: number; limit?: number }): {
   isLoading: boolean
   launches: MyLaunch[]
 } {
-  const launcher = getLaunchpadAddress(chainId)
+  const { launcher } = v3AddressesFor(chainId)
   const ready = Boolean(launcher)
 
   const countRead = useReadContract({
@@ -525,8 +548,7 @@ export function useRecentLaunches({ chainId, limit = 20 }: { chainId?: number; l
 }
 
 export function useMyLaunches({ chainId, owner }: { chainId?: number; owner?: Address }): UseMyLaunches {
-  const launcher = getLaunchpadAddress(chainId)
-  const feeVault = getFeeVaultAddress(chainId)
+  const { launcher, feeVault } = v3AddressesFor(chainId)
   const ready = Boolean(launcher) && Boolean(feeVault)
 
   const countRead = useReadContract({

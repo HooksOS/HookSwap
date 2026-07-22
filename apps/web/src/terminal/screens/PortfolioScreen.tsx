@@ -573,6 +573,7 @@ export function PortfolioScreen(): JSX.Element {
         header: 'Pair',
         width: 'minmax(150px,1.6fr)',
         align: 'left',
+        mobileRole: 'title',
         cell: (p) => <PositionPairCell position={p} />,
       },
       {
@@ -581,6 +582,7 @@ export function PortfolioScreen(): JSX.Element {
         width: 'minmax(90px,1fr)',
         align: 'right',
         mono: true,
+        mobileRole: 'primary',
         cell: (p) => fiat(p.totalValueUsd),
         cellColor: () => terminalColors.ink,
         sortValue: (p) => p.totalValueUsd ?? 0,
@@ -591,6 +593,7 @@ export function PortfolioScreen(): JSX.Element {
         width: 'minmax(80px,0.8fr)',
         align: 'right',
         mono: true,
+        mobileRole: 'hide',
         // Per-position 24h PnL is not in the positions feed — honest "—" (never fabricated).
         cell: () => '—',
         cellColor: () => terminalColors.faint,
@@ -601,6 +604,7 @@ export function PortfolioScreen(): JSX.Element {
         width: 'minmax(80px,0.8fr)',
         align: 'right',
         mono: true,
+        mobileRole: 'primary',
         cell: (p) => fiat(p.uncollectedFeesUsd),
         cellColor: (p) => ((p.uncollectedFeesUsd ?? 0) > 0 ? terminalColors.greenUp : terminalColors.ink2),
         sortValue: (p) => p.uncollectedFeesUsd ?? 0,
@@ -611,6 +615,7 @@ export function PortfolioScreen(): JSX.Element {
         width: 'minmax(64px,0.6fr)',
         align: 'right',
         mono: true,
+        mobileRole: 'secondary',
         cell: (p) => (p.apr !== undefined ? `${p.apr.toFixed(1)}%` : '—'),
         cellColor: () => terminalColors.ink2,
         sortValue: (p) => p.apr ?? 0,
@@ -620,6 +625,7 @@ export function PortfolioScreen(): JSX.Element {
         header: 'Status',
         width: 'minmax(110px,1fr)',
         align: 'right',
+        mobileRole: 'secondary',
         cell: (p) => (
           <span style={{ display: 'inline-flex', justifyContent: 'flex-end', width: '100%' }}>
             <StatusPill status={p.status} />

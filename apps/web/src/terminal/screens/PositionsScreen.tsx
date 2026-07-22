@@ -496,6 +496,7 @@ export function PositionsScreen(): JSX.Element {
         header: 'Pair',
         width: 'minmax(150px,1.6fr)',
         align: 'left',
+        mobileRole: 'title',
         cell: (p) => <PositionPairCell position={p} />,
       },
       {
@@ -503,6 +504,7 @@ export function PositionsScreen(): JSX.Element {
         header: 'Version',
         width: 'minmax(72px,0.6fr)',
         align: 'left',
+        mobileRole: 'secondary',
         cell: (p) => <VersionBadge version={p.version} />,
         sortValue: (p) => versionLabel(p.version),
       },
@@ -512,6 +514,7 @@ export function PositionsScreen(): JSX.Element {
         width: 'minmax(64px,0.6fr)',
         align: 'right',
         mono: true,
+        mobileRole: 'hide',
         cell: (p) => feeTierLabel(p),
         cellColor: () => terminalColors.ink2,
       },
@@ -521,6 +524,7 @@ export function PositionsScreen(): JSX.Element {
         width: 'minmax(90px,1fr)',
         align: 'right',
         mono: true,
+        mobileRole: 'primary',
         cell: (p) => fiat(p.totalValueUsd),
         cellColor: () => terminalColors.ink,
         sortValue: (p) => p.totalValueUsd ?? 0,
@@ -531,6 +535,7 @@ export function PositionsScreen(): JSX.Element {
         width: 'minmax(80px,0.8fr)',
         align: 'right',
         mono: true,
+        mobileRole: 'primary',
         cell: (p) => fiat(p.uncollectedFeesUsd),
         cellColor: (p) => ((p.uncollectedFeesUsd ?? 0) > 0 ? terminalColors.greenUp : terminalColors.ink2),
         sortValue: (p) => p.uncollectedFeesUsd ?? 0,
@@ -540,6 +545,7 @@ export function PositionsScreen(): JSX.Element {
         header: 'Status',
         width: 'minmax(110px,1fr)',
         align: 'right',
+        mobileRole: 'secondary',
         cell: (p) => (
           <span style={{ display: 'inline-flex', justifyContent: 'flex-end', width: '100%' }}>
             <StatusPill status={p.status} />
@@ -551,6 +557,7 @@ export function PositionsScreen(): JSX.Element {
         header: '',
         width: 'minmax(150px,1fr)',
         align: 'right',
+        mobileRole: 'hide',
         // v2 → in-Terminal Add / Remove modals (client-side, direct to the deployed v2
         // Router02 — the legacy detail page's hosted liquidity gateway 404s on Robinhood).
         // v2 has no separate fee "Collect": fees accrue into reserves and are realized on

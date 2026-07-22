@@ -22,7 +22,6 @@ import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks
 import { useAccount } from '~/hooks/useAccount'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
-import { getLaunchpadAddress } from '~/terminal/launchpad/addresses'
 import { LaunchpadExplore } from '~/terminal/screens/launchpad/LaunchpadExplore'
 import {
   randomSalt,
@@ -536,8 +535,6 @@ export function LaunchScreen(): JSX.Element {
   const connected = Boolean(account.address)
   const owner = assume0xAddress(account.address)
 
-  const launcher = getLaunchpadAddress(chainId)
-  const deployed = Boolean(launcher)
   const chainLabel = getChainLabel(chainId)
 
   const [input, setInput] = useState<LaunchConfigInput>(EMPTY_INPUT)
@@ -548,6 +545,9 @@ export function LaunchScreen(): JSX.Element {
   }
 
   const launchState = useLaunch({ chainId, owner, input })
+  // The SDK resolves the launcher per chain; `ready` is true on every HookOS-supported chain
+  // (Base · Robinhood · MegaETH · HyperEVM · BNB · Ethereum) and false elsewhere.
+  const deployed = launchState.ready
 
   const feeLabel = launchState.baseFeeWei !== undefined ? `${fmtWei(launchState.baseFeeWei)} ETH` : '—'
   const totalValueLabel = launchState.totalValue !== undefined ? `${fmtWei(launchState.totalValue)} ETH` : '—'
@@ -581,10 +581,10 @@ export function LaunchScreen(): JSX.Element {
       return launchState.validationError
     }
     if (launchState.isWritePending) {
-      return 'Confirm in wallet…'
+      return 'Preparing launch…'
     }
     if (launchState.isConfirming) {
-      return 'Launching…'
+      return 'Confirm & launching…'
     }
     return 'Launch token'
   })()

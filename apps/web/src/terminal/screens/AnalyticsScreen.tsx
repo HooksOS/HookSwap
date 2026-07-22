@@ -873,6 +873,7 @@ function AnalyticsScreenBody(): JSX.Element {
         header: 'Pool',
         width: 'minmax(130px,1.5fr)',
         align: 'left',
+        mobileRole: 'title',
         cell: (row) => <PairCell presentation={row} />,
         sortValue: (row) => `${row.symbol0}/${row.symbol1}`,
       },
@@ -882,6 +883,7 @@ function AnalyticsScreenBody(): JSX.Element {
         width: 'minmax(84px,1fr)',
         align: 'right',
         mono: true,
+        mobileRole: 'primary',
         cell: (row) => fiatStats(row.volume24h),
         cellColor: () => terminalColors.ink,
         sortValue: (row) => row.volume24h,
@@ -892,6 +894,7 @@ function AnalyticsScreenBody(): JSX.Element {
         width: 'minmax(60px,0.7fr)',
         align: 'right',
         mono: true,
+        mobileRole: 'primary',
         cell: (row) => row.aprText,
         cellColor: () => terminalColors.ink2,
         sortValue: (row) => row.aprPercent,
@@ -901,6 +904,7 @@ function AnalyticsScreenBody(): JSX.Element {
         header: '7d',
         width: '84px',
         align: 'center',
+        mobileRole: 'hide',
         cell: (row) => {
           const series = lookupSparkline(row.token0, sparklineMaps)
           return series && series.length >= 2 ? (

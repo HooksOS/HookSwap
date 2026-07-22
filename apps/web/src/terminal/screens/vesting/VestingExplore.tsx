@@ -25,6 +25,7 @@ import type { VestingSchedule, VestingSnapshot, VestingSort, VestingStatus } fro
 import { useVesting } from '~/terminal/vesting/analytics/useVesting'
 import { useVestingStats } from '~/terminal/vesting/analytics/useVestingStats'
 import { useVestingTvlHistory } from '~/terminal/vesting/analytics/useVestingTvlHistory'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
@@ -169,9 +170,122 @@ const rowStyle: React.CSSProperties = {
   transition: 'transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease',
 }
 
+/** Small label→value stat chip used in the mobile stacked-card layout. */
+function MobileStat({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        padding: '8px 10px',
+        borderRadius: 9,
+        border: `1px solid ${terminalColors.line}`,
+        background: terminalColors.panel,
+        minWidth: 0,
+      }}
+    >
+      <span
+        style={{
+          fontFamily: SANS,
+          fontSize: 10,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          color: terminalColors.faint,
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          fontFamily: MONO,
+          fontSize: 13.5,
+          fontWeight: 600,
+          letterSpacing: '-0.02em',
+          color: valueColor ?? terminalColors.ink,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+const mobileStatGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
+  gap: 8,
+}
+
 function ScheduleRow({ s }: { s: VestingSchedule }): JSX.Element {
   const [hover, setHover] = useState(false)
+  const isMobile = useIsMobileViewport()
   const sym = s.token.symbol || shortAddr(s.token.addr)
+
+  // Mobile: stacked card — identity + % vested bar full-width on top, stats as a
+  // label→value chip grid below (no hover-only affordances).
+  if (isMobile) {
+    return (
+      <div style={{ ...rowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+          <LedgerAvatar
+            seed={s.token.addr}
+            initials={initials(s.token.symbol)}
+            size={34}
+            logoUrl={resolveLedgerLogo(s.chainId, s.token.addr)}
+          />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <span
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  color: terminalColors.ink,
+                  letterSpacing: '-0.01em',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {sym}
+              </span>
+              <StatusPill status={s.status} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.ink3 }}>{s.chainName}</span>
+              <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>to {shortAddr(s.beneficiary)}</span>
+              <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
+                {s.cliff > 0 ? `cliff ${fmtDate(s.cliffTime)} · ` : ''}ends {fmtDate(s.endTime)}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6, gap: 6 }}>
+            <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 600, color: terminalColors.ink, letterSpacing: '-0.02em' }}>
+              {fmtPct(s.pctVested)}
+            </span>
+            <span style={{ fontFamily: SANS, fontSize: 10.5, color: terminalColors.faint }}>vested</span>
+          </div>
+          <VestedBar pct={s.pctVested} status={s.status} />
+        </div>
+        <div style={mobileStatGridStyle}>
+          <MobileStat
+            label="Claimable"
+            value={`${fmtToken(s.claimable.formatted)} ${s.token.symbol || ''}`.trim()}
+            valueColor={Number(s.claimable.formatted) > 0 ? terminalColors.greenDeep : terminalColors.ink2}
+          />
+          <MobileStat label="Total" value={`${fmtToken(s.totalAmount.formatted)} ${s.token.symbol || ''}`.trim()} />
+          <MobileStat label="Value" value={fmtUsd(s.valueUsd)} valueColor={s.valueUsd !== undefined ? terminalColors.ink : terminalColors.faint} />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       onMouseEnter={() => setHover(true)}

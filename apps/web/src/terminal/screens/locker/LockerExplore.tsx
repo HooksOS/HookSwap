@@ -25,6 +25,7 @@ import { useLockerPools } from '~/terminal/lockers/analytics/useLockerPools'
 import { useLockerStats } from '~/terminal/lockers/analytics/useLockerStats'
 import { useLockerTokens } from '~/terminal/lockers/analytics/useLockerTokens'
 import { useLockerTvlHistory } from '~/terminal/lockers/analytics/useLockerTvlHistory'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
@@ -147,6 +148,56 @@ function NativeLockedCard({ lockCount }: { lockCount: number }): JSX.Element {
   )
 }
 
+/** Small label→value stat chip used in the mobile stacked-card layout. */
+function MobileStat({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        padding: '8px 10px',
+        borderRadius: 9,
+        border: `1px solid ${terminalColors.line}`,
+        background: terminalColors.panel,
+        minWidth: 0,
+      }}
+    >
+      <span
+        style={{
+          fontFamily: SANS,
+          fontSize: 10,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          color: terminalColors.faint,
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          fontFamily: MONO,
+          fontSize: 13.5,
+          fontWeight: 600,
+          letterSpacing: '-0.02em',
+          color: valueColor ?? terminalColors.ink,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+const mobileStatGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+  gap: 8,
+}
+
 /* ------------------------------------------------------------------ ledger rows */
 
 const rowStyle: React.CSSProperties = {
@@ -166,8 +217,20 @@ const rowStyle: React.CSSProperties = {
  * looks identical to a static row, just clickable. `to` is omitted when no lock id could
  * be resolved for the aggregate (never links to a fabricated / wrong lock).
  */
-function LedgerRow({ children, to }: { children: React.ReactNode; to?: string }): JSX.Element {
+function LedgerRow({ children, to, mobile }: { children: React.ReactNode; to?: string; mobile?: boolean }): JSX.Element {
   const [hover, setHover] = useState(false)
+  // Mobile: stacked card (column), whole card tappable, no hover-only affordances.
+  if (mobile) {
+    const style: React.CSSProperties = { ...rowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 12 }
+    if (to) {
+      return (
+        <Link to={to} className="tm-tap" style={{ ...style, textDecoration: 'none', color: 'inherit' }}>
+          {children}
+        </Link>
+      )
+    }
+    return <div style={style}>{children}</div>
+  }
   const style: React.CSSProperties = {
     ...rowStyle,
     transform: hover ? 'translateY(-2px)' : undefined,
@@ -196,8 +259,77 @@ function LedgerRow({ children, to }: { children: React.ReactNode; to?: string })
   )
 }
 
+/** Identity block (avatar + name + badge + chain/lock-count) shared by token & pool rows. */
+function LedgerIdentity({
+  avatar,
+  name,
+  badge,
+  chainName,
+  lockCount,
+}: {
+  avatar: React.ReactNode
+  name: string
+  badge: React.ReactNode
+  chainName: string
+  lockCount: number
+}): JSX.Element {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+      {avatar}
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span
+            style={{
+              fontFamily: SANS,
+              fontSize: 14,
+              fontWeight: 600,
+              color: terminalColors.ink,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {name}
+          </span>
+          {badge}
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+          <span style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.ink3 }}>{chainName}</span>
+          <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
+            {lockCount} lock{lockCount === 1 ? '' : 's'}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TokenRow({ t, to }: { t: TokenAgg; to?: string }): JSX.Element {
+  const isMobile = useIsMobileViewport()
   const initials = (t.symbol || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
+
+  if (isMobile) {
+    return (
+      <LedgerRow to={to} mobile>
+        <LedgerIdentity
+          avatar={<Avatar seed={t.token} initials={initials} logoUrl={resolveLedgerLogo(t.chainId, t.token)} />}
+          name={t.symbol || 'Unknown'}
+          badge={<Badge>TOKEN</Badge>}
+          chainName={t.chainName}
+          lockCount={t.lockCount}
+        />
+        <div style={mobileStatGridStyle}>
+          <MobileStat label="TVL" value={fmtUsd(t.tvlUsd)} valueColor={t.tvlUsd !== undefined ? terminalColors.ink : terminalColors.faint} />
+          <MobileStat
+            label="Locked supply"
+            value={t.lockedPctOfSupply !== null ? fmtPct(t.lockedPctOfSupply) : '—'}
+            valueColor={terminalColors.ink2}
+          />
+        </div>
+      </LedgerRow>
+    )
+  }
+
   return (
     <LedgerRow to={to}>
       <Avatar seed={t.token} initials={initials} logoUrl={resolveLedgerLogo(t.chainId, t.token)} />
@@ -241,9 +373,29 @@ function TokenRow({ t, to }: { t: TokenAgg; to?: string }): JSX.Element {
 }
 
 function PoolRow({ p, to }: { p: PoolAgg; to?: string }): JSX.Element {
+  const isMobile = useIsMobileViewport()
   const a = (p.token0Symbol || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 1).toUpperCase() || '?'
   const b = (p.token1Symbol || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 1).toUpperCase() || '?'
   const pair = `${p.token0Symbol || '?'}/${p.token1Symbol || '?'}`
+
+  if (isMobile) {
+    return (
+      <LedgerRow to={to} mobile>
+        <LedgerIdentity
+          avatar={<Avatar seed={p.pair} initials={`${a}${b}`} />}
+          name={pair}
+          badge={<Badge tone="green">LP</Badge>}
+          chainName={p.chainName}
+          lockCount={p.lockCount}
+        />
+        <div style={mobileStatGridStyle}>
+          <MobileStat label="TVL" value={fmtUsd(p.tvlUsd)} valueColor={p.tvlUsd !== undefined ? terminalColors.ink : terminalColors.faint} />
+          <MobileStat label="Locked" value={`${p.totalLockedAmount.formatted} LP`} valueColor={terminalColors.ink2} />
+        </div>
+      </LedgerRow>
+    )
+  }
+
   return (
     <LedgerRow to={to}>
       <Avatar seed={p.pair} initials={`${a}${b}`} />
