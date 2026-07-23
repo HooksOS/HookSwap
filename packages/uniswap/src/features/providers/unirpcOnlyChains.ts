@@ -42,12 +42,27 @@ export function isUniRpcOnlyChain(chainId: UniverseChainId): boolean {
  * Unlike Robinhood, Sepolia's Public RPC previously WAS the gateway URL, so it also needed
  * a real public endpoint (see mainnet.ts Sepolia rpcUrls[Public]).
  *
- * NOTE: the other HookSwap custom chains (Ink/HyperEVM/XLayer/MegaETH/Tempo) have the same
- * gateway-less situation and are candidates to add here if they exhibit it too.
+ * NOTE: the other HookSwap custom chains (Ink/HyperEVM/XLayer/MegaETH/Tempo/Stable) have the
+ * same gateway-less situation and were confirmed to exhibit it — the live console showed
+ * `entry-gateway.backend-prod.api.uniswap.org/rpc/<id>` CORS-failing for 988/999/57073/4326,
+ * breaking the chain switcher + every on-chain read. They are all listed here so the resolver
+ * skips UniRPC and falls through to their chain-info Public RPC.
+ *
+ * IMPORTANT: the legacy fall-through selector (rpcUrlSelector.ts) reads `rpcUrls[RPCType.Public].http[0]`.
+ * For Ink/HyperEVM/MegaETH/Stable that slot is already a real public RPC, so listing them here is
+ * sufficient. XLayer + Tempo previously kept `RPCType.Public` on the UniRPC gateway proxy — their
+ * Public slot was repointed to a real public RPC (xlayer.ts / tempo.ts) so this carve-out resolves
+ * to a working endpoint instead of the gateway.
  */
 const PUBLIC_RPC_ONLY_CHAINS: ReadonlySet<UniverseChainId> = new Set([
   UniverseChainId.Robinhood,
   UniverseChainId.Sepolia,
+  UniverseChainId.HyperEvm,
+  UniverseChainId.Ink,
+  UniverseChainId.MegaETH,
+  UniverseChainId.Stable,
+  UniverseChainId.XLayer,
+  UniverseChainId.Tempo,
 ])
 
 export function isPublicRpcOnlyChain(chainId: UniverseChainId): boolean {

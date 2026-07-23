@@ -8,7 +8,6 @@ import {
   DEFAULT_NATIVE_ADDRESS_LEGACY,
   DEFAULT_RETRY_OPTIONS,
   getQuicknodeEndpointUrl,
-  getUniRpcEndpointUrl,
 } from 'uniswap/src/features/chains/evm/rpc'
 import { buildChainTokens } from 'uniswap/src/features/chains/evm/tokens'
 import { GENERIC_L2_GAS_CONFIG } from 'uniswap/src/features/chains/gasDefaults'
@@ -67,7 +66,19 @@ export const XLAYER_CHAIN_INFO = {
   blockTimeMs: 3000,
   pendingTransactionsRetryOptions: DEFAULT_RETRY_OPTIONS,
   rpcUrls: {
-    [RPCType.Public]: { http: [getUniRpcEndpointUrl(UniverseChainId.XLayer)] },
+    // HookSwap has no Uniswap-hosted UniRPC gateway session for X Layer, so routing
+    // browser reads through the entry-gateway proxy CORS-fails (see
+    // providers/unirpcOnlyChains.ts PUBLIC_RPC_ONLY_CHAINS). Point Public at the same
+    // real public RPCs as Default so the public-RPC-only fall-through resolves to a
+    // working endpoint. *.drpc.org is on the CSP allowlist so it leads.
+    [RPCType.Public]: {
+      http: [
+        'https://xlayer.drpc.org',
+        'https://rpc.xlayer.tech',
+        'https://xlayerrpc.okx.com',
+        'https://196.rpc.thirdweb.com',
+      ],
+    },
     // Default feeds wallet-connector rpc maps (cookieless). Unkeyed, CSP-allowed
     // public endpoints. Verified real public X Layer RPCs (each returns chainId
     // 0xc4 / 196); *.drpc.org is on the CSP allowlist so it leads. rpc.xlayer.tech

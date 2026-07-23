@@ -7,7 +7,6 @@ import {
   DEFAULT_MS_BEFORE_WARNING,
   DEFAULT_NATIVE_ADDRESS,
   getQuicknodeEndpointUrl,
-  getUniRpcEndpointUrl,
 } from 'uniswap/src/features/chains/evm/rpc'
 import { buildChainTokens } from 'uniswap/src/features/chains/evm/tokens'
 import { NetworkLayer, RPCType, UniverseChainId, UniverseChainInfo } from 'uniswap/src/features/chains/types'
@@ -66,10 +65,14 @@ export const TEMPO_CHAIN_INFO = {
   supportsNFTs: false,
   urlParam: 'tempo',
   rpcUrls: {
-    [RPCType.Public]: { http: [getUniRpcEndpointUrl(UniverseChainId.Tempo)] },
+    // HookSwap has no Uniswap-hosted UniRPC gateway session for Tempo, so routing
+    // browser reads through the entry-gateway proxy CORS-fails (see
+    // providers/unirpcOnlyChains.ts PUBLIC_RPC_ONLY_CHAINS). Point Public at the
+    // real Tempo-operated public endpoints so the public-RPC-only fall-through
+    // resolves to a working endpoint instead of the gateway.
+    [RPCType.Public]: { http: ['https://rpc.tempo.xyz', 'https://rpc.mainnet.tempo.xyz'] },
     // Verified real public Tempo RPCs (each returns chainId 0x1079 / 4217).
-    // Only two public endpoints exist; both are Tempo-operated. Keep Public/
-    // Interface on the hosted proxies for auth.
+    // Only two public endpoints exist; both are Tempo-operated.
     [RPCType.Default]: { http: ['https://rpc.tempo.xyz', 'https://rpc.mainnet.tempo.xyz'] },
     [RPCType.Interface]: { http: [getQuicknodeEndpointUrl(UniverseChainId.Tempo)] },
   },
