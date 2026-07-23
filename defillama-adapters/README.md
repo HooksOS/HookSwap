@@ -7,34 +7,51 @@ on-chain) on DefiLlama. Two independent DefiLlama systems, so two files:
 |---|---|---|---|
 | `hookswap/index.js` | [`DefiLlama/DefiLlama-Adapters`](https://github.com/DefiLlama/DefiLlama-Adapters) | `projects/hookswap/index.js` | **TVL** |
 | `dexs/hookswap/index.ts` | [`DefiLlama/dimension-adapters`](https://github.com/DefiLlama/dimension-adapters) | `dexs/hookswap/index.ts` | **Volume + Fees** (one file drives both the /dexs and /fees dashboards) |
+| `chainlist/chainid-4326.js` | [`DefiLlama/chainlist`](https://github.com/DefiLlama/chainlist) | `constants/additionalChainRegistry/chainid-4326.js` | **MegaETH chain registration** (needed to unblock MegaETH — see below) |
 
 Everything below is **verified**, not assumed. Every address comes from `contracts/deployments/<chain>.json`
-in this repo, and every DefiLlama-side fact was read live on 2026-07-15 (see "Evidence").
+(and `pools-seeded.json`) in this repo, and every DefiLlama-side fact was read live on **2026-07-23**
+(providers.json / chains.json / env.ts / the sdk providers file — see "Evidence").
 
 ---
 
 ## What is wired
 
-**Enabled now: Robinhood Chain only (chainId 4663)** — the sole HookSwap chain with confirmed on-chain
-liquidity at time of writing.
+HookSwap is an own-deployed Uniswap **v2 + v3** stack per chain. **All real liquidity is in v2 pools**
+(confirmed on-chain 2026-07-23, `contracts/deployments/pools-seeded.json`): each pool is the chain's
+wrapped-native paired against a **real stablecoin** (dust/proof depth — routing-proven via `getAmountsOut`,
+not deep liquidity yet). v3 factories are deployed everywhere but hold **no confirmed liquidity**, so v3 is
+intentionally disabled in both adapters.
 
-| Field | Value | Source |
+### Coverage
+
+| Chain (id) | sdk key (providers.json) | v2Factory | Real v2 pool | TVL adapter | Fees adapter | Notes |
+|---|---|---|---|---|---|---|
+| Robinhood (4663) | `robinhoodchain` | `0xD1Cf664944173140AFc302c169eFD55c24966B45` | WETH/USDG `0xF7ddC383…` (priced) | ✅ enabled | ✅ enabled | slug discrepancy: fees adapter uses `robinhood` (see below) |
+| Ink (57073) | `ink` | `0xD1Cf664944173140AFc302c169eFD55c24966B45` | WETH/USD₮0 `0xB738BBaC…` | ✅ enabled | ✅ enabled | |
+| XLayer (196) | `xlayer` | `0xD1Cf664944173140AFc302c169eFD55c24966B45` | STT/WOKB (pre-existing seed) | ✅ enabled | ✅ enabled | canonical nonce-0 factory; STT is a test token → priced $0, WOKB priced |
+| HyperEVM (999) | `hyperliquid` | `0xB92598Fa464B96FEC394a17A269Ad18060Ec60B2` | WHYPE/USDC `0x8628AfE8…` | ✅ enabled | ✅ enabled | HookSwap "HyperEVM" == sdk `hyperliquid` |
+| Stable (988) | `stable` | `0xBe3729d06E3A17F3c7c5ac394c7bCbe138B6EEFA` | WgUSDT/USDT0 `0x7F902372…` | ✅ enabled | ✅ enabled | `stable`/988 **is** in providers.json (rpc `https://rpc.stable.xyz`) |
+| **MegaETH (4326)** | — (absent) | `0xD1Cf664944173140AFc302c169eFD55c24966B45` | WETH/USDm `0xAD12931B…` | ⛔ blocked | ⛔ blocked | **DefiLlama-side blocker** — see "MegaETH" below |
+| Tempo (4217) | — (absent) | `0xE8526A0429aeC9a5253ac854F8b6dC964E677EE4` | none | ⬜ off | ⬜ off | AA-native tokens revert on approve/transfer → no v2 pair exists |
+
+**TVL enabled: Robinhood, Ink, XLayer, HyperEVM, Stable (5).**
+**Fees enabled: Robinhood, Ink, XLayer, HyperEVM, Stable (5).**
+**Blocked: MegaETH (has a real pool, needs a chain registration).** **Off: Tempo (no pool).**
+
+Fee model (both adapters): HookSwap v2 charges **0.30%** (`feeTier` 3000, verified via data-api /v1/pools +
+canonical UniswapV2 constant-product). The fees adapter sets `revenueRatio: 0` → **dailyRevenue = 0**
+(protocol fee switch `feeTo` is unset), **dailySupplySideRevenue = 100%** of fees to LPs.
+
+### Selected token references (from deployments)
+
+| Chain | wrapped-native | stablecoin |
 |---|---|---|
-| chainId | `4663` | `eth_chainId` → `0x1237` (live) |
-| RPC | `https://rpc.mainnet.chain.robinhood.com` | `contracts/deployments/robinhood.json`; identical to `@defillama/sdk` provider `robinhoodchain` |
-| v2Factory | `0xD1Cf664944173140AFc302c169eFD55c24966B45` | `robinhood.json` |
-| v3Factory | `0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3` | `robinhood.json` (0 pools yet → v3 left disabled) |
-| WETH | `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` | `robinhood.json` `weth9` |
-| USDG (6 dec) | `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168` | `robinhood-production.json` (Global Dollar stablecoin anchor) |
-| tHOOK (test) | `0x3b5a01Efc59f3465b8Eb04697f97CFE0BA700D9D` | `contracts/seed/config/robinhood-3pools.json` |
-| v2 pool fee | 0.30% (`feeTier` 3000) | data-api `/v1/pools` |
-
-Live v2 pairs (`v2Factory.allPairsLength()` == **2**): WETH/tHOOK `0xbf54dFaC…` and WETH/USDG `0xF7ddC383…`.
-
-**Other HookSwap chains** (factories deployed, RPC already in `@defillama/sdk`, but no confirmed live
-liquidity yet — listed as commented, ready-to-enable configs in both adapter files):
-MegaETH 4326 (`megaeth`), Ink 57073 (`ink`), XLayer 196 (`xlayer`), HyperEVM 999 (`hyperliquid`),
-Tempo 4217 (`tempo`).
+| Robinhood | WETH `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` | USDG `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168` (6-dec) |
+| Ink | WETH `0x4200000000000000000000000000000000000006` | USD₮0 `0x0200C29006150606B650577BBE7B6248F58470c1` (6-dec) |
+| HyperEVM | WHYPE `0x5555555555555555555555555555555555555555` | USDC `0xb88339cb7199b77e23db6e890353e22632ba630f` (6-dec) |
+| Stable | WgUSDT `0x817997ca8394e26cce3de3a076a4889b27dbf9de` (18-dec) | USDT0 `0x779Ded0c9e1022225f8E0630b35a9b54bE713736` (6-dec) |
+| MegaETH | WETH `0x4200000000000000000000000000000000000006` | USDm `0xfafddbb3fc7688494971a79cc65dca3ef82079e7` (18-dec) |
 
 ---
 
@@ -42,92 +59,113 @@ Tempo 4217 (`tempo`).
 
 **On-chain reads**, the idiomatic DefiLlama path — NOT a subgraph, NOT the HookSwap data-api.
 
-- **No public subgraph** exists for HookSwap, so the usual `getGraphDimensions2`/subgraph helper is not
-  applicable. HookSwap self-hosts `data.hookswap.org` (returns USD TVL/volume) but DefiLlama's frameworks
-  expect DefiLlama-priced, on-chain-derived numbers, so the data-api is used only as a cross-check.
+- **No public subgraph** exists for HookSwap. HookSwap self-hosts `data.hookswap.org` (returns USD
+  TVL/volume) but DefiLlama's frameworks expect DefiLlama-priced, on-chain-derived numbers, so the
+  data-api is used only as a cross-check.
 - **TVL** = `getUniTVL({ chain, factory, useDefaultCoreAssets:true })` (`helper/unknownTokens`): enumerates
   pairs via `allPairsLength()/allPairs()` and sums reserves; DefiLlama prices the tokens.
-- **Volume + Fees** = `uniV2Exports({ [chain]: { factory, fees:0.003, start } }, { methodology })`
-  (`helpers/uniswap`): reads UniswapV2 `Swap` events per pair; fees = volume × 0.30%.
-
-### Proof the numbers are real (data-api cross-check, live 2026-07-15)
-
-`GET https://data.hookswap.org/v1/stats?chainId=4663`:
-```json
-{"dailyProtocolTvl":{"v2":[{"currency":"USD","value":33.07083929722935}]},
- "historicalProtocolVolume":{"Month":{"v2":[{"currency":"USD","value":2.593321026020569}]}}}
-```
-`GET https://data.hookswap.org/v1/pools?chainId=4663` → WETH/USDG pool `stats`: `tvl 32.30`, `volume1d 2.59`,
-`apr 8.79`; WETH/tHOOK pool `tvl 0.7687`. Liquidity is intentionally thin (seed stage) but the values are
-**real and non-fabricated**. DefiLlama coins already prices the two real tokens: WETH ≈ `$1924.98`,
-USDG ≈ `$1.0019`. tHOOK is an unlisted test token with no market → priced `$0` (honest; only genuine
-reserves count toward USD TVL).
+- **Volume + Fees** = `uniV2Exports(config, { methodology })` (`helpers/uniswap`): reads UniswapV2 `Swap`
+  events per pair; `fees:0.003`, `revenueRatio:0`, per-chain `start` (a conservative log-scan lower bound).
+- **Unpriced test tokens → $0.** Only genuinely-priced reserves/volume count. Honest, not fabricated.
 
 ---
 
-## Steps to actually list HookSwap on DefiLlama
+## ⚠️ Chain-registration / slug facts (verified live 2026-07-23)
 
-DefiLlama sources a chain's chainId + RPC from `@defillama/sdk`'s `build/providers.json`, and token prices
-from its coins service ([docs: add a new chain](https://docs.llama.fi/list-your-project/how-to-add-a-new-blockchain)).
-
-### Good news — the chain is already half-supported
-- **RPC/chainId already present.** `@defillama/sdk` `build/providers.json` already contains
-  `"robinhoodchain": { rpc:["https://rpc.mainnet.chain.robinhood.com"], chainId:4663 }` — the exact
-  HookSwap RPC. So on-chain reads resolve **without a new-chain PR**. (Same for `xlayer`, `megaeth`,
-  `ink`, `tempo`, `hyperliquid`/999 — all already in providers.json.)
-- **Token prices already exist** for the two real tokens (WETH, USDG) via DefiLlama coins.
-
-### PRs / steps required
-1. **DefiLlama-Adapters PR** — add `projects/hookswap/index.js` (this repo's `hookswap/index.js`).
-   - Confirm the chain slug (see discrepancy below). `projects/helper/chains.json` already lists
-     `"robinhood"`.
-   - (Optional, improves pricing) add HookSwap tokens to `projects/helper/tokenMapping.js` for the chain,
-     mapping WETH→`coingeckoId` (weth/ethereum) and USDG→`global-dollar`, so core-asset pricing is
-     deterministic rather than relying on coins auto-discovery.
-2. **dimension-adapters PR** — add `dexs/hookswap/index.ts` (this repo's `dexs/hookswap/index.ts`).
-   `helpers/chains.ts` already defines `CHAIN.ROBINHOOD = "robinhood"`.
-3. **Protocol metadata** — register HookSwap in DefiLlama's protocols/config (name, logo, url
-   `https://hookswap.org`, twitter, category `Dexes`, chain(s)) as part of the PR review.
-
-### ⚠️ Chain-slug discrepancy — the one thing to confirm with maintainers
-There are **two different Robinhood slugs** in DefiLlama, and they must be reconciled:
-
+### 1. Robinhood slug discrepancy (must be reconciled with maintainers in the PR)
 | Where | Robinhood string |
 |---|---|
 | `@defillama/sdk` providers.json (carries RPC + chainId 4663) | **`robinhoodchain`** |
 | DefiLlama-Adapters `projects/helper/chains.json` | `robinhood` |
 | dimension-adapters `helpers/chains.ts` `CHAIN.ROBINHOOD` | `robinhood` |
-| DefiLlama coins prices observed | WETH under `robinhood:…`, USDG under `robinhoodchain:…` |
+| dimension-adapters `helpers/env.ts` RPC override | `ROBINHOOD_RPC = https://rpc.mainnet.chain.robinhood.com` |
 
-The TVL adapter's `CHAIN` constant is set to **`robinhoodchain`** (the only slug proven to carry the RPC);
-the volume adapter's `CHAIN` is set to **`robinhood`** (the dimension-adapters enum value). Whichever string
-each harness uses to resolve an RPC must be a `providers.json` key — confirm with DefiLlama whether
-`robinhood` is aliased to `robinhoodchain`, or align both. Each adapter isolates this in a single top-level
-constant, so aligning is a 1-line change. **This can only be settled by running each DefiLlama repo's test
-locally** (`npm test`), which is not possible from this repo.
+- **TVL adapter** keys Robinhood as **`robinhoodchain`** (the only sdk providers.json slug that carries the
+  RPC — `getUniTVL` resolves the RPC via the sdk).
+- **Fees adapter** keys Robinhood as **`robinhood`** (`CHAIN.ROBINHOOD`) — dimension-adapters resolves its
+  RPC from `helpers/env.ts` `ROBINHOOD_RPC`, not from the sdk providers slug. So each adapter correctly
+  uses the string its own harness understands. If DefiLlama's TVL harness attributes the chain off
+  `chains.json` (`robinhood`) it must alias `robinhood ⇄ robinhoodchain`. Each adapter isolates this in a
+  single key, so aligning is a 1-line change.
 
-### Testable now vs. blocked
-- **Testable now:** `node --check hookswap/index.js` passes (done); addresses/chainId/RPC/fee all verified
-  on-chain; data-api cross-check returns real USD numbers.
-- **Blocked on the DefiLlama toolchain (not this repo):** actually *running* the adapters
-  (`getUniTVL`/`uniV2Exports` need `@defillama/sdk` + the repo's helpers installed) and confirming the
-  chain-slug resolves an RPC in each harness. The `.ts` volume adapter compiles under dimension-adapters'
-  TS config (can't `node --check` a `.ts` here).
-- **Not a blocker, but shapes the number:** thin seed liquidity → small TVL/volume today; grows as
-  liquidity is seeded. tHOOK stays `$0` until/if it gets a market price.
+### 2. Stable (988) — already registered (good news)
+`stable` IS in `@defillama/sdk` providers.json with chainId 988 and rpc `https://rpc.stable.xyz`
+(+ sentio), matching this repo's `contracts/deployments/stable.json` / `pools-seeded.json`. No new-chain PR
+needed — enabled directly under key `stable` in both adapters.
+
+### 3. Ink / XLayer / HyperEVM — already registered
+`ink` (57073), `xlayer` (196), `hyperliquid` (999) are all present in providers.json (and `xlayer`/
+`hyperliquid` also have `helpers/env.ts` RPC overrides). Enabled directly. HookSwap's "HyperEVM" == sdk
+`hyperliquid` (both chainId 999).
+
+### 4. MegaETH (4326) — the ONE genuine DefiLlama-side blocker
+MegaETH has a **real** WETH/USDm v2 pool, but chainId 4326 is **absent** from:
+- `@defillama/sdk` providers.json (no `megaeth` key, no key with chainId 4326), **and**
+- dimension-adapters `helpers/env.ts` (no `MEGAETH_RPC`).
+
+`CHAIN.MEGAETH="megaeth"` exists in the dimension-adapters enum and `"megaeth"` is listed in
+DefiLlama-Adapters `projects/helper/chains.json`, but **neither carries an RPC** — the sdk providers.json is
+what resolves on-chain reads, and it lacks 4326. So `getUniTVL('megaeth')` / the fees harness cannot resolve
+an RPC. This is **not fixable from the adapter files alone**.
+
+**To unblock (one-file DefiLlama PR):** submit `chainlist/chainid-4326.js` (in this repo, ready-to-go —
+verified RPC `https://mainnet.megaeth.com/rpc` returning `eth_chainId` 0x10e6 == 4326, explorer + native
+symbol from this repo's own `megaeth.ts`) to `DefiLlama/chainlist` as
+`constants/additionalChainRegistry/chainid-4326.js`. Optionally also add
+`MEGAETH_RPC=https://mainnet.megaeth.com/rpc` to dimension-adapters `helpers/env.ts` for the fees side.
+Once merged, uncomment the two clearly-marked `megaeth` lines (one in each adapter).
+
+### 5. Tempo (4217) — off, two independent reasons
+(1) **No usable pool:** Tempo's account-abstraction-native tokens (pathUSD/USDC.e) revert on `approve()` and
+on plain EOA `transfer()`, and `v2Factory.createPair` failed → no v2 pair exists
+(`pools-seeded.json` → `blocked.tempo_4217`). (2) chainId 4217 / `tempo` is absent from providers.json
+anyway. Left off in both adapters with a comment.
 
 ---
 
-## Evidence (commands run 2026-07-15)
-- `eth_chainId` → `0x1237` (4663); `v2Factory.allPairsLength()` → `0x2`.
-- `@defillama/sdk` providers.json (unpkg `@defillama/sdk/build/providers.json`): keys `robinhoodchain`
-  (4663, correct RPC), `xlayer` (196), `megaeth` (4326), `ink` (57073), `tempo` (4217), `hyperliquid` (999).
-- `DefiLlama-Adapters/projects/helper/chains.json`: contains `robinhood`, `xlayer`, `megaeth`, `ink`,
-  `tempo`, `hyperliquid`.
-- `dimension-adapters/helpers/chains.ts`: `ROBINHOOD="robinhood"`, `XLAYER="xlayer"`, `MEGAETH="megaeth"`,
-  `INK="ink"`, `TEMPO="tempo"`, `HYPERLIQUID="hyperliquid"`.
-- `coins.llama.fi/prices/current`: `robinhood:WETH`=$1924.98, `robinhoodchain:USDG`=$1.0019.
-- Helper signatures confirmed from source: `getUniTVL({ chain, factory, useDefaultCoreAssets })`
-  (`helper/unknownTokens` → `helper/cache/uniswap.js`), `uniV3Export({ [chain]:{ factory, fromBlock } })`
-  (`helper/uniswapV3.js`), `mergeExports(...)` (`helper/utils.js`),
-  `uniV2Exports(config,{...})` with per-chain `{ factory, fees=0.003, start }` (`helpers/uniswap.ts`).
+## v3 handling
+
+**Disabled on every chain.** v3 factories are deployed but hold no confirmed liquidity; enabling
+`uniV3Export`/`getUniV3LogAdapter` would run a per-chain `PoolCreated` log scan (needing the exact
+v3Factory deploy block) that returns nothing. Both adapter files carry the per-chain v3Factory addresses
+and a ready-to-enable snippet for when v3 liquidity is seeded.
+
+v3Factory per chain: robinhood/ink/megaeth `0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3`,
+xlayer `0xAB34Bb3767020059A35e71D03f13E9e4fbCD07aC`, hyperevm `0x45DB3eaE624dBcA631A9C6C1406DA0B8F6Fb275A`,
+stable `0xf486e625C892C0739A16A3A49B37fD52374B30CB`.
+
+---
+
+## Steps to actually list HookSwap on DefiLlama
+
+1. **DefiLlama-Adapters PR** — add `projects/hookswap/index.js`. (Optional, improves pricing) add HookSwap
+   tokens to `projects/helper/tokenMapping.js`.
+2. **dimension-adapters PR** — add `dexs/hookswap/index.ts`.
+3. **DefiLlama/chainlist PR** (only to unblock MegaETH) — add `constants/additionalChainRegistry/chainid-4326.js`.
+4. **Protocol metadata** — register HookSwap (name, logo, url `https://hookswap.org`, category `Dexes`,
+   chains) as part of PR review.
+
+### Testable now vs. blocked
+- **Testable now:** `node --check hookswap/index.js` passes; `chainlist/chainid-4326.js` passes ESM check;
+  `dexs/hookswap/index.ts` transpiles clean under esbuild; all addresses/chainIds/RPCs/slug facts verified
+  against providers.json / chains.json / env.ts / on-chain `eth_chainId`.
+- **Blocked on the DefiLlama toolchain (not this repo):** actually *running* the adapters needs
+  `@defillama/sdk` + each repo's helpers installed; and MegaETH needs the chainlist merge above.
+
+---
+
+## Evidence (verified 2026-07-23)
+- `@defillama/sdk` providers.json (`https://unpkg.com/@defillama/sdk/build/providers.json`): keys present —
+  `robinhoodchain` (4663), `ink` (57073), `xlayer` (196), `hyperliquid` (999), `stable` (988).
+  **Absent:** `robinhood`, `megaeth`, any key with chainId 4326, `tempo`.
+- dimension-adapters `helpers/chains.ts`: `ROBINHOOD="robinhood"`, `INK="ink"`, `XLAYER="xlayer"`,
+  `HYPERLIQUID="hyperliquid"`, `STABLE="stable"`, `MEGAETH="megaeth"`, `TEMPO="tempo"`.
+- dimension-adapters `helpers/env.ts`: `ROBINHOOD_RPC`, `XLAYER_RPC`, `HYPERLIQUID_RPC` set; **no**
+  `MEGAETH_RPC`, no `TEMPO_RPC`, no `STABLE_RPC`/`INK_RPC` (latter two resolve via sdk).
+- DefiLlama-Adapters `projects/helper/chains.json`: lists `robinhood`, `ink`, `xlayer`, `hyperliquid`,
+  `stable`, `megaeth`, `tempo`.
+- MegaETH RPC live: `POST https://mainnet.megaeth.com/rpc eth_chainId` → `0x10e6` == 4326.
+- `uniV2Exports` signature (helpers/uniswap.ts): `uniV2Exports(config, { ...rootOptions })` spreads root
+  options (methodology) into the SimpleAdapter; per-chain `UniV2Config` accepts `{ factory, fees, start,
+  revenueRatio }` (`revenueRatio:0` ⇒ dailyRevenue 0, dailySupplySideRevenue = full fees).
+- Addresses: all verbatim from `contracts/deployments/<chain>.json` + `pools-seeded.json` in this repo.

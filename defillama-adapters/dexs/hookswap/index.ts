@@ -5,69 +5,92 @@
  * Adapter system:                           Volume + Fees   (github.com/DefiLlama/dimension-adapters)
  *
  * One dimension-adapter file yields BOTH the /dexs (volume) and /fees dashboards: `uniV2Exports`
- * reads on-chain Swap events from every HookSwap v2 pair and derives dailyVolume, and with the pool
- * fee it also derives dailyFees / supply-side revenue.
+ * reads on-chain UniswapV2 Swap events from every HookSwap v2 pair per chain and derives dailyVolume,
+ * and with the pool fee it derives dailyFees. With `revenueRatio: 0` (HookSwap runs a standard v2
+ * fork with the protocol fee switch OFF — feeTo unset) the split is: dailyRevenue = 0 (protocol),
+ * dailySupplySideRevenue = 100% of fees (LPs).
  *
  * DATA SOURCE = on-chain Swap event logs (idiomatic for a univ2 fork with no public subgraph).
- * HookSwap self-hosts a data-api (data.hookswap.org /v1/stats returns USD volume) but DefiLlama's
- * dimension framework expects on-chain-derived, DefiLlama-priced numbers, so we use the log path.
+ * DefiLlama prices the tokens; unpriced test tokens (e.g. XLayer STT) contribute $0 — honest.
  *
- * VERIFIED LIVE (2026-07-15, facts-only):
- *   - HookSwap v2 pools on Robinhood (4663) charge 0.30% (feeTier 3000) — data.hookswap.org
- *     /v1/pools returns "feeTier":3000 for both live pairs. So fees = 0.003.
- *   - v2Factory 0xD1Cf66..6B45 allPairsLength() == 2 (WETH/tHOOK, WETH/USDG).
- *   - data.hookswap.org /v1/stats?chainId=4663 currently reports v2 30d volume ~$2.59 (thin seed
- *     liquidity) — real, non-zero, non-fabricated. On-chain Swap logs are the same events.
+ * HookSwap v2 pools charge 0.30% (feeTier 3000) → fees = 0.003 (verified via data.hookswap.org
+ * /v1/pools "feeTier":3000, and it's the canonical UniswapV2 constant-product fee).
+ *
+ * REAL LIQUIDITY confirmed on-chain 2026-07-23 (contracts/deployments/pools-seeded.json). Each
+ * enabled chain has ≥1 live v2 pair (wrapped-native / real stablecoin) — dust/proof depth today,
+ * grows with seeding. Addresses below are verbatim from contracts/deployments/<chain>.json.
  */
 
 import { uniV2Exports } from '../../helpers/uniswap'
+import { CHAIN } from '../../helpers/chains'
+
+// HookSwap v2 swap fee = 0.30% (UniswapV2 constant-product; data-api feeTier 3000).
+const FEE = 0.003
+// Standard v2 fork, protocol fee switch OFF (feeTo unset) => protocol Revenue share = 0, LPs get 100%.
+const REVENUE_RATIO = 0
 
 // -------------------------------------------------------------------------------------------------
-// CHAIN — dimension-adapters/helpers/chains.ts defines CHAIN.ROBINHOOD = 'robinhood'.
-// IMPORTANT (see README "Chain-slug discrepancy"): the @defillama/sdk build we inspected exposes the
-// Robinhood RPC under provider key 'robinhoodchain' (chainId 4663), while the dimension-adapters
-// CHAIN enum value is 'robinhood'. Whichever string the dimension-adapters harness uses to resolve an
-// RPC must match a providers.json key. This is verifiable ONLY by running the repo locally
-// (`npm test -- hookswap`), which we cannot do here. Kept as one constant so it is a 1-line change.
+// CHAIN KEY -> { v2 factory, start }.
+//
+// Keys are dimension-adapters CHAIN enum values (helpers/chains.ts, verified live 2026-07-23):
+//   CHAIN.ROBINHOOD="robinhood", CHAIN.INK="ink", CHAIN.XLAYER="xlayer",
+//   CHAIN.HYPERLIQUID="hyperliquid" (== HookSwap "HyperEVM" chainId 999), CHAIN.STABLE="stable".
+// RPC resolution in dimension-adapters (verified live 2026-07-23):
+//   robinhood    -> helpers/env.ts ROBINHOOD_RPC = https://rpc.mainnet.chain.robinhood.com
+//                   (NOTE the slug discrepancy: @defillama/sdk providers.json carries this chain as
+//                    "robinhoodchain"/4663, but dimension-adapters resolves CHAIN.ROBINHOOD="robinhood"
+//                    via its own env.ts RPC override — so THIS adapter correctly uses "robinhood".)
+//   xlayer       -> helpers/env.ts XLAYER_RPC (+ sdk providers.json "xlayer"/196)
+//   hyperliquid  -> helpers/env.ts HYPERLIQUID_RPC (+ sdk providers.json "hyperliquid"/999)
+//   ink          -> sdk providers.json "ink"/57073
+//   stable       -> sdk providers.json "stable"/988
+//
+// `start` = a conservative unix-seconds LOWER BOUND for the Swap-log backfill (scan window, not an
+// on-chain-verified deploy block). Over-early is safe (finds nothing earlier); each value is before
+// the chain's HookSwap v2Factory deploy and after that chain's genesis:
+//   robinhood = 1777567931 (Robinhood Chain genesis, block-1 ts, VERIFIED live 2026-04-30 16:52 UTC)
+//   ink/xlayer/hyperliquid = 1782864000 (2026-07-01 UTC; HookSwap stack deployed 2026-07-03/04)
+//   stable = 1784505600 (2026-07-20 UTC; Stable DEX deployed 2026-07-22)
 // -------------------------------------------------------------------------------------------------
-const CHAIN = 'robinhood'
+const CONFIG: Record<string, { factory: string; start: number }> = {
+  [CHAIN.ROBINHOOD]:   { factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45', start: 1777567931 }, // robinhood.json (4663)
+  [CHAIN.INK]:         { factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45', start: 1782864000 }, // ink.json (57073)
+  [CHAIN.XLAYER]:      { factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45', start: 1782864000 }, // xlayer.json (196) — canonical nonce-0 factory
+  [CHAIN.HYPERLIQUID]: { factory: '0xB92598Fa464B96FEC394a17A269Ad18060Ec60B2', start: 1782864000 }, // hyperevm.json (999)
+  [CHAIN.STABLE]:      { factory: '0xBe3729d06E3A17F3c7c5ac394c7bCbe138B6EEFA', start: 1784505600 }, // stable.json (988)
+}
 
-// From contracts/deployments/robinhood.json:
-const V2_FACTORY = '0xD1Cf664944173140AFc302c169eFD55c24966B45'
-
-// Protocol start (unix seconds). Lower bound = Robinhood Chain genesis: block 1 timestamp read live
-// from the RPC = 1777567931 (~2026-04-30). Safe over-estimate (no HookSwap pairs pre-date it, so
-// backfill finds nothing earlier). Refine to the exact v2Factory deploy block/timestamp if wanted.
-const START = 1777567931
-
-const adapter = uniV2Exports(
-  {
-    [CHAIN]: {
-      factory: V2_FACTORY,
-      fees: 0.003, // HookSwap v2 swap fee = 0.30% (verified: data-api feeTier 3000)
-      start: START,
-    },
-  },
-  {
-    methodology: {
-      Volume: 'Sum of the token amounts swapped through every HookSwap v2 pair (UniswapV2 Swap events) on Robinhood Chain (4663), priced by DefiLlama.',
-      Fees: 'Swap volume x 0.30% (the HookSwap v2 pool fee).',
-      SupplySideRevenue: 'All 0.30% of swap fees accrue to liquidity providers (standard UniswapV2 fork; no protocol fee switch enabled).',
-      Revenue: 'None taken by the protocol at the v2 pool level (feeTo not set).',
-    },
-  },
+const v2Config = Object.fromEntries(
+  Object.entries(CONFIG).map(([chain, { factory, start }]) => [
+    chain,
+    { factory, fees: FEE, revenueRatio: REVENUE_RATIO, start: String(start) },
+  ]),
 )
+
+const adapter = uniV2Exports(v2Config, {
+  methodology: {
+    Volume: 'Sum of the token amounts swapped through every HookSwap v2 pair (UniswapV2 Swap events) on each enabled chain, priced by DefiLlama.',
+    Fees: 'Swap volume x 0.30% (the HookSwap v2 pool fee).',
+    SupplySideRevenue: 'All 0.30% of swap fees accrue to liquidity providers (standard UniswapV2 fork; the protocol fee switch feeTo is not set).',
+    Revenue: 'None taken by the protocol at the v2 pool level (feeTo unset) — revenueRatio = 0.',
+  },
+})
 
 export default adapter
 
-/*
- * v3 (add when v3 pools exist): import { uniV3Exports } from '../../helpers/uniswap' and export a
- * combined adapter. v3Factory (Robinhood) = 0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3. Currently no
- * v3 pools exist on any HookSwap chain, so v3 is omitted.
- *
- * OTHER HOOKSWAP CHAINS (factories deployed, RPC present in @defillama/sdk — enable per chain once
- * on-chain v2 pairs are confirmed; add each as another `[CHAIN.X]: { factory, fees: 0.003, start }`):
- *   MegaETH 4326 ('megaeth') v2 0xD1Cf66..6B45 | Ink 57073 ('ink') v2 0xD1Cf66..6B45 |
- *   XLayer 196 ('xlayer') v2 0xD1Cf66..6B45 | HyperEVM 999 ('hyperliquid') v2 0xB92598Fa..60B2 |
- *   Tempo 4217 ('tempo') v2 0xE8526A04..7EE4
- */
+// -------------------------------------------------------------------------------------------------
+// MEGAETH (4326) — HAS a real v2 pool (WETH/USDm, factory 0xD1Cf664944173140AFc302c169eFD55c24966B45),
+// and CHAIN.MEGAETH="megaeth" EXISTS in helpers/chains.ts, BUT it is BLOCKED: there is NO megaeth RPC
+// wired in dimension-adapters (no MEGAETH_RPC in helpers/env.ts) AND no "megaeth"/4326 entry in
+// @defillama/sdk providers.json (both verified live 2026-07-23), so the harness cannot resolve an RPC.
+// TO UNBLOCK: register the chain DefiLlama-side (chainlist chainid-4326.js — ready copy at
+// defillama-adapters/chainlist/chainid-4326.js) and/or add MEGAETH_RPC=https://mainnet.megaeth.com/rpc
+// to dimension-adapters helpers/env.ts, then add:
+//   // CONFIG[CHAIN.MEGAETH] = { factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45', start: 1782864000 }
+//
+// TEMPO (4217) — OFF: no usable pool (AA-native tokens revert on approve/transfer; no v2 pair exists,
+//   pools-seeded.json "blocked": tempo_4217) and no RPC resolvable in dimension-adapters/sdk anyway.
+//
+// v3 — omitted on every chain (no confirmed v3 liquidity). To add later:
+//   import { getUniV3LogAdapter } from '../../helpers/uniswap'  // per-chain v3Factory (see hookswap/index.js)
+// -------------------------------------------------------------------------------------------------
