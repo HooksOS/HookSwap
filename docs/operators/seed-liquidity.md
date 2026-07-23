@@ -76,6 +76,29 @@ cd contracts/seed
   blocks are fine.
 - **Robinhood / XLayer** — low base fees; `chains.json` sets a small floor that clears.
 
+## Seeded so far (2026-07-23)
+
+Real stablecoin-anchored pools are now live on **6 of the 7** production chains. Each is a **v2**
+pair of the chain's wrapped-native against a **real stablecoin the deployer holds** — **stablecoins
+only, no mock/test tokens**. Sizes are native-gas-limited **dust / proof pools** (~$10–30 each):
+routing-proven via `getAmountsOut`, not deep liquidity. All txs mined `status 0x1`, verified
+on-chain. Canonical record: [`contracts/deployments/pools-seeded.json`](../../contracts/deployments/pools-seeded.json).
+
+| Chain (id) | Pair (v2) | Pair address | Seeded |
+|---|---|---|---|
+| Robinhood (4663) | WETH / USDG (pre-existing anchor) | `0xF7ddC3837eAF447689a365f5f6f6B7C2AcdB72D7` | ~0.0083 WETH : 16.29 USDG |
+| Stable (988) | WgUSDT / USDT0 | `0x7F9023729F92ecb5aCbe9A4d9F9463fCDf5b2B9f` | 5 WgUSDT : 5 USDT0 |
+| Ink (57073) | WETH / USD₮0 | `0xB738BBaC16121D11B1F59AbC619A359413503d12` | 0.00527 WETH : 10 USD₮0 |
+| MegaETH (4326) | WETH / USDm | `0xAD12931B2ff618C4aFEA9d9BCB7508Ccb51fF674` | 0.0025 WETH : 4.75 USDm |
+| HyperEVM (999) | WHYPE / USDC | `0x8628AfE800ca8C26F1d4Dc41e2B02C85e0B19Fc3` | 0.1646 WHYPE : 10 USDC |
+| X Layer (196) | STT / WOKB (existing seed) | — | pre-existing |
+
+**Tempo (4217) is blocked — no pool.** Its account-abstraction-native system tokens (`pathUSD`
+6-dec `0x20c0…0000`, `USDC.e` 6-dec) revert on `approve()` **and** on plain EOA `transfer()` — only
+the AA gas-payment path moves them — and `v2Factory.createPair` also failed. So a Tempo v2 pool
+needs the chain's AA-native token flow / paymaster, not standard router-approve or
+direct-transfer-and-mint. Deferred until AA tooling lands (see `pools-seeded.json` → `blocked`).
+
 ## After seeding
 
 Seeded pools are necessary but not sufficient — the interface calls a routing service, not the

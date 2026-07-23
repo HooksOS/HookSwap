@@ -24,3 +24,5 @@ Reference for launchpads, SDK consumers, and anyone integrating with HookSwap.
   on every chain.
 - Machine-readable address map for integrators:
   [`launchpad-integration/addresses.json`](../../launchpad-integration/addresses.json).
+- **External analytics:** HookSwap ships [DefiLlama adapters](./analytics-indexer.md#defillama--external-analytics)
+  (TVL + volume + fees) — see [`defillama-adapters/`](../../defillama-adapters/README.md).

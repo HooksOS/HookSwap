@@ -41,6 +41,27 @@ than guessed.
 > standard forge broadcast fails) and keeps its prior **no-fee** factory `0x250c3448…` until an
 > AA-aware deploy lands.
 
+## Seeded v2 liquidity pools (2026-07-23)
+
+Real stablecoin-anchored **v2** pools now exist on **6 of the 7** chains — each the chain's
+wrapped-native paired against a **real stablecoin** (stablecoins only, no mock/test tokens). These
+are native-gas-limited **dust / proof pools (~$10–30 each)** — routing-proven via `getAmountsOut`,
+not deep liquidity. Source: `contracts/deployments/pools-seeded.json`.
+
+| Chain (id) | Pair (v2) | Pair address |
+|---|---|---|
+| Robinhood (4663) | WETH / USDG (anchor) | `0xF7ddC3837eAF447689a365f5f6f6B7C2AcdB72D7` |
+| Stable (988) | WgUSDT / USDT0 | `0x7F9023729F92ecb5aCbe9A4d9F9463fCDf5b2B9f` |
+| Ink (57073) | WETH / USD₮0 | `0xB738BBaC16121D11B1F59AbC619A359413503d12` |
+| MegaETH (4326) | WETH / USDm | `0xAD12931B2ff618C4aFEA9d9BCB7508Ccb51fF674` |
+| HyperEVM (999) | WHYPE / USDC | `0x8628AfE800ca8C26F1d4Dc41e2B02C85e0B19Fc3` |
+| X Layer (196) | STT / WOKB (existing seed) | — |
+| Tempo (4217) | — not seeded (AA-native tokens revert on `approve`/`transfer` → no v2 pair) | — |
+
+All pools are v2 (HookSwap v2Router `0xBe3729d0…` / v2Factory `0xD1Cf6649…`, except HyperEVM/Stable
+which use their own per-chain v2Factory — see the per-chain tables). v3 factories are deployed
+everywhere but hold **no confirmed liquidity**.
+
 ---
 
 ## Robinhood (4663) — native ETH · priority chain

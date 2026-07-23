@@ -39,6 +39,24 @@ but flaky — intermittent 503s/timeouts), then `https://stable.drpc.org`. Chain
 - **HyperEVM testnet:** chainId 998 (`0x3E6`), RPC `https://rpc.hyperliquid-testnet.xyz/evm`.
 - **Sepolia** (11155111) is the primary test chain; it uses the canonical Uniswap deployment.
 
+## Live DEX liquidity
+
+Real on-chain pools now exist on **6 of the 7** production chains — each a **v2** pair of the
+chain's wrapped-native against a **real stablecoin** (no mock tokens). They are **small proof /
+"dust" pools (~$10–30 each)**, enough to prove routing but not deep liquidity yet. See
+[Providing liquidity → Live pools today](./liquidity.md#live-pools-today) for the pair addresses
+(source: `contracts/deployments/pools-seeded.json`).
+
+| Chain | Live pool? |
+|---|---|
+| Robinhood (4663) | ✅ WETH/USDG anchor |
+| Stable (988) | ✅ WgUSDT/USDT0 |
+| Ink (57073) | ✅ WETH/USD₮0 |
+| MegaETH (4326) | ✅ WETH/USDm |
+| HyperEVM (999) | ✅ WHYPE/USDC |
+| X Layer (196) | ✅ STT/WOKB (existing seed) |
+| Tempo (4217) | ⛔ none — AA-native tokens can't form a standard v2 pair yet |
+
 ## Notes
 
 - Public RPCs are rate-limited and are expected to move to dedicated nodes for production

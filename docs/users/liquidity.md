@@ -48,9 +48,34 @@ liquidity between two prices (a **range**):
 > **Out of range:** if price moves outside your v3 range, your position converts fully to one
 > side and stops earning fees until price returns or you rebalance.
 
+## Live pools today
+
+Real, on-chain liquidity now exists on **6 of the 7** production chains. Each is a **v2** pair of
+the chain's wrapped-native against a **real stablecoin** (no mock/test tokens). These are **small
+proof / "dust" pools (~$10–30 of value each)** — enough to prove routing end-to-end
+(`getAmountsOut` returns a real quote), **not** deep liquidity. Expect meaningful price impact on
+anything but tiny trades until they are seeded further.
+
+| Chain | Pair (v2) | Pair address |
+|---|---|---|
+| Robinhood (4663) | WETH / USDG (anchor pool) | `0xF7ddC3837eAF447689a365f5f6f6B7C2AcdB72D7` |
+| Stable (988) | WgUSDT / USDT0 | `0x7F9023729F92ecb5aCbe9A4d9F9463fCDf5b2B9f` |
+| Ink (57073) | WETH / USD₮0 | `0xB738BBaC16121D11B1F59AbC619A359413503d12` |
+| MegaETH (4326) | WETH / USDm | `0xAD12931B2ff618C4aFEA9d9BCB7508Ccb51fF674` |
+| HyperEVM (999) | WHYPE / USDC | `0x8628AfE800ca8C26F1d4Dc41e2B02C85e0B19Fc3` |
+| X Layer (196) | STT / WOKB (existing seed) | — |
+| Tempo (4217) | none yet | — |
+
+Source of truth: `contracts/deployments/pools-seeded.json`.
+
+**Tempo has no pool.** Its account-abstraction-native system tokens (`pathUSD` / `USDC.e`) revert
+on standard `approve()` / `transfer()`, so a standard v2 pair cannot be formed yet — Tempo needs
+its AA-native token flow before it can be seeded.
+
 ## Notes per chain
 
 - **Tempo** has no native-gas wrapper — you cannot add liquidity with native gas
-  (`addLiquidityETH`). Pair tokens against `pathUSD` or another ERC-20 quote asset instead.
+  (`addLiquidityETH`). Pair tokens against `pathUSD` or another ERC-20 quote asset instead. (Its
+  AA-native tokens also block standard router-approve pairing — see "Live pools today" above.)
 - New pools may be thin. Small pools give volatile prices and shallow quotes — check price
   impact before large trades, and prefer deeper pools where available.

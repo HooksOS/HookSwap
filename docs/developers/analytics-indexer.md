@@ -233,3 +233,29 @@ These are noted as **planned / available data**, not yet served endpoints.
 | `LOCKER_TVL_HISTORY_FILE` | `./data/tvl-history.json` | daily locker TVL series file |
 | `FARMS_TVL_HISTORY_FILE` | `./data/farms-tvl-history.json` | daily farms TVL series file |
 | `LOCKER_RPC_<chainId>` / per-chain alias | public RPC | RPC override (e.g. `SEPOLIA_RPC_URL`, `ROBINHOOD_RPC_URL`, `HYPEREVM_RPC_URL`, `INK_RPC_URL`, `MEGAETH_RPC_URL`, `XLAYER_RPC_URL`, `TEMPO_RPC_URL`) |
+
+---
+
+## DefiLlama / external analytics
+
+Beyond the self-hosted indexer above, HookSwap ships **DefiLlama adapters** so its DEX TVL, volume
+and fees appear on DefiLlama's public dashboards. These are on-chain-read adapters (idiomatic
+DefiLlama path — no subgraph, no HookSwap data-api dependency). Source + full evidence:
+[`defillama-adapters/README.md`](../../defillama-adapters/README.md).
+
+| Adapter | File (in repo) | DefiLlama repo target | Produces |
+|---|---|---|---|
+| TVL | `defillama-adapters/hookswap/index.js` | `DefiLlama-Adapters/projects/hookswap/index.js` | TVL (sums v2 pair reserves) |
+| Volume + Fees | `defillama-adapters/dexs/hookswap/index.ts` | `dimension-adapters/dexs/hookswap/index.ts` | Volume + Fees (v2 `Swap` events) |
+| MegaETH chain registration | `defillama-adapters/chainlist/chainid-4326.js` | `DefiLlama/chainlist/constants/additionalChainRegistry/chainid-4326.js` | unblocks MegaETH |
+
+- **TVL + Fees enabled** on **Robinhood (4663), Ink (57073), XLayer (196), HyperEVM (999, sdk key
+  `hyperliquid`), Stable (988)** — the 5 chains that both have a real v2 pool **and** are already
+  registered in `@defillama/sdk` providers.json.
+- **MegaETH (4326) is pending** a DefiLlama-side chain registration: it has a real WETH/USDm pool but
+  chainId 4326 is absent from providers.json, so the harness can't resolve an RPC. The ready-to-submit
+  `chainid-4326.js` unblocks it; the `megaeth` line in each adapter is commented out until it merges.
+- **v3 is off** on every chain (v3 factories deployed but no confirmed v3 liquidity → a `PoolCreated`
+  scan returns nothing). **Tempo (4217) is off** (no v2 pool — AA-native tokens can't pair).
+- Fee model: HookSwap v2 charges **0.30%**, all to LPs (`revenueRatio: 0` — protocol `feeTo` unset →
+  `dailyRevenue = 0`, `dailySupplySideRevenue = 100%`).
