@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.checkValidAddress = exports.validateAndParseAddress = void 0;
+exports.validateAndParseAddress = validateAndParseAddress;
+exports.checkValidAddress = checkValidAddress;
 const address_1 = require("@ethersproject/address");
 /**
  * Validates an address and returns the parsed (checksummed) version of that address
@@ -14,7 +15,6 @@ function validateAndParseAddress(address) {
         throw new Error(`${address} is not a valid address.`);
     }
 }
-exports.validateAndParseAddress = validateAndParseAddress;
 // Checks a string starts with 0x, is 42 characters long and contains only hex characters after 0x
 const startsWith0xLen42HexRegex = /^0x[0-9a-fA-F]{40}$/;
 /**
@@ -27,5 +27,4 @@ function checkValidAddress(address) {
     }
     throw new Error(`${address} is not a valid address.`);
 }
-exports.checkValidAddress = checkValidAddress;
 //# sourceMappingURL=validateAndParseAddress.js.map

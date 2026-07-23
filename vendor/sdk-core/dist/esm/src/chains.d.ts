@@ -35,6 +35,8 @@ export declare enum ChainId {
     TEMPO = 4217,
     MEGAETH = 4326,
     ARC = 5042,
+    ARC_TESTNET = 5042002,
+    STABLE = 988,
     ROBINHOOD = 4663,
     INK = 57073,
     HYPEREVM = 999
@@ -63,7 +65,7 @@ export declare function getAverageBlockTimeSecs(chainId: number): number;
  * Throws if the chain is not registered in AVERAGE_BLOCK_TIMES_SECONDS.
  */
 export declare function secondsToBlocks(seconds: number, chainId: number): number;
-export declare const SUPPORTED_CHAINS: readonly [ChainId.MAINNET, ChainId.OPTIMISM, ChainId.OPTIMISM_GOERLI, ChainId.OPTIMISM_SEPOLIA, ChainId.ARBITRUM_ONE, ChainId.ARBITRUM_GOERLI, ChainId.ARBITRUM_SEPOLIA, ChainId.POLYGON, ChainId.POLYGON_MUMBAI, ChainId.GOERLI, ChainId.SEPOLIA, ChainId.CELO_ALFAJORES, ChainId.CELO, ChainId.BNB, ChainId.AVALANCHE, ChainId.BASE, ChainId.BASE_GOERLI, ChainId.BASE_SEPOLIA, ChainId.ZORA, ChainId.ZORA_SEPOLIA, ChainId.ROOTSTOCK, ChainId.BLAST, ChainId.ZKSYNC, ChainId.WORLDCHAIN, ChainId.UNICHAIN_SEPOLIA, ChainId.UNICHAIN, ChainId.MONAD_TESTNET, ChainId.SONEIUM, ChainId.MONAD, ChainId.XLAYER, ChainId.LINEA, ChainId.TEMPO, ChainId.MEGAETH, ChainId.ARC, ChainId.ROBINHOOD, ChainId.INK, ChainId.HYPEREVM];
+export declare const SUPPORTED_CHAINS: readonly [ChainId.MAINNET, ChainId.OPTIMISM, ChainId.OPTIMISM_GOERLI, ChainId.OPTIMISM_SEPOLIA, ChainId.ARBITRUM_ONE, ChainId.ARBITRUM_GOERLI, ChainId.ARBITRUM_SEPOLIA, ChainId.POLYGON, ChainId.POLYGON_MUMBAI, ChainId.GOERLI, ChainId.SEPOLIA, ChainId.CELO_ALFAJORES, ChainId.CELO, ChainId.BNB, ChainId.AVALANCHE, ChainId.BASE, ChainId.BASE_GOERLI, ChainId.BASE_SEPOLIA, ChainId.ZORA, ChainId.ZORA_SEPOLIA, ChainId.ROOTSTOCK, ChainId.BLAST, ChainId.ZKSYNC, ChainId.WORLDCHAIN, ChainId.UNICHAIN_SEPOLIA, ChainId.UNICHAIN, ChainId.MONAD_TESTNET, ChainId.SONEIUM, ChainId.MONAD, ChainId.XLAYER, ChainId.LINEA, ChainId.TEMPO, ChainId.MEGAETH, ChainId.ARC, ChainId.ARC_TESTNET, ChainId.STABLE, ChainId.ROBINHOOD, ChainId.INK, ChainId.HYPEREVM];
 export type SupportedChainsType = (typeof SUPPORTED_CHAINS)[number];
 export declare enum NativeCurrencyName {
     ETHER = "ETH",

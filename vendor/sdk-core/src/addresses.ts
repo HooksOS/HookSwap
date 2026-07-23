@@ -553,6 +553,33 @@ const ARC_ADDRESSES: ChainAddresses = {
   v4QuoterAddress: '0x8dc178efb8111bb0973dd9d722ebeff267c98f94',
 }
 
+// Arc Testnet (5042002) — NO HookSwap/Uniswap contracts deployed on this chain yet.
+// Required-field addresses are zero so the chain connects + reads balances but never
+// advertises a v3/v4 route it cannot fulfill (supportsV4:false in chain info).
+// Canonical Multicall3 (0xcA11..CA11) and Permit2 (0x0000..8BA3) DO exist on 5042002
+// (eth_getCode verified), but the sdk multicallAddress is the UniswapInterfaceMulticall
+// (not deployed here), so it stays zero.
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+const ARC_TESTNET_ADDRESSES: ChainAddresses = {
+  v3CoreFactoryAddress: ZERO_ADDRESS,
+  multicallAddress: ZERO_ADDRESS,
+  quoterAddress: ZERO_ADDRESS,
+}
+
+// Stable / Stable Mainnet (988) — HookSwap own v2+v3+UR deployment (contracts/deployments/stable.json).
+// v2+v3 only; no v4 (supportsV4:false in chain info) → omit all v4 fields.
+// multicallAddress = deploy-v3 Multicall2 (UniswapInterfaceMulticall). weth9 routing wrapper
+// 0xD1Cf..6B45 + v2Factory 0xBe37..EEFA + universalRouter 0x35dB..E7e2 live in stable.json.
+const STABLE_ADDRESSES: ChainAddresses = {
+  v3CoreFactoryAddress: '0xAB34Bb3767020059A35e71D03f13E9e4fbCD07aC',
+  multicallAddress: '0xA24cD888adAF42011a49d8Eaedb2Fe751C54e7E2',
+  quoterAddress: '0x3D30133F4d4A80684F02d8310faF572E3dc193b3', // QuoterV2
+  v3MigratorAddress: '0xD412b66afAd16a247a12a1eF31A1c6d37BBb9B6f',
+  nonfungiblePositionManagerAddress: '0x45DB3eaE624dBcA631A9C6C1406DA0B8F6Fb275A',
+  tickLensAddress: '0xA87a98a930d90fb8e68D497afE3ADe02B949fc10',
+  swapRouter02Address: '0x6d8a0783213B3b06648DB3708a89732af3661005',
+}
+
 // HookSwap own v2+v3 deployment (contracts/deployments/robinhood.json).
 // v3 addrs deterministic across MegaETH/Robinhood/Ink. v4 = canonical Uniswap v4 (below);
 // HOOK (0x85d4..5f97) lives in this v4 PoolManager. See V4-ENABLEMENT-PLAN.md.
@@ -638,6 +665,8 @@ export const CHAIN_TO_ADDRESSES_MAP: Record<SupportedChainsType, ChainAddresses>
   [ChainId.TEMPO]: TEMPO_ADDRESSES,
   [ChainId.MEGAETH]: MEGAETH_ADDRESSES,
   [ChainId.ARC]: ARC_ADDRESSES,
+  [ChainId.ARC_TESTNET]: ARC_TESTNET_ADDRESSES,
+  [ChainId.STABLE]: STABLE_ADDRESSES,
   [ChainId.ROBINHOOD]: ROBINHOOD_ADDRESSES,
   [ChainId.INK]: INK_ADDRESSES,
   [ChainId.HYPEREVM]: HYPEREVM_ADDRESSES,

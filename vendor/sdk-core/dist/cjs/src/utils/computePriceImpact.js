@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.computePriceImpact = void 0;
+exports.computePriceImpact = computePriceImpact;
 const entities_1 = require("../entities");
 /**
  * Returns the percent difference between the mid price and the execution price, i.e. price impact.
@@ -14,5 +14,4 @@ function computePriceImpact(midPrice, inputAmount, outputAmount) {
     const priceImpact = quotedOutputAmount.subtract(outputAmount).divide(quotedOutputAmount);
     return new entities_1.Percent(priceImpact.numerator, priceImpact.denominator);
 }
-exports.computePriceImpact = computePriceImpact;
 //# sourceMappingURL=computePriceImpact.js.map

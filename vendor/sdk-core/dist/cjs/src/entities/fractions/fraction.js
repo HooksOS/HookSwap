@@ -16,8 +16,8 @@ const toSignificantRounding = {
     [constants_1.Rounding.ROUND_UP]: Decimal.ROUND_UP,
 };
 const toFixedRounding = {
-    [constants_1.Rounding.ROUND_DOWN]: 0,
-    [constants_1.Rounding.ROUND_HALF_UP]: 1,
+    [constants_1.Rounding.ROUND_DOWN]: 0, // Big.RoundDown
+    [constants_1.Rounding.ROUND_HALF_UP]: 1, // Big.RoundHalfUp
     [constants_1.Rounding.ROUND_UP]: 3, // Big.RoundUp
 };
 class Fraction {

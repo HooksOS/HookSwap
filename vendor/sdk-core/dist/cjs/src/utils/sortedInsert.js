@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sortedInsert = void 0;
+exports.sortedInsert = sortedInsert;
 const tslib_1 = require("tslib");
 const tiny_invariant_1 = tslib_1.__importDefault(require("tiny-invariant"));
 // given an array of items sorted by `comparator`, insert an item into its sort index and constrain the size to
@@ -34,5 +34,4 @@ function sortedInsert(items, add, maxSize, comparator) {
         return isFull ? items.pop() : null;
     }
 }
-exports.sortedInsert = sortedInsert;
 //# sourceMappingURL=sortedInsert.js.map

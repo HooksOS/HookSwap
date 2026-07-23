@@ -74,4 +74,15 @@ export const CHAIN_GAS_STRATEGY_OVERRIDES: Record<number, Partial<GasStrategy>> 
     minPriorityFeeGwei: 0,
     maxPriorityFeeGwei: 0,
   },
+  // Arc Testnet mirrors Arc mainnet's EIP-1559 model (gas paid in USDC; zero priority fee).
+  [UniverseChainId.ArcTestnet]: {
+    minPriorityFeeGwei: 0,
+    maxPriorityFeeGwei: 0,
+  },
+  // Stable (988) pays gas in the 6-decimal ERC-20 USDT0; mirror Arc's EIP-1559 model
+  // (zero priority-fee bidding to keep gas minimal).
+  [UniverseChainId.Stable]: {
+    minPriorityFeeGwei: 0,
+    maxPriorityFeeGwei: 0,
+  },
 }

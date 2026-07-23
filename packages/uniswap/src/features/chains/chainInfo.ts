@@ -1,5 +1,7 @@
 import { ARBITRUM_CHAIN_INFO } from 'uniswap/src/features/chains/evm/info/arbitrum'
 import { ARC_CHAIN_INFO } from 'uniswap/src/features/chains/evm/info/arc'
+import { ARC_TESTNET_CHAIN_INFO } from 'uniswap/src/features/chains/evm/info/arcTestnet'
+import { STABLE_CHAIN_INFO } from 'uniswap/src/features/chains/evm/info/stable'
 import { AVALANCHE_CHAIN_INFO } from 'uniswap/src/features/chains/evm/info/avalanche'
 import { BASE_CHAIN_INFO } from 'uniswap/src/features/chains/evm/info/base'
 import { BLAST_CHAIN_INFO } from 'uniswap/src/features/chains/evm/info/blast'
@@ -50,6 +52,7 @@ export const ORDERED_CHAINS = [
   HYPEREVM_CHAIN_INFO,
   INK_CHAIN_INFO,
   ARC_CHAIN_INFO,
+  STABLE_CHAIN_INFO,
   SONEIUM_CHAIN_INFO,
   TEMPO_CHAIN_INFO,
   XLAYER_CHAIN_INFO,
@@ -57,6 +60,7 @@ export const ORDERED_CHAINS = [
   ZKSYNC_CHAIN_INFO,
   SEPOLIA_CHAIN_INFO,
   UNICHAIN_SEPOLIA_CHAIN_INFO,
+  ARC_TESTNET_CHAIN_INFO,
 ] as const satisfies UniverseChainInfo[]
 
 type ConstChainInfo<P extends Platform = Platform> = Extract<(typeof ORDERED_CHAINS)[number], { platform: P }>
@@ -85,6 +89,8 @@ export const ALL_CHAIN_IDS: UniverseChainId[] = ORDERED_CHAINS.map((chain) => ch
  */
 export const HOOKSWAP_ENABLED_CHAIN_IDS: readonly UniverseChainId[] = [
   UniverseChainId.Sepolia, // 11155111 (testnet)
+  UniverseChainId.ArcTestnet, // 5042002 (testnet — connect + balances only; no DEX contracts deployed)
+  UniverseChainId.Stable, // 988 (mainnet — connect + balances only; no DEX contracts deployed yet)
   UniverseChainId.HyperEvm, // 999
   UniverseChainId.Ink, // 57073
   UniverseChainId.MegaETH, // 4326
@@ -128,10 +134,12 @@ export const UNIVERSE_CHAIN_INFO = {
   [UniverseChainId.HyperEvm]: HYPEREVM_CHAIN_INFO,
   [UniverseChainId.Ink]: INK_CHAIN_INFO,
   [UniverseChainId.Arc]: ARC_CHAIN_INFO,
+  [UniverseChainId.Stable]: STABLE_CHAIN_INFO,
 
   // TESTNET
   [UniverseChainId.Sepolia]: SEPOLIA_CHAIN_INFO,
   [UniverseChainId.UnichainSepolia]: UNICHAIN_SEPOLIA_CHAIN_INFO,
+  [UniverseChainId.ArcTestnet]: ARC_TESTNET_CHAIN_INFO,
 
   // SVM
   [UniverseChainId.Solana]: SOLANA_CHAIN_INFO,

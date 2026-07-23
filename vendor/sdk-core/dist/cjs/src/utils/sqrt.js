@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sqrt = exports.MAX_SAFE_INTEGER = void 0;
+exports.MAX_SAFE_INTEGER = void 0;
+exports.sqrt = sqrt;
 const tslib_1 = require("tslib");
 const jsbi_1 = tslib_1.__importDefault(require("jsbi"));
 const tiny_invariant_1 = tslib_1.__importDefault(require("tiny-invariant"));
@@ -28,5 +29,4 @@ function sqrt(value) {
     }
     return z;
 }
-exports.sqrt = sqrt;
 //# sourceMappingURL=sqrt.js.map

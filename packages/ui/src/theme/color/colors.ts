@@ -162,6 +162,11 @@ export const networkColors = {
     light: '#00C805',
     dark: '#00C805',
   },
+  stable: {
+    // USDT0 stablecoin brand teal. Tunable accent.
+    light: '#26A17B',
+    dark: '#26A17B',
+  },
   hyperevm: {
     // Hyperliquid brand teal (light darkened for legibility on paper). Tunable accent.
     light: '#07A88E',
@@ -382,6 +387,8 @@ export const colorsLight = {
   chain_999: networkColors.hyperevm.light,
   chain_57073: networkColors.ink.light,
   chain_5042: networkColors.arc.light,
+  chain_5042002: networkColors.arc.light,
+  chain_988: networkColors.stable.light,
   chain_501000101: networkColors.solana.light,
   chain_143: networkColors.monad.light,
 
@@ -480,6 +487,8 @@ export const colorsDark = {
   chain_999: networkColors.hyperevm.dark,
   chain_57073: networkColors.ink.dark,
   chain_5042: networkColors.arc.dark,
+  chain_5042002: networkColors.arc.dark,
+  chain_988: networkColors.stable.dark,
   chain_501000101: networkColors.solana.dark,
   chain_143: networkColors.monad.dark,
 

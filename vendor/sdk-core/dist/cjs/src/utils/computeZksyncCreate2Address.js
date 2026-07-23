@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.computeZksyncCreate2Address = void 0;
+exports.computeZksyncCreate2Address = computeZksyncCreate2Address;
 const address_1 = require("@ethersproject/address");
 const bytes_1 = require("@ethersproject/bytes");
 const keccak256_1 = require("@ethersproject/keccak256");
@@ -11,5 +11,4 @@ function computeZksyncCreate2Address(sender, bytecodeHash, salt, input = '0x') {
     const addressBytes = (0, keccak256_1.keccak256)((0, bytes_1.concat)([prefix, (0, bytes_1.hexZeroPad)(sender, 32), salt, bytecodeHash, inputHash])).slice(26);
     return (0, address_1.getAddress)(addressBytes);
 }
-exports.computeZksyncCreate2Address = computeZksyncCreate2Address;
 //# sourceMappingURL=computeZksyncCreate2Address.js.map

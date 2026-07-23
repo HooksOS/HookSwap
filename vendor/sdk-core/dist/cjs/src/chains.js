@@ -1,6 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NativeCurrencyName = exports.SUPPORTED_CHAINS = exports.secondsToBlocks = exports.getAverageBlockTimeSecs = exports.AVERAGE_BLOCK_TIMES_SECONDS = exports.ChainId = void 0;
+exports.NativeCurrencyName = exports.SUPPORTED_CHAINS = exports.AVERAGE_BLOCK_TIMES_SECONDS = exports.ChainId = void 0;
+exports.getAverageBlockTimeSecs = getAverageBlockTimeSecs;
+exports.secondsToBlocks = secondsToBlocks;
 // Supported chain IDs for Uniswap deployments
 var ChainId;
 (function (ChainId) {
@@ -40,10 +42,12 @@ var ChainId;
     ChainId[ChainId["TEMPO"] = 4217] = "TEMPO";
     ChainId[ChainId["MEGAETH"] = 4326] = "MEGAETH";
     ChainId[ChainId["ARC"] = 5042] = "ARC";
+    ChainId[ChainId["ARC_TESTNET"] = 5042002] = "ARC_TESTNET";
+    ChainId[ChainId["STABLE"] = 988] = "STABLE";
     ChainId[ChainId["ROBINHOOD"] = 4663] = "ROBINHOOD";
     ChainId[ChainId["INK"] = 57073] = "INK";
     ChainId[ChainId["HYPEREVM"] = 999] = "HYPEREVM";
-})(ChainId = exports.ChainId || (exports.ChainId = {}));
+})(ChainId || (exports.ChainId = ChainId = {}));
 /**
  * Average block time in seconds, per chain. Fractional values are intentional
  * for sub-second chains so block-from-timestamp math stays accurate. Used as a
@@ -58,7 +62,7 @@ exports.AVERAGE_BLOCK_TIMES_SECONDS = {
     [ChainId.ARBITRUM_ONE]: 0.25,
     [ChainId.POLYGON]: 1.75,
     [ChainId.CELO]: 1,
-    [ChainId.BNB]: 0.45,
+    [ChainId.BNB]: 0.45, // post-Maxwell hardfork
     [ChainId.AVALANCHE]: 1,
     [ChainId.BASE]: 2,
     [ChainId.ZORA]: 2,
@@ -71,6 +75,8 @@ exports.AVERAGE_BLOCK_TIMES_SECONDS = {
     [ChainId.TEMPO]: 0.5,
     [ChainId.MEGAETH]: 1,
     [ChainId.ARC]: 0.48,
+    [ChainId.ARC_TESTNET]: 0.48,
+    [ChainId.STABLE]: 1,
     [ChainId.ROBINHOOD]: 0.1,
     [ChainId.INK]: 1,
     [ChainId.HYPEREVM]: 1, // HyperEVM small-block cadence; verify against network target before relying on it
@@ -88,7 +94,6 @@ function getAverageBlockTimeSecs(chainId) {
     }
     return value;
 }
-exports.getAverageBlockTimeSecs = getAverageBlockTimeSecs;
 /**
  * Converts a wallclock duration in seconds to a block count for the given
  * chain, rounding up so the resulting window fully covers the requested time.
@@ -97,7 +102,6 @@ exports.getAverageBlockTimeSecs = getAverageBlockTimeSecs;
 function secondsToBlocks(seconds, chainId) {
     return Math.ceil(seconds / getAverageBlockTimeSecs(chainId));
 }
-exports.secondsToBlocks = secondsToBlocks;
 exports.SUPPORTED_CHAINS = [
     ChainId.MAINNET,
     ChainId.OPTIMISM,
@@ -133,6 +137,8 @@ exports.SUPPORTED_CHAINS = [
     ChainId.TEMPO,
     ChainId.MEGAETH,
     ChainId.ARC,
+    ChainId.ARC_TESTNET,
+    ChainId.STABLE,
     ChainId.ROBINHOOD,
     ChainId.INK,
     ChainId.HYPEREVM,
@@ -149,5 +155,5 @@ var NativeCurrencyName;
     NativeCurrencyName["AVAX"] = "AVAX";
     NativeCurrencyName["ROOTSTOCK"] = "RBTC";
     NativeCurrencyName["HYPE"] = "HYPE";
-})(NativeCurrencyName = exports.NativeCurrencyName || (exports.NativeCurrencyName = {}));
+})(NativeCurrencyName || (exports.NativeCurrencyName = NativeCurrencyName = {}));
 //# sourceMappingURL=chains.js.map

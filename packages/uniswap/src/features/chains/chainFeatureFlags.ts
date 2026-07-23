@@ -7,6 +7,8 @@ import { UniverseChainId } from 'uniswap/src/features/chains/types'
  */
 export const CHAIN_ROLLOUT_FLAGS = {
   [UniverseChainId.Arc]: FeatureFlags.Arc,
+  [UniverseChainId.ArcTestnet]: FeatureFlags.ArcTestnet,
+  [UniverseChainId.Stable]: FeatureFlags.Stable,
   [UniverseChainId.Linea]: FeatureFlags.Linea,
 } as const satisfies Partial<Record<UniverseChainId, FeatureFlags>>
 
