@@ -14,6 +14,7 @@
 export type TerminalScreenId =
   | 'landing' // B1
   | 'swap' // B2
+  | 'bridge' // Bridge — cross-chain bridge (Relay), also served at bridge.hookswap.org
   | 'markets' // B3
   | 'perps' // Perps — HookSwapPerps "Pro Desk" perpetuals terminal
   | 'create-perp-market' // Perps/Tools — self-service perp market launch (PerpMarketFactory)
@@ -40,6 +41,7 @@ export type TerminalScreenId =
 
 export type TerminalNavIcon =
   | 'swap'
+  | 'bridge'
   | 'limit'
   | 'markets'
   | 'perps'
@@ -104,6 +106,7 @@ const TERMINAL_BASE = '/terminal'
 export const terminalScreens: Record<TerminalScreenId, TerminalScreen> = {
   landing: { id: 'landing', code: 'B1', title: 'Landing', path: `${TERMINAL_BASE}`, kind: 'page' },
   swap: { id: 'swap', code: 'B2', title: 'Swap', path: `${TERMINAL_BASE}/swap`, kind: 'page' },
+  bridge: { id: 'bridge', code: 'BR', title: 'Bridge', path: `${TERMINAL_BASE}/bridge`, kind: 'page' },
   markets: { id: 'markets', code: 'B3', title: 'Markets', path: `${TERMINAL_BASE}/markets`, kind: 'page' },
   perps: { id: 'perps', code: 'PX', title: 'Perps', path: `${TERMINAL_BASE}/perps`, kind: 'page' },
   'create-perp-market': {
@@ -202,6 +205,7 @@ export interface TerminalNavItem {
  */
 export const terminalTradeNav: TerminalNavItem[] = [
   { id: 'swap', label: 'Swap', icon: 'swap', path: '/swap' },
+  { id: 'bridge', label: 'Bridge', icon: 'bridge', path: '/bridge' },
   { id: 'markets', label: 'Markets', icon: 'markets', path: '/markets' },
   { id: 'perps', label: 'Perps', icon: 'perps', path: '/perps' },
   { id: 'create-position', label: 'Pools', icon: 'pools', path: '/pools/new' },

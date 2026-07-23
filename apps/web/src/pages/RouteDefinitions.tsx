@@ -34,6 +34,7 @@ const TerminalPositionsPage = lazy(() => import('~/terminal/TerminalPositionsPag
 const TerminalLockerPage = lazy(() => import('~/terminal/TerminalLockerPage'))
 const TerminalLockDetailPage = lazy(() => import('~/terminal/TerminalLockDetailPage'))
 const TerminalTokenPage = lazy(() => import('~/terminal/TerminalTokenPage'))
+const TerminalBridgePage = lazy(() => import('~/terminal/TerminalBridgePage'))
 const TerminalMultisenderPage = lazy(() => import('~/terminal/TerminalMultisenderPage'))
 const TerminalCreateTokenPage = lazy(() => import('~/terminal/TerminalCreateTokenPage'))
 const TerminalVestingPage = lazy(() => import('~/terminal/TerminalVestingPage'))
@@ -406,6 +407,16 @@ export const routes: RouteDefinition[] = [
     getElement: () => (
       <Suspense fallback={null}>
         <TerminalTokenPage />
+      </Suspense>
+    ),
+  }),
+  createRouteDefinition({
+    path: '/bridge',
+    getTitle: () => 'HookSwap Bridge',
+    getDescription: () => 'Bridge assets across chains into HookSwap chains — powered by Relay.',
+    getElement: () => (
+      <Suspense fallback={null}>
+        <TerminalBridgePage />
       </Suspense>
     ),
   }),

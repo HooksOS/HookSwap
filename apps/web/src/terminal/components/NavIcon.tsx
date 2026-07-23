@@ -28,6 +28,14 @@ export function NavIcon({ name, stroke, size = 18 }: NavIconProps): JSX.Element 
           <path d="M7 4v14M7 4L4 7M7 4l3 3M17 20V6M17 20l-3-3M17 20l3-3" />
         </svg>
       )
+    case 'bridge':
+      // Bridge — two towers joined by a spanning deck (cross-chain link).
+      return (
+        <svg {...common} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 8v11M21 8v11M3 12h18" />
+          <path d="M3 12c3 0 3 4 6 4s3-4 6-4 3 4 3 4" />
+        </svg>
+      )
     case 'limit':
       // Limit order — a horizontal price line with a set marker.
       return (

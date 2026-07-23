@@ -48,6 +48,9 @@ function activeScreenIdFromPath(pathname: string): TerminalNavId | undefined {
   if (pathname === '/swap' || pathname.startsWith('/swap/')) {
     return 'swap'
   }
+  if (pathname === '/bridge' || pathname.startsWith('/bridge/')) {
+    return 'bridge'
+  }
   // Legacy (non-Terminal) routes surfaced in the rail — highlight their pill too.
   if (pathname === '/limit' || pathname === '/limits') {
     return 'limit'
@@ -118,6 +121,9 @@ function activeScreenIdFromPath(pathname: string): TerminalNavId | undefined {
   const rest = pathname.slice(TERMINAL_BASE.length) // e.g. "/swap"
   if (rest === '' || rest === '/' || rest.startsWith('/swap')) {
     return 'swap'
+  }
+  if (rest.startsWith('/bridge')) {
+    return 'bridge'
   }
   if (rest.startsWith('/limit')) {
     return 'limit'
@@ -469,6 +475,7 @@ export default function TerminalApp(): JSX.Element {
             inside the shell (which would double the nav). Redirect the legacy path. */}
         <Route path="landing" element={<Navigate to="/" replace />} />
         <Route path="swap" element={<SwapScreen />} />
+        <Route path="bridge" element={<Navigate to="/bridge" replace />} />
         <Route path="limit" element={<LimitScreen />} />
         <Route path="send" element={<SendScreen />} />
         {/* Every other screen now has a canonical un-prefixed route — redirect old
