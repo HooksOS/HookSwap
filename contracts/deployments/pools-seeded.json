@@ -26,6 +26,17 @@
       "quote": "1 USDm -> 0.000433704541499912 WETH",
       "rpc": "https://mainnet.megaeth.com/rpc",
       "note": "Native-limited (~$5/side): deployer had only 0.00308 ETH; can't reach $10/side without more native."
+    },
+    "hyperevm_999": {
+      "pair": "0x8628AfE800ca8C26F1d4Dc41e2B02C85e0B19Fc3",
+      "protocol": "v2",
+      "tokens": "WHYPE 0x5555555555555555555555555555555555555555 (18-dec) / USDC 0xb88339cb7199b77e23db6e890353e22632ba630f (6-dec, real HyperEVM USDC)",
+      "router": "0xbd817036c5bF69Cb27D3A342129e39f9f908577d",
+      "v2Factory": "0xB92598Fa464B96FEC394a17A269Ad18060Ec60B2",
+      "seeded": "0.1646 WHYPE : 10 USDC (~$10/side, HYPE~$60.75)",
+      "quote": "1 USDC -> 0.014922815313267254 WHYPE",
+      "rpc": "https://rpc.hyperliquid.xyz/evm",
+      "note": "The real USDC (0xb88339cb..) was acquired by the deployer via swap tx 0xdef5d565..bf64 (0.0837 HYPE -> 5.085 USDC) — NOT the canonical bridged USD₮0 0xB8CE.. I first checked (which was 0). addLiquidity creates the pair (~2-3M gas) -> HyperEVM routes it to a big block (~1min); nonce advances but the pending tx read lags -> confirm via getPair/getReserves, not the send timeout."
     }
   },
   "alreadyLive": {
@@ -38,7 +49,6 @@
     "xlayer_196": "existing STT/WOKB pool (per CLAUDE.md 2026-07-08 XLayer routing deep-dive)"
   },
   "blocked": {
-    "hyperevm_999": "Deployer 0xc14C holds NO stablecoin on-chain (verified: USD₮0 0xB8CE.., USDe 0x5d3a.., feUSD 0x02c6.., USDHL 0xb50A.., USDXL 0xca79.., KEI 0xB5fE.. all = 0; hyperscan token-balances = empty). Native 0.2244 HYPE present. Needs a real stablecoin sent to the deployer (or the correct wallet/token address) before a stablecoins-only pool can be seeded.",
-    "tempo_4217": "pathUSD/AA gas -> forge/cast standard broadcast fails ('AA transaction missing keys: gas'). Needs AA-aware tooling. Blocked."
+    "tempo_4217": "Broadcasting DOES work with explicit --gas-limit (+ --legacy --gas-price 20e9); the 'AA missing keys: gas' error was just cast failing gas ESTIMATION. Deployer holds REAL stables pathUSD 7.62 (0x20c0..0000, 6-dec) + USDC.e 10.96 (0x20c000000000000000000000b9537d11c60e8b50, 6-dec). BUT these AA-native system tokens REVERT on approve() AND on EOA transfer() to arbitrary addresses (only the AA gas-payment path moves them); v2Factory.createPair also failed. So a v2 pool needs Tempo's AA-native token flow / paymaster, not standard router-approve or direct-transfer+mint. Router 0x6d8a0783.., factory 0xE8526A04.., WETH9 0xBbBc..25Df2 reverts on symbol/balanceOf (routing wrapper only). Deferred: needs Tempo AA tooling."
   }
 }

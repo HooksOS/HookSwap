@@ -161,6 +161,35 @@ var ADDRESSES = {
     donationRouter: ZERO,
     extensionRegistry: ZERO,
     feedBoostAuction: ZERO
+  },
+  // Stable (V3-only — HookSwap direct-to-DEX; no bonding curve / v4 / core TokenFactory suite).
+  // Every core contract is ZERO except `bondingCurve`, which points at StableConstantUsdPrice
+  // (exposes keeperPriceUsd() = 1e18 / $1). The V3 launch-fee + seed math reads keeperPriceUsd()
+  // from the `bondingCurve` slot, so on Stable that role is played by the constant $1 oracle.
+  988: {
+    tokenFactory: ZERO,
+    hookRegistry: ZERO,
+    hookManager: ZERO,
+    feeRouter: ZERO,
+    arena: ZERO,
+    events: ZERO,
+    bondingCurve: "0x07F07996A3D19EDf0A051dF2c008784AD0Ed9978",
+    swapRouter: ZERO,
+    poolFactory: ZERO,
+    hookRevenueVault: ZERO,
+    hookOsNft: ZERO,
+    hookLicenseNft: ZERO,
+    battlePass: ZERO,
+    questSystem: ZERO,
+    clanSystem: ZERO,
+    launchWars: ZERO,
+    reputationSystem: ZERO,
+    arenaV2: ZERO,
+    analyticsEmitter: ZERO,
+    launchController: ZERO,
+    donationRouter: ZERO,
+    extensionRegistry: ZERO,
+    feedBoostAuction: ZERO
   }
 };
 var HOOKOS_V3_CHAIN_ID = 4663;
@@ -214,10 +243,19 @@ var HOOKOS_V3_ADDRESSES_BY_CHAIN = {
     weth: "0x2ebb5c574a3944a3E476E2Bb9D1d5B969CFb8237",
     // WHYPE
     hook: ZERO
+  },
+  // Stable (V3-only — HookSwap direct-to-DEX; native gas = USDT0, WgUSDT is the pair-leg)
+  988: {
+    launcher: "0x64E3167b2B4eA1b8e3DdCaFe66a5b435BE7cD75f",
+    feeVault: "0x8DebEd7101B2e6577909fA07491F484fC2A8Ad2c",
+    buyback: ZERO,
+    weth: "0x817997ca8394e26cce3de3a076a4889b27dbf9de",
+    // WgUSDT (wrapped native USDT0)
+    hook: ZERO
   }
 };
 var HOOKOS_V3_ADDRESSES = HOOKOS_V3_ADDRESSES_BY_CHAIN[4663];
-var HOOKOS_V3_SUPPORTED_CHAIN_IDS = [4663, 8453, 56, 1, 4326, 999];
+var HOOKOS_V3_SUPPORTED_CHAIN_IDS = [4663, 8453, 56, 1, 4326, 999, 988];
 function getHookOSV3Addresses(chainId) {
   const a = HOOKOS_V3_ADDRESSES_BY_CHAIN[chainId];
   if (!a || a.launcher === ZERO) return null;
@@ -282,7 +320,9 @@ var TransactionError = class extends HookOSError {
 };
 var ChainError = class extends HookOSError {
   constructor(chainId) {
-    super(`Unsupported chain: ${chainId}. Supported chains: 8453 (Base), 999 (HyperEVM)`);
+    super(
+      `Unsupported chain: ${chainId}. Supported chains: 8453 (Base), 4663 (Robinhood), 4326 (MegaETH), 999 (HyperEVM), 56 (BNB), 1 (Ethereum), 988 (Stable)`
+    );
     this.name = "ChainError";
   }
 };
@@ -5860,6 +5900,15 @@ var CHAIN_DEFS = {
     rpcUrls: {
       default: { http: ["https://rpc.mainnet.chain.robinhood.com"] }
     }
+  },
+  988: {
+    id: 988,
+    name: "Stable",
+    // Native gas token on Stable is USDT0 (18 decimals) — NOT ETH.
+    nativeCurrency: { name: "USDT0", symbol: "USDT0", decimals: 18 },
+    rpcUrls: {
+      default: { http: ["https://rpc.stable.xyz"] }
+    }
   }
 };
 var DEFAULT_RPC = {
@@ -5868,7 +5917,8 @@ var DEFAULT_RPC = {
   4326: "https://megaeth.drpc.org",
   999: "https://rpc.hyperliquid.xyz/evm",
   56: "https://bsc-dataseed.binance.org",
-  1: "https://ethereum-rpc.publicnode.com"
+  1: "https://ethereum-rpc.publicnode.com",
+  988: "https://rpc.stable.xyz"
 };
 var HookOS = class {
   /** Token creation and querying. */
@@ -5993,6 +6043,10 @@ var RPC_ENDPOINTS = {
   4326: [
     "https://mainnet.megaeth.com/rpc",
     "https://megaeth.drpc.org"
+  ],
+  // Stable (V3-only)
+  988: [
+    "https://rpc.stable.xyz"
   ]
 };
 function getRpcPool(chainId, overrides = []) {

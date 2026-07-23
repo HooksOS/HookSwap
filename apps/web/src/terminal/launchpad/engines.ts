@@ -47,16 +47,25 @@ export interface LaunchEngineDef {
 
 /* --------------------------------------------------------------- SDK availability probes */
 
-/** The bonding-curve TokenFactory address on `chainId`, or undefined when not deployed. */
+/**
+ * The bonding-curve `TokenFactory` address on `chainId`, or undefined when not deployed.
+ *
+ * NOTE: `hookos.tokens.create` (createTokenAndCurve) is dispatched to the SDK's
+ * `addresses.tokenFactory` slot (see client.ts `new TokenModule(addresses.tokenFactory, …)`),
+ * so availability MUST be gated on `tokenFactory` — NOT the `bondingCurve` slot. This matters
+ * for Stable (988), which is V3-only: its `tokenFactory` is the zero address (no bonding-curve
+ * factory) while its `bondingCurve` slot is repurposed as a constant $1 price oracle. Gating on
+ * `bondingCurve` there would falsely enable an engine whose factory doesn't exist.
+ */
 function bondingCurveAddress(chainId?: number): string | undefined {
   if (chainId === undefined) {
     return undefined
   }
   const rec = (ADDRESSES as Record<number, ContractAddresses>)[chainId]
-  if (!rec || rec.bondingCurve === ZERO_ADDRESS) {
+  if (!rec || rec.tokenFactory === ZERO_ADDRESS) {
     return undefined
   }
-  return rec.bondingCurve
+  return rec.tokenFactory
 }
 
 /** Every chain the bonding curve is live on (SDK-derived from ADDRESSES). */

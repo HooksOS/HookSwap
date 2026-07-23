@@ -2,10 +2,11 @@ import { Address, Hash, Hex, PublicClient, WalletClient } from 'viem';
 
 /**
  * Supported HookOS chain IDs.
- * The protocol is LIVE on all five:
- *   8453 Base · 4326 MegaETH · 999 HyperEVM · 56 BNB Chain · 1 Ethereum.
+ * The protocol is LIVE on all seven:
+ *   8453 Base · 4663 Robinhood · 4326 MegaETH · 999 HyperEVM · 56 BNB Chain · 1 Ethereum ·
+ *   988 Stable (V3-only).
  */
-type ChainId = 8453 | 4663 | 4326 | 999 | 56 | 1;
+type ChainId = 8453 | 4663 | 4326 | 999 | 56 | 1 | 988;
 interface ContractAddresses {
     tokenFactory: Address;
     hookRegistry: Address;
@@ -41,8 +42,8 @@ interface ContractAddresses {
 declare const ADDRESSES: Record<ChainId, ContractAddresses>;
 /**
  * HookOS V3 — direct-to-Uniswap-v3 (and HookSwap / PancakeSwap V3) fair launches + the
- * buyback-and-burn flywheel. This alternate launch mode is now LIVE on ALL SIX HookOS chains
- * (Base, BNB, Ethereum, MegaETH, HyperEVM, Robinhood) — see {@link HOOKOS_V3_ADDRESSES_BY_CHAIN}
+ * buyback-and-burn flywheel. This alternate launch mode is now LIVE on ALL SEVEN HookOS chains
+ * (Base, BNB, Ethereum, MegaETH, HyperEVM, Robinhood, Stable) — see {@link HOOKOS_V3_ADDRESSES_BY_CHAIN}
  * and {@link getHookOSV3Addresses}. `buyback`/`hook` are Robinhood-only ($HOOK lives on RH); on
  * the other chains they are the zero address. See V3-LAUNCH-BUYBACK-FLYWHEEL.md.
  */
@@ -1391,7 +1392,7 @@ declare class QuickLaunchModule {
 interface HookOSOptions {
     /**
      * Chain ID. Defaults to 8453 (Base).
-     * Supported: 8453 (Base), 4663 (Robinhood Chain), 4326 (MegaETH), 999 (HyperEVM), 56 (BNB Chain), 1 (Ethereum).
+     * Supported: 8453 (Base), 4663 (Robinhood Chain), 4326 (MegaETH), 999 (HyperEVM), 56 (BNB Chain), 1 (Ethereum), 988 (Stable, V3-only).
      */
     chainId?: ChainId;
     /**

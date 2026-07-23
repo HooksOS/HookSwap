@@ -8,33 +8,32 @@
  * (principal locked), splits LP fees per-dex creator share, carves buyback slice.
  */
 
+import { getHookOSV3Addresses } from '@hookos/sdk'
 import { UniverseChainId } from 'uniswap/src/features/chains/types'
 import type { Address } from '~/chains'
 
-/** Per-chain deployed `HookOSV3Launcher` proxy addresses. */
-export const LAUNCHPAD_ADDRESSES: Partial<Record<UniverseChainId, Address>> = {
-  [UniverseChainId.Robinhood]: '0x9B8d992704ddf38729535A641502bcc55734e0B8',
-}
-
-/** Per-chain deployed `HookOSV3FeeVault` proxy addresses. */
-export const FEEVAULT_ADDRESSES: Partial<Record<UniverseChainId, Address>> = {
-  [UniverseChainId.Robinhood]: '0x2974cE6341067398A5C1E6c0C14F99ED1C3122EF',
-}
-
-/** Deployed `HookOSV3Launcher` address for a chain, or `undefined` when not deployed. */
+/**
+ * Deployed `HookOSV3Launcher` address for a chain, or `undefined` when not deployed.
+ * SDK-resolved (never hardcoded) — the fair-launch launcher is live on every HookOS V3 chain.
+ */
 export function getLaunchpadAddress(chainId?: number): Address | undefined {
   if (chainId === undefined) {
     return undefined
   }
-  return LAUNCHPAD_ADDRESSES[chainId as UniverseChainId]
+  return getHookOSV3Addresses(chainId)?.launcher as Address | undefined
 }
 
-/** Deployed `HookOSV3FeeVault` address for a chain, or `undefined` when not deployed. */
+/**
+ * Deployed `HookOSV3FeeVault` address for a chain, or `undefined` when not deployed.
+ * SDK-resolved from `getHookOSV3Addresses` (the permanent LP custodian is deployed alongside
+ * the launcher on every HookOS V3 chain — Base · RH · MegaETH · HyperEVM · BNB · ETH · Stable),
+ * so LP-lock verification is multi-chain rather than the old Robinhood-only hardcode.
+ */
 export function getFeeVaultAddress(chainId?: number): Address | undefined {
   if (chainId === undefined) {
     return undefined
   }
-  return FEEVAULT_ADDRESSES[chainId as UniverseChainId]
+  return getHookOSV3Addresses(chainId)?.feeVault as Address | undefined
 }
 
 /**
