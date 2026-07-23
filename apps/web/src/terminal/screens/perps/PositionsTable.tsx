@@ -1,4 +1,5 @@
 import { CSSProperties } from 'react'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
@@ -41,6 +42,8 @@ export function PositionsTable({
   /** True when the close flow can't run at all (no wallet / wrong chain / no market). */
   closeDisabled?: boolean
 }): JSX.Element {
+  const isMobile = useIsMobileViewport()
+
   const th = {
     fontFamily: MONO,
     fontSize: 9.5,
@@ -50,6 +53,95 @@ export function PositionsTable({
     padding: '8px 14px',
     borderBottom: `1px solid ${terminalColors.line}`,
     fontWeight: 600,
+  }
+
+  // Mobile: native card rows instead of a 9-column table (no sideways scroll).
+  if (isMobile) {
+    if (!positions.length) {
+      return (
+        <div style={{ padding: '26px 14px', textAlign: 'center', fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
+          {!connected ? 'Connect wallet to trade' : loading ? 'Loading positions…' : 'No open positions'}
+        </div>
+      )
+    }
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {positions.map((p, i) => {
+          const isPending = pendingPairId !== undefined && pendingPairId === p.pairId
+          const otherPending = pendingPairId !== undefined && !isPending
+          const disabled = !onClose || closeDisabled || isPending || otherPending
+          return (
+            <div
+              key={i}
+              style={{
+                padding: '13px 14px',
+                borderBottom: `1px solid ${terminalColors.line3}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              {/* Header: market + side badge · uPnL */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 600, color: terminalColors.ink }}>{p.market}</span>
+                  <span
+                    style={{
+                      fontSize: 9.5,
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      color: p.side === 'long' ? terminalColors.brandGreen : terminalColors.redDown,
+                      background: p.side === 'long' ? terminalColors.greenBg : terminalColors.redBg,
+                    }}
+                  >
+                    {p.side}
+                  </span>
+                </span>
+                <span
+                  style={{
+                    fontFamily: MONO,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: p.uPnl.startsWith('-') ? terminalColors.redDown : terminalColors.brandGreen,
+                  }}
+                >
+                  {p.uPnl}
+                </span>
+              </div>
+              {/* Stat grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '9px 12px' }}>
+                <CardStat label="Size" value={p.size} />
+                <CardStat label="Entry" value={p.entry} />
+                <CardStat label="Mark" value={p.mark} />
+                <CardStat label="Liq." value={p.liq} />
+                <CardStat label="Margin" value={p.margin} />
+              </div>
+              {/* Close — full-width, ≥44px tap target */}
+              <button
+                type="button"
+                onClick={onClose && !disabled ? () => onClose(p) : undefined}
+                disabled={disabled}
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 12,
+                  minHeight: 44,
+                  color: isPending ? terminalColors.ink3 : terminalColors.ink2,
+                  border: `1px solid ${terminalColors.line}`,
+                  borderRadius: 8,
+                  background: terminalColors.bg,
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                  opacity: disabled && !isPending ? 0.5 : 1,
+                }}
+              >
+                {isPending ? 'Closing…' : 'Close position'}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    )
   }
 
   return (
@@ -135,4 +227,16 @@ export function PositionsTable({
 
 function cell(align: 'left' | 'right'): CSSProperties {
   return { textAlign: align, padding: '10px 14px', borderBottom: `1px solid ${terminalColors.line3}` }
+}
+
+/** A labelled stat inside a mobile position/order card. */
+function CardStat({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+      <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.06em', textTransform: 'uppercase', color: terminalColors.faint }}>
+        {label}
+      </span>
+      <span style={{ fontFamily: MONO, fontSize: 12.5, color: terminalColors.ink }}>{value}</span>
+    </div>
+  )
 }

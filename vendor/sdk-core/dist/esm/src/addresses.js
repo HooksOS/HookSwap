@@ -49,6 +49,8 @@ export const V2_FACTORY_ADDRESSES = {
     [ChainId.INK]: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     // HookSwap own v2 factory on HyperEVM (contracts/deployments/hyperevm.json) — non-deterministic
     [ChainId.HYPEREVM]: '0xB92598Fa464B96FEC394a17A269Ad18060Ec60B2',
+    // HookSwap own v2 factory on Stable 988 (contracts/deployments/stable.json) — reused across the WgUSDT redeploy
+    [ChainId.STABLE]: '0xBe3729d06E3A17F3c7c5ac394c7bCbe138B6EEFA',
 };
 /**
  * @deprecated use V2_ROUTER_ADDRESSES instead
@@ -84,6 +86,8 @@ export const V2_ROUTER_ADDRESSES = {
     [ChainId.INK]: '0xBe3729d06E3A17F3c7c5ac394c7bCbe138B6EEFA',
     // HookSwap own v2 router02 on HyperEVM (contracts/deployments/hyperevm.json) — non-deterministic
     [ChainId.HYPEREVM]: '0xbd817036c5bF69Cb27D3A342129e39f9f908577d',
+    // HookSwap own v2 router02 on Stable 988 (contracts/deployments/stable.json) — WgUSDT WETH9 (REDEPLOYED)
+    [ChainId.STABLE]: '0xFd0Dd93a1b6157e68b0A491d94249720506dc787',
 };
 // Networks that share most of the same addresses i.e. Mainnet, Goerli, Optimism, Arbitrum, Polygon
 const DEFAULT_ADDRESSES = {

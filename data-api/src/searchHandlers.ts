@@ -23,7 +23,7 @@ import { SearchTokensRequest, SearchTokensResponse } from '@uniswap/client-data-
 import { Token as SearchToken } from '@uniswap/client-data-api/dist/data/v1/searchTypes_pb'
 import { getChain, isSupportedChain, supportedChainIds } from './chains'
 import { isHiddenTokenSymbol } from './hiddenTokens'
-import { getV2PairsCached, getV3PoolsCached } from './handlers'
+import { getEcosystemTokensCached, getV2PairsCached, getV3PoolsCached } from './handlers'
 import { resolveTokenLogo } from './logos'
 import { getTokenMeta, TokenMeta } from './onchain'
 
@@ -119,6 +119,17 @@ export async function collectChainTokens(chainId: number): Promise<TokenCandidat
     }
   } catch {
     // Non-fatal — static + v2 tokens still returned.
+  }
+
+  // Ecosystem tokens: self-service-factory-created + launchpad-launched tokens (enumerated on-chain),
+  // surfaced even when they have NO pool. Feeds search + Trending (exploreStatsHandlers). pushErc20
+  // applies the same dedupe + isHiddenTokenSymbol filter.
+  try {
+    for (const meta of await getEcosystemTokensCached(chainId)) {
+      pushErc20(meta)
+    }
+  } catch {
+    // No factory/launcher on this chain, or RPC down — non-fatal.
   }
 
   return out

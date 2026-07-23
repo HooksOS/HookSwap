@@ -35,6 +35,22 @@ export interface ChainConfig {
   /** deployed HookSwap v3 factory. Used for v3 `PoolCreated` log-scan discovery (see onchain.ts). */
   v3Factory: string
   /**
+   * Deployed `HookSwapTokenFactory` (self-service, fixed-supply ERC-20 launcher) address. When set,
+   * onchain.ts `enumerateEcosystemTokens` reads its `allTokens()` / `allTokensLength()` + `tokenAt(i)`
+   * to surface EVERY self-service-created token in the token surfaces (Markets/picker/search) even when
+   * the token has NO pool yet. Optional: omit until the factory is deployed on a chain. Copied VERBATIM
+   * from apps/web/src/terminal/tokenfactory/addresses.ts (never guessed).
+   */
+  tokenFactory?: string
+  /**
+   * Deployed `HookOSV3Launcher` (launchpad) proxy address. When set, `enumerateEcosystemTokens` reads
+   * `launchCount()` + `getLaunch(id)` (token = struct field 0) to surface every launchpad-launched token
+   * regardless of whether its v3 pool is currently scanned. Optional: only the @hookos/sdk chains carry a
+   * launcher (4663/8453/56/1/4326/999) — leave undefined elsewhere. Addresses copied VERBATIM from
+   * @hookos/sdk `HOOKOS_V3_ADDRESSES_BY_CHAIN` (never guessed).
+   */
+  launcher?: string
+  /**
    * Block the v3 factory was deployed at — the start block for the `PoolCreated` log scan. Optional:
    * UniswapV3Factory has no pool enumerator, so v3 discovery requires a start block (this, or env
    * `V3_SCAN_FROM_BLOCK_<chainId>`) to avoid an unbounded full-history scan on every request. Omit
@@ -70,6 +86,12 @@ export const CHAINS: Record<number, ChainConfig> = {
     wrappedNative: { address: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73', symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
     v2Factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     v3Factory: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
+    // Self-service token factory + launchpad launcher — enumerated for pool-less token discovery.
+    // tokenFactory from apps/web/src/terminal/tokenfactory/addresses.ts; launcher from @hookos/sdk.
+    tokenFactory: '0x13064247c5687a912fb362e2bb28f24e24f3bdca',
+    launcher: '0x9B8d992704ddf38729535A641502bcc55734e0B8',
+    // TODO(v3DeployBlock): v3 factory deploy block not recorded in contracts/deployments/robinhood.json
+    // (no block field) — leave unset so getV3Pools stays honest ([]) rather than guessing a start block.
     // Seeded WETH/tHOOK v2 pool (contracts/seed/broadcast/SeedPools.s.sol/4663/run-latest.json).
     seededTokens: [{ address: '0x3b5a01Efc59f3465b8Eb04697f97CFE0BA700D9D', symbol: 'tHOOK', name: 'Test Hook Token', decimals: 18 }],
     // USD anchor: Robinhood's real stablecoin USDG (6 decimals, verified on-chain). Once a
@@ -88,6 +110,10 @@ export const CHAINS: Record<number, ChainConfig> = {
     wrappedNative: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
     v2Factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     v3Factory: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
+    // tokenFactory from apps/web/src/terminal/tokenfactory/addresses.ts; launcher from @hookos/sdk (4326).
+    tokenFactory: '0x144331bb4c3026d135896cafec3ae3d667f4f376',
+    launcher: '0x528Bcecff5DA16cE65C198fBe42dA55A0088d4c2',
+    // TODO(v3DeployBlock): v3 factory deploy block not recorded in contracts/deployments/megaeth.json.
   },
 
   // ---- Ink (57073) ----
@@ -101,6 +127,9 @@ export const CHAINS: Record<number, ChainConfig> = {
     wrappedNative: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
     v2Factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     v3Factory: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
+    // tokenFactory from apps/web/src/terminal/tokenfactory/addresses.ts. No launcher on Ink (not a @hookos/sdk chain).
+    tokenFactory: '0x7effe9dd68035f43ad43ae6c31bc1a47ab4579d0',
+    // TODO(v3DeployBlock): v3 factory deploy block not recorded in contracts/deployments/ink.json.
   },
 
   // ---- XLayer (196) — has a seeded WOKB/SeedTestToken v2 pool (per CLAUDE.md 2026-07-08). ----
@@ -114,6 +143,9 @@ export const CHAINS: Record<number, ChainConfig> = {
     wrappedNative: { address: '0xe538905cf8410324e03A5A23C1c177a474D59b2b', symbol: 'WOKB', name: 'Wrapped OKB', decimals: 18 },
     v2Factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     v3Factory: '0xAB34Bb3767020059A35e71D03f13E9e4fbCD07aC',
+    // tokenFactory from apps/web/src/terminal/tokenfactory/addresses.ts. No launcher on XLayer (not a @hookos/sdk chain).
+    tokenFactory: '0x70b9025746387e10a9ced77a4c1670def0871376',
+    // TODO(v3DeployBlock): v3 factory deploy block not recorded in contracts/deployments/xlayer.json.
     // NOTE: XLayer has TWO real on-chain v2 pools under this factory (verified via live allPairs()
     // on 2026-07-10): pair[0] 0x782acfD69d0BeE76aC4B618D2f5fDD9060F5854E (HKT 0x0E88A920A522d2e858B5fB0e896F228f4619E0a6 / WOKB)
     // and the seeded pair[1] 0x1A95898916C7872F4712c92A1b665E54414728Bd (HKT 0x144331BB4C3026D135896CaFec3Ae3D667f4F376 / WOKB,
@@ -134,6 +166,10 @@ export const CHAINS: Record<number, ChainConfig> = {
     wrappedNative: { address: '0x5555555555555555555555555555555555555555', symbol: 'WHYPE', name: 'Wrapped HYPE', decimals: 18 },
     v2Factory: '0xB92598Fa464B96FEC394a17A269Ad18060Ec60B2',
     v3Factory: '0x45DB3eaE624dBcA631A9C6C1406DA0B8F6Fb275A',
+    // tokenFactory from apps/web/src/terminal/tokenfactory/addresses.ts (HyperEvm); launcher from @hookos/sdk (999).
+    tokenFactory: '0x13064247c5687a912fb362e2bb28f24e24f3bdca',
+    launcher: '0x2dB1b1e2123c3d61B0cAfE4aF5864E4FAB3a5F74',
+    // TODO(v3DeployBlock): v3 factory deploy block not recorded in contracts/deployments/hyperevm.json.
   },
 
   // ---- Sepolia (11155111) — canonical Uniswap stack (testing). ----

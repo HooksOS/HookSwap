@@ -69,8 +69,8 @@ single `registry.get(sourceType)` lookup and **never changes**. No contract is
 involved in a venue addition at all.
 
 Shipped `sourceType`s today: `hookswap-v2/v3`, `uniswap-v2/v3`, `pancake-v2/v3`,
-`uniswap-v4`/`pancake-v4` (documented stubs), `chainlink`, `pyth`, `api`,
-`zerox-rfq` (spot-reference stub).
+`uniswap-v4`/`pancake-v4`/`hook-v4` (singleton, StateView.getSlot0 — live),
+`chainlink`, `pyth`, `api`, `zerox-rfq` (0x Swap-API spot-reference — live).
 
 ## (c) Add an RWA / STOCK — external-feed adapter + market config
 
@@ -155,11 +155,11 @@ markets.json entry ──oracle.sourceType──▶ AdapterRegistry ──▶ IS
                                              │
    hookswap/uniswap/pancake v2  ─────────────┤ V2Adapter    (getReserves)
    hookswap/uniswap/pancake v3  ─────────────┤ V3Adapter    (observe TWAP / slot0)
-   uniswap/pancake v4           ─────────────┤ V4Adapter    (stub: StateView.getSlot0)
+   uniswap/pancake/hook v4      ─────────────┤ V4Adapter    (StateView.getSlot0(poolId))
    chainlink                    ─────────────┤ ChainlinkAdapter (latestRoundData)
    pyth                         ─────────────┤ PythAdapter  (getPriceNoOlderThan)
    api                          ─────────────┤ ApiAdapter   (allowlisted HTTP)
-   zerox-rfq                    ─────────────┘ ZeroxRfqAdapter (stub spot-ref)
+   zerox-rfq                    ─────────────┘ ZeroxRfqAdapter (0x Swap-API price)
 ```
 
 Every adapter returns `{ price1e18, ok }` — on any failure `{ ok:false, reason }`,

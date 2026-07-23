@@ -15,6 +15,8 @@ import type { MarketConfig, OracleProtocol, OracleRoute } from "./types";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROUTES_PATH = join(__dirname, "..", "config", "routes.json");
 
+// Legacy flat routes are standalone-pool (v2/v3) only; v4 needs a PoolKey, so v4
+// markets use the markets.json MarketConfig shape (see config.ts), not a route.
 const VALID_PROTOCOLS: OracleProtocol[] = [
   "hookswap-v2",
   "hookswap-v3",
@@ -22,8 +24,6 @@ const VALID_PROTOCOLS: OracleProtocol[] = [
   "uniswap-v3",
   "pancake-v2",
   "pancake-v3",
-  "uniswap-v4",
-  "pancake-v4",
 ];
 
 function validate(r: any, i: number): OracleRoute {

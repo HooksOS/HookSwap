@@ -11,7 +11,7 @@ the in-app chain configs and the deployment records (`contracts/deployments/*.js
 | **Ink** | 57073 | ETH | WETH `0x4200…0006` | L2 | https://explorer.inkonchain.com/ | `https://rpc-gel.inkonchain.com` |
 | **X Layer** | 196 | OKB | WOKB `0xe538…9b2b` | L2 | https://web3.okx.com/explorer/x-layer/ | `https://xlayer.drpc.org` |
 | **Tempo** | 4217 | USD (pathUSD)¹ | WETH9 arg only¹ | L1 | https://explore.tempo.xyz/ | `https://rpc.tempo.xyz` |
-| **Stable** | 988 | USDT0² | WgUSDT `0x8179…f9de`² | — | https://stablescan.xyz/ | `https://rpc.stable.xyz` |
+| **Stable** | 988 (`0x3DC`) | USDT0² | WgUSDT `0x8179…f9de`² | L1 | https://stablescan.xyz/ | `https://stable-mainnet.rpc.sentio.xyz`³ |
 | **Sepolia** (testnet) | 11155111 | ETH | WETH `0xfFf9…6B14` | testnet | Etherscan (Sepolia) | Infura (`https://sepolia.infura.io/v3/<key>`) |
 
 ¹ **Tempo** pays gas in `pathUSD` (an ERC-20), not a native coin. It has **no native-gas
@@ -27,6 +27,10 @@ WgUSDT as the WETH9 constructor arg, and the app's `wrappedNativeCurrency` is se
 supersedes an earlier throwaway own-WETH9 stack (`0xD1Cf66…6B45`), now abandoned. Permit2 +
 Multicall3 are the canonical reused addresses. The HookSwap DEX is **live and on-chain-verified** —
 a real swap has been executed.
+
+³ **Stable RPC** uses an ordered auto-fallback in the app config (`stable.ts`): primary
+`https://stable-mainnet.rpc.sentio.xyz`, then `https://rpc.stable.xyz` (the official endpoint,
+but flaky — intermittent 503s/timeouts), then `https://stable.drpc.org`. Chain id `0x3DC` = 988.
 
 ## Testnets
 

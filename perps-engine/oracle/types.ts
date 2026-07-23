@@ -25,7 +25,15 @@ export interface MarkPrice {
 // Source types — the registry key
 // ============================================================
 
-/** AMM protocols priced from on-chain pool state. v4 = documented stub. */
+/**
+ * v4 singleton-PoolManager protocols. Priced from StateView.getSlot0(poolId),
+ * NOT from a standalone pool address (see v4Adapter.ts). Multi-protocol per the
+ * locked DEX-integration requirement: Uniswap v4 (all chains), PancakeSwap v4/
+ * Infinity (BSC), HookSwap's own v4 ("hook-v4") on the HookSwap chains.
+ */
+export type V4SourceType = "uniswap-v4" | "pancake-v4" | "hook-v4";
+
+/** AMM protocols priced from on-chain pool state (v2 reserves / v3 tick / v4 slot0). */
 export type AmmSourceType =
   | "hookswap-v2"
   | "hookswap-v3"
@@ -33,8 +41,7 @@ export type AmmSourceType =
   | "uniswap-v3"
   | "pancake-v2"
   | "pancake-v3"
-  | "uniswap-v4" // stub — HookSwap is supportsV4:false today; see v4Adapter.ts
-  | "pancake-v4"; // stub — Pancake Infinity singleton; see v4Adapter.ts
+  | V4SourceType;
 
 /**
  * External price-feed sources for markets that are NOT AMM-priced (RWA, stocks,
@@ -52,11 +59,13 @@ export type FeedSourceType = "chainlink" | "pyth" | "api" | "zerox-rfq";
 export type SourceType = AmmSourceType | FeedSourceType;
 
 /**
- * Legacy alias — the pre-registry name for AMM source types. Retained so
- * existing route configs / imports keep compiling.
+ * Legacy alias — the pre-registry name for the STANDALONE-pool AMM source types
+ * (v2/v3). v4 is excluded: a legacy flat route carries a single `poolAddress`,
+ * but a v4 pool is identified by a PoolKey (see V4Source), so v4 markets must use
+ * the `markets.json` MarketConfig shape, not a legacy route.
  * @deprecated use SourceType.
  */
-export type OracleProtocol = AmmSourceType;
+export type OracleProtocol = Exclude<AmmSourceType, V4SourceType>;
 
 // ============================================================
 // Oracle source configs — one discriminated-union member per source family
@@ -67,9 +76,12 @@ interface OracleSourceCommon {
   sourceType: SourceType;
 }
 
-/** AMM pool source (v2/v3/v4). Base is the pool token that is NOT `quoteToken`. */
+/**
+ * v2/v3 AMM pool source (standalone pool/pair contract). Base is the pool token
+ * that is NOT `quoteToken`. v4 uses `V4Source` instead (singleton PoolManager).
+ */
 export interface AmmSource extends OracleSourceCommon {
-  sourceType: AmmSourceType;
+  sourceType: Exclude<AmmSourceType, V4SourceType>;
   /** EVM chain the spot pool lives on (e.g. 11155111 Sepolia, 4663 Robinhood). */
   chainId: number;
   /** The spot pool / pair contract address. */
@@ -80,7 +92,46 @@ export interface AmmSource extends OracleSourceCommon {
    * pool's token0/token1 is auto-derived, so no manual `invert` flag is needed.
    */
   quoteToken: `0x${string}`;
-  /** TWAP window (s) for v3/v4 arithmetic-mean-tick. Ignored by v2. Default 1800. */
+  /** TWAP window (s) for v3 arithmetic-mean-tick. Ignored by v2. Default 1800. */
+  twapWindow?: number;
+}
+
+/**
+ * Uniswap-v4-style SINGLETON source. v4 pools are not standalone contracts; they
+ * are keyed by `poolId = keccak256(abi.encode(PoolKey{currency0,currency1,fee,
+ * tickSpacing,hooks}))` inside a singleton PoolManager, and priced via the
+ * periphery `StateView.getSlot0(poolId)`. The PoolKey fields fully identify the
+ * pool, so no `poolAddress`. `stateView`/`poolManager` are resolved per
+ * (chain, protocol): config value first, else the per-chain fallback table
+ * (v4Deployments.ts). Covers uniswap-v4 / pancake-v4 / hook-v4.
+ */
+export interface V4Source extends OracleSourceCommon {
+  sourceType: V4SourceType;
+  /** EVM chain the singleton PoolManager lives on. */
+  chainId: number;
+  /** PoolKey.currency0 — the LOWER of the two token addresses (native = 0x0…0). */
+  currency0: `0x${string}`;
+  /** PoolKey.currency1 — the HIGHER of the two token addresses. */
+  currency1: `0x${string}`;
+  /** PoolKey.fee (LP fee in hundredths of a bip, or the dynamic-fee flag). */
+  fee: number;
+  /** PoolKey.tickSpacing. */
+  tickSpacing: number;
+  /** PoolKey.hooks — the hook contract (address(0) if none). Part of the poolId. */
+  hooks: `0x${string}`;
+  /**
+   * Which currency is the QUOTE (numeraire). The OTHER is the base the perp
+   * tracks. Orientation vs currency0/currency1 is auto-derived; no `invert` flag.
+   */
+  quoteToken: `0x${string}`;
+  /** StateView (getSlot0) address. Falls back to v4Deployments.ts by chain. */
+  stateView?: `0x${string}`;
+  /** PoolManager singleton (informational / fallback resolution). */
+  poolManager?: `0x${string}`;
+  /**
+   * Reserved: v4 has no built-in observe(); TWAP needs an oracle-hook. Present so
+   * the shape is forward-compatible. Ignored today (getSlot0 spot only).
+   */
   twapWindow?: number;
 }
 
@@ -160,14 +211,35 @@ export interface ZeroxRfqSource extends OracleSourceCommon {
   sellToken: `0x${string}`;
   /** Quote (buy) token — the numeraire (e.g. USDG). */
   buyToken: `0x${string}`;
-  /** 0x RFQ / swap quote endpoint. TODO(endpoint): supply per deployment. */
+  /**
+   * 0x API base (default https://api.0x.org). The `/swap/permit2/price` path is
+   * appended by the adapter. The resolved host MUST be on the 0x allowlist.
+   */
   quoteUrl?: string;
-  /** Env var holding the 0x API key. TODO(key). */
+  /**
+   * Env var holding the 0x API key (default env `ZEROX_API_KEY`). The secret is
+   * NEVER stored in config. If unset → { ok:false, reason:"not_configured" }.
+   */
   apiKeyEnv?: string;
+  /**
+   * Base-token decimals, to size the 1-unit probe (`sellAmount = 10^decimals`)
+   * and normalize. If omitted the adapter reads decimals() on-chain.
+   */
+  sellDecimals?: number;
+  /** Quote-token decimals for price normalization. Omitted → read on-chain. */
+  buyDecimals?: number;
+  /** If the perp tracks the BUY token instead, set true to take the reciprocal. */
+  invert?: boolean;
 }
 
 /** Discriminated union of every price source the registry can resolve. */
-export type OracleSource = AmmSource | ChainlinkSource | PythSource | ApiSource | ZeroxRfqSource;
+export type OracleSource =
+  | AmmSource
+  | V4Source
+  | ChainlinkSource
+  | PythSource
+  | ApiSource
+  | ZeroxRfqSource;
 
 // ============================================================
 // Market config — a market is FULLY described by config

@@ -105,6 +105,7 @@ import { getChain, isSupportedChain, supportedChainIds } from './chains'
 import { isHiddenTokenSymbol, pairHasHiddenToken } from './hiddenTokens'
 import { resolveTokenLogo } from './logos'
 import {
+  enumerateEcosystemTokens,
   getErc20Balance,
   getErc20TotalSupply,
   getNativeBalance,
@@ -153,6 +154,7 @@ const PRICE_HISTORY_BUCKET_SEC = 3_600
 const POOLS_TTL_MS = 15_000
 const poolsCache = new Map<number, { at: number; data: V2PairData[] }>()
 const v3PoolsCache = new Map<number, { at: number; data: V3PoolData[] }>()
+const ecosystemTokensCache = new Map<number, { at: number; data: TokenMeta[] }>()
 
 export async function getV2PairsCached(chainId: number): Promise<V2PairData[]> {
   const hit = poolsCache.get(chainId)
@@ -173,6 +175,22 @@ export async function getV3PoolsCached(chainId: number): Promise<V3PoolData[]> {
   }
   const data = await getV3Pools(chainId)
   v3PoolsCache.set(chainId, { at: now, data })
+  return data
+}
+
+/**
+ * Cached ecosystem-token enumeration (self-service factory + launchpad launches), mirroring the pool
+ * getters above (same TTL/caching style) so repeated Markets/picker/search requests don't re-enumerate
+ * the factory/launcher on every call. Surfaces created tokens even when they have NO pool yet.
+ */
+export async function getEcosystemTokensCached(chainId: number): Promise<TokenMeta[]> {
+  const hit = ecosystemTokensCache.get(chainId)
+  const now = Date.now()
+  if (hit && now - hit.at < POOLS_TTL_MS) {
+    return hit.data
+  }
+  const data = await enumerateEcosystemTokens(chainId)
+  ecosystemTokensCache.set(chainId, { at: now, data })
   return data
 }
 
@@ -490,6 +508,22 @@ export async function handleListTokens(req: ListTokensRequest): Promise<ListToke
     } catch {
       // RPC down / no v3 discovery for this chain — non-fatal; static + v2 tokens still returned.
     }
+    // Ecosystem tokens: self-service-factory-created + launchpad-launched tokens (enumerated on-chain via
+    // allTokens()/launchCount()+getLaunch()), surfaced even when they have NO pool yet. Metadata read live
+    // on-chain; deduped against everything already added (static + v2 + v3). The isHiddenTokenSymbol filter
+    // below (visibleTokens) still applies uniformly.
+    try {
+      for (const meta of await getEcosystemTokensCached(chainId)) {
+        const key = meta.address.toLowerCase()
+        if (seen.has(key)) {
+          continue
+        }
+        seen.add(key)
+        tokens.push(toProtoErc20Token(meta))
+      }
+    } catch {
+      // No factory/launcher on this chain, or RPC down — non-fatal; other tokens still returned.
+    }
   }
 
   // Drop test/seed placeholder tokens (tHOOK, tUSDC, tROBIN, STT, …) — they must never surface in the
@@ -722,6 +756,15 @@ async function collectPortfolioTokens(chainId: number): Promise<PortfolioTokenEn
     }
   } catch {
     // Non-fatal — static + v2 tokens still returned.
+  }
+  // Ecosystem tokens (self-service factory + launchpad launches, enumerated on-chain) — surfaced even
+  // with no pool. pushErc20 applies the same dedupe + isHiddenTokenSymbol filter.
+  try {
+    for (const meta of await getEcosystemTokensCached(chainId)) {
+      pushErc20(meta)
+    }
+  } catch {
+    // No factory/launcher on this chain, or RPC down — non-fatal.
   }
 
   return entries

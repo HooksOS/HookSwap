@@ -6,7 +6,7 @@
 // here (or on a registry instance). NO change to the resolver, NO Settlement
 // redeploy. See EXTENSIBILITY.md.
 
-import type { AmmSourceType, ISourceAdapter, SourceType } from "./types";
+import type { AmmSourceType, ISourceAdapter, SourceType, V4SourceType } from "./types";
 import { V2Adapter } from "./v2Adapter";
 import { V3Adapter } from "./v3Adapter";
 import { V4Adapter } from "./v4Adapter";
@@ -41,12 +41,14 @@ export class AdapterRegistry {
 
 const AMM_V2: AmmSourceType[] = ["hookswap-v2", "uniswap-v2", "pancake-v2"];
 const AMM_V3: AmmSourceType[] = ["hookswap-v3", "uniswap-v3", "pancake-v3"];
-const AMM_V4: AmmSourceType[] = ["uniswap-v4", "pancake-v4"];
+// v4 singleton protocols (Uniswap v4 / Pancake v4-Infinity / HookSwap's own v4).
+const AMM_V4: V4SourceType[] = ["uniswap-v4", "pancake-v4", "hook-v4"];
 
 /**
- * Build the default registry: every AMM protocol (v2/v3/v4 across Hook/Uni/
- * Pancake) + the external feed adapters (Chainlink/Pyth/API) + the 0x-RFQ
- * spot-reference stub. This is the ONE place the shipped source set is declared.
+ * Build the default registry: every AMM protocol (v2/v3 across Hook/Uni/Pancake,
+ * v4 singleton across Uniswap/Pancake/Hook) + the external feed adapters
+ * (Chainlink/Pyth/API) + the 0x-RFQ spot-reference source. This is the ONE place
+ * the shipped source set is declared.
  */
 export function defaultRegistry(): AdapterRegistry {
   const r = new AdapterRegistry();

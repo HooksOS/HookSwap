@@ -37,6 +37,20 @@ const V2_FACTORY_ABI = [
   'function allPairs(uint256) view returns (address)',
   'function getPair(address,address) view returns (address)',
 ]
+// HookSwapTokenFactory (self-service, fixed-supply ERC-20 launcher). Enumeration views verified against
+// contracts/token-factory/src/HookSwapTokenFactory.sol (allTokens()/allTokensLength()/tokenAt(i)).
+const TOKEN_FACTORY_ABI = [
+  'function allTokens() view returns (address[])',
+  'function allTokensLength() view returns (uint256)',
+  'function tokenAt(uint256) view returns (address)',
+]
+// HookOSV3Launcher (launchpad). Enumeration + the launch struct verified against
+// locker-indexer/src/launchpad/abi.ts + indexer.ts: launchCount() → N, getLaunch(id) for ids 0..N-1,
+// the struct's FIRST field is the launched token address (the rest is pool/creator/tokenId/... — unused here).
+const LAUNCHER_ABI = [
+  'function launchCount() view returns (uint256)',
+  'function getLaunch(uint256) view returns (address token, address pool, address creator, uint256 tokenId, uint24 feeTier, uint8 dex, address locker, uint8 pair, address pairToken, string metadataURI, uint256 createdAt)',
+]
 // UniswapV3Factory has NO on-chain pool enumerator (no allPools()), so the only way to discover v3
 // pools is to scan its `PoolCreated` event log. token0/token1/fee are indexed; tickSpacing/pool are
 // in data. This is the canonical event (topic 0x783cca1c…, verified 2026-07-10 against ethers).
@@ -204,6 +218,91 @@ export async function enumerateV2Pairs(chainId: number, max = MAX_ENUMERATED_PAI
   } catch {
     return []
   }
+}
+
+// ---------- ecosystem token enumeration (factory + launchpad) ----------
+
+/** Upper bound on ecosystem tokens enumerated per source (guards an unbounded allTokens/getLaunch loop). */
+const MAX_ENUMERATED_ECOSYSTEM_TOKENS = 2000
+
+/**
+ * Enumerate token addresses (lowercased) from a chain's HookSwapTokenFactory. Prefers the single-call
+ * `allTokens()`; falls back to `allTokensLength()` + `tokenAt(i)` if that view isn't present on the deploy.
+ * Bounded by `max`. On any RPC/contract error returns [] (never throws).
+ */
+async function enumerateFactoryTokens(chainId: number, factory: string, max = MAX_ENUMERATED_ECOSYSTEM_TOKENS): Promise<string[]> {
+  const c = new ethers.Contract(factory, TOKEN_FACTORY_ABI, getProvider(chainId))
+  try {
+    const all: string[] = await c.allTokens()
+    return all.slice(0, max).map((a) => a.toLowerCase())
+  } catch {
+    // allTokens() unavailable / reverted — fall back to length + index reads.
+  }
+  try {
+    const len: BigNumber = await c.allTokensLength()
+    const n = Math.min(len.toNumber(), max)
+    const addrs = await Promise.all(Array.from({ length: n }, (_, i) => c.tokenAt(i) as Promise<string>))
+    return addrs.map((a) => a.toLowerCase())
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Enumerate launched-token addresses (lowercased) from a chain's HookOSV3Launcher: `launchCount()` then
+ * `getLaunch(id)` for ids 0..N-1, taking the struct's `token` field. Bounded by `max`. Individual launch
+ * reads that revert are dropped; on a top-level error returns [] (never throws).
+ */
+async function enumerateLauncherTokens(chainId: number, launcher: string, max = MAX_ENUMERATED_ECOSYSTEM_TOKENS): Promise<string[]> {
+  try {
+    const c = new ethers.Contract(launcher, LAUNCHER_ABI, getProvider(chainId))
+    const count: BigNumber = await c.launchCount()
+    const n = Math.min(count.toNumber(), max)
+    const tokens = await Promise.all(
+      Array.from({ length: n }, (_, i) =>
+        c.getLaunch(i)
+          .then((l: { token: string }) => l.token)
+          .catch(() => ethers.constants.AddressZero),
+      ),
+    )
+    return tokens
+      .filter((a) => a && a.toLowerCase() !== ethers.constants.AddressZero.toLowerCase())
+      .map((a) => a.toLowerCase())
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Discover a chain's ECOSYSTEM tokens — every self-service-factory-created token AND every launchpad
+ * launch — independent of whether the token has a pool. Both the token factory and the launcher are
+ * cleanly enumerable on-chain (allTokens / launchCount+getLaunch). Metadata for each discovered token is
+ * read LIVE on-chain via ERC-20 (getTokenMeta), exactly like pool-token discovery. Tokens whose metadata
+ * calls revert (no symbol) are skipped — never fabricated. Sources with no configured address for the
+ * chain are skipped. Returns TokenMeta[]; on any error returns whatever was gathered (never throws).
+ */
+export async function enumerateEcosystemTokens(chainId: number): Promise<TokenMeta[]> {
+  const chain = getChain(chainId)
+  if (!chain) {
+    throw new Error(`unsupported chainId ${chainId}`)
+  }
+  const sources: Array<Promise<string[]>> = []
+  if (chain.tokenFactory) {
+    sources.push(enumerateFactoryTokens(chainId, chain.tokenFactory))
+  }
+  if (chain.launcher) {
+    sources.push(enumerateLauncherTokens(chainId, chain.launcher))
+  }
+  if (sources.length === 0) {
+    return []
+  }
+  const lists = await Promise.all(sources)
+  const addresses = Array.from(new Set<string>(lists.flat()))
+  const metas = await Promise.all(
+    addresses.map((addr) => getTokenMeta(chainId, addr).catch(() => undefined)),
+  )
+  // Keep only tokens with an honest on-chain symbol; a reverting/non-ERC20 token yields '' → dropped.
+  return metas.filter((m): m is TokenMeta => !!m && m.symbol.length > 0)
 }
 
 /** Seeded-set CREATE2 candidate pair addresses (lowercased) for a chain's curated token combos. */

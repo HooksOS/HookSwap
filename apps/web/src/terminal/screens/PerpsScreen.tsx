@@ -31,6 +31,7 @@ import { useNavigate } from 'react-router'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
 import { useSelectChain } from '~/hooks/useSelectChain'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import type { Address } from '~/chains'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { MarketStatBar } from '~/terminal/screens/perps/MarketStatBar'
@@ -62,6 +63,7 @@ export function PerpsScreen(): JSX.Element {
   const accountDrawer = useAccountDrawer()
   const selectChain = useSelectChain()
   const navigate = useNavigate()
+  const isMobile = useIsMobileViewport()
 
   const connected = Boolean(account.address)
   const trader = account.address as Address | undefined
@@ -143,7 +145,7 @@ export function PerpsScreen(): JSX.Element {
       />
 
       <div style={{ padding: '14px var(--tm-gutter) 40px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 10, flexWrap: 'wrap' }}>
           {/* Engine status — honest offline/fallback indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ fontFamily: terminalFonts.mono, fontSize: 10.5, color: terminalColors.ink3 }}>
@@ -200,7 +202,9 @@ export function PerpsScreen(): JSX.Element {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '210px minmax(0, 1fr) 240px 300px',
+              // Mobile: stack every desk panel into one column (no forced 4-col grid on a
+              // phone). The `gridColumn: 1 / -1` spans below collapse to full width naturally.
+              gridTemplateColumns: isMobile ? '1fr' : '210px minmax(0, 1fr) 240px 300px',
               gap: 12,
               alignItems: 'start',
             }}

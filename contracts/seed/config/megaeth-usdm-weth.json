@@ -1,0 +1,14 @@
+{
+  "_readme": "MegaETH (4326) USDm/WETH STABLECOIN ANCHOR (NO MINT). Deployer holds ~11.52 USDm (0xfafddbb3.., 18dec) + ~0.00318 native ETH. Pairs USDm with the chain's EXISTING wrapped-native WETH (0x4200..06) — the seeder auto-wraps native ETH for the WETH side. Ratio amountB(USDm)/amountA(WETH) MUST equal live ETH/USD at broadcast (Chainlink ~1928 on 2026-07-23). ⚠️ MAINNET RPC = https://mainnet.megaeth.com/rpc (chains.json 'carrot' = TESTNET 6343) -> run with MEGAETH_RPC_URL override. Run DRY-RUN then --broadcast.",
+  "4326": [
+    {
+      "protocol": "v2",
+      "label": "WETH / USDm v2 — stablecoin anchor (~$4.8/side). REFRESH price to live ETH/USD before broadcast.",
+      "tokenA": { "kind": "WETH", "symbol": "WETH", "decimals": 18 },
+      "tokenB": { "kind": "ADDRESS", "address": "0xfafddbb3fc7688494971a79cc65dca3ef82079e7", "symbol": "USDm", "decimals": 18 },
+      "priceAperB": 1928,
+      "amountA": 0.0025,
+      "amountB": 4.82
+    }
+  ]
+}

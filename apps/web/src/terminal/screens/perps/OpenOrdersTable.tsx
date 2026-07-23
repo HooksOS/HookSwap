@@ -14,6 +14,7 @@ import { CSSProperties } from 'react'
 import { formatUnits } from 'viem'
 import type { EngineOpenOrder } from '~/terminal/perps/engine/client'
 import { LEVERAGE_PRECISION, PRICE_PRECISION, SIZE_PRECISION } from '~/terminal/perps/engine/perpMarketAbi'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
@@ -105,6 +106,8 @@ export function OpenOrdersTable({
   /** True when the cancel flow can't run at all (no wallet / wrong chain / no market / engine down). */
   cancelDisabled?: boolean
 }): JSX.Element {
+  const isMobile = useIsMobileViewport()
+
   const th = {
     fontFamily: MONO,
     fontSize: 9.5,
@@ -123,6 +126,84 @@ export function OpenOrdersTable({
       : loading
         ? 'Loading orders…'
         : 'No open orders'
+
+  // Mobile: native card rows instead of a 7-column table (no sideways scroll).
+  if (isMobile) {
+    if (!orders.length) {
+      return (
+        <div style={{ padding: '26px 14px', textAlign: 'center', fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
+          {emptyText}
+        </div>
+      )
+    }
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {orders.map((o) => {
+          const isPending = pendingOrderId !== undefined && pendingOrderId === o.orderId
+          const otherPending = pendingOrderId !== undefined && !isPending
+          const disabled = !onCancel || cancelDisabled || isPending || otherPending
+          return (
+            <div
+              key={o.orderId}
+              style={{
+                padding: '13px 14px',
+                borderBottom: `1px solid ${terminalColors.line3}`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+              }}
+            >
+              {/* Header: side badge + type · age */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  <span
+                    style={{
+                      fontSize: 9.5,
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      padding: '2px 6px',
+                      borderRadius: 4,
+                      color: o.side === 'long' ? terminalColors.brandGreen : terminalColors.redDown,
+                      background: o.side === 'long' ? terminalColors.greenBg : terminalColors.redBg,
+                    }}
+                  >
+                    {o.side}
+                  </span>
+                  <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 600, color: terminalColors.ink }}>{o.orderType}</span>
+                </span>
+                <span style={{ fontFamily: MONO, fontSize: 11.5, color: terminalColors.ink3 }}>{fmtAge(o.receivedAt)}</span>
+              </div>
+              {/* Stat grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '9px 12px' }}>
+                <OrderCardStat label="Size" value={fmtSize(o)} />
+                <OrderCardStat label="Price" value={fmtPrice(o)} />
+                <OrderCardStat label="Lev." value={fmtLeverage(o.leverage)} />
+              </div>
+              {/* Cancel — full-width, ≥44px tap target */}
+              <button
+                type="button"
+                onClick={onCancel && !disabled ? () => onCancel(o) : undefined}
+                disabled={disabled}
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 12,
+                  minHeight: 44,
+                  color: isPending ? terminalColors.ink3 : terminalColors.ink2,
+                  border: `1px solid ${terminalColors.line}`,
+                  borderRadius: 8,
+                  background: terminalColors.bg,
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                  opacity: disabled && !isPending ? 0.5 : 1,
+                }}
+              >
+                {isPending ? 'Canceling…' : 'Cancel order'}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
 
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: MONO, fontSize: 12, color: terminalColors.ink }}>
@@ -203,4 +284,16 @@ export function OpenOrdersTable({
 
 function cell(align: 'left' | 'right'): CSSProperties {
   return { textAlign: align, padding: '10px 14px', borderBottom: `1px solid ${terminalColors.line3}` }
+}
+
+/** A labelled stat inside a mobile open-order card. */
+function OrderCardStat({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+      <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.06em', textTransform: 'uppercase', color: terminalColors.faint }}>
+        {label}
+      </span>
+      <span style={{ fontFamily: MONO, fontSize: 12.5, color: terminalColors.ink }}>{value}</span>
+    </div>
+  )
 }

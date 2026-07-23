@@ -18,12 +18,16 @@ import type {
   MarketConfig,
   OracleSource,
   SourceType,
+  V4SourceType,
 } from "./types";
 import { loadRoutes, routeToMarket } from "./routes";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_MARKETS_PATH = join(__dirname, "..", "config", "markets.json");
 
+// v4 singleton sources are validated separately (PoolKey fields, not poolAddress).
+const V4_SOURCE_TYPES: V4SourceType[] = ["uniswap-v4", "pancake-v4", "hook-v4"];
+// v2/v3 standalone-pool sources (poolAddress + quoteToken).
 const AMM_SOURCE_TYPES: AmmSourceType[] = [
   "hookswap-v2",
   "hookswap-v3",
@@ -31,8 +35,7 @@ const AMM_SOURCE_TYPES: AmmSourceType[] = [
   "uniswap-v3",
   "pancake-v2",
   "pancake-v3",
-  "uniswap-v4",
-  "pancake-v4",
+  ...V4_SOURCE_TYPES,
 ];
 const ALL_SOURCE_TYPES: SourceType[] = [
   ...AMM_SOURCE_TYPES,
@@ -64,9 +67,27 @@ function validateOracle(o: any, ctx: string): OracleSource {
     throw new Error(`${ctx}.oracle.sourceType invalid: ${o.sourceType}`);
   }
 
+  // v4 singleton source: PoolKey fields (no standalone poolAddress).
+  if (V4_SOURCE_TYPES.includes(sourceType as V4SourceType)) {
+    return {
+      sourceType: sourceType as V4SourceType,
+      chainId: num(o.chainId, `${ctx}.oracle.chainId`),
+      currency0: addr(o.currency0, `${ctx}.oracle.currency0`),
+      currency1: addr(o.currency1, `${ctx}.oracle.currency1`),
+      fee: num(o.fee, `${ctx}.oracle.fee`),
+      tickSpacing: num(o.tickSpacing, `${ctx}.oracle.tickSpacing`),
+      hooks: addr(o.hooks ?? "0x0000000000000000000000000000000000000000", `${ctx}.oracle.hooks`),
+      quoteToken: addr(o.quoteToken, `${ctx}.oracle.quoteToken`),
+      stateView: o.stateView ? addr(o.stateView, `${ctx}.oracle.stateView`) : undefined,
+      poolManager: o.poolManager ? addr(o.poolManager, `${ctx}.oracle.poolManager`) : undefined,
+      twapWindow: typeof o.twapWindow === "number" ? o.twapWindow : undefined,
+    };
+  }
+
+  // v2/v3 standalone-pool source.
   if (AMM_SOURCE_TYPES.includes(sourceType as AmmSourceType)) {
     return {
-      sourceType: sourceType as AmmSourceType,
+      sourceType: sourceType as Exclude<AmmSourceType, V4SourceType>,
       chainId: num(o.chainId, `${ctx}.oracle.chainId`),
       poolAddress: addr(o.poolAddress, `${ctx}.oracle.poolAddress`),
       quoteToken: addr(o.quoteToken, `${ctx}.oracle.quoteToken`),
@@ -113,6 +134,9 @@ function validateOracle(o: any, ctx: string): OracleSource {
         buyToken: addr(o.buyToken, `${ctx}.oracle.buyToken`),
         quoteUrl: typeof o.quoteUrl === "string" ? o.quoteUrl : undefined,
         apiKeyEnv: typeof o.apiKeyEnv === "string" ? o.apiKeyEnv : undefined,
+        sellDecimals: typeof o.sellDecimals === "number" ? o.sellDecimals : undefined,
+        buyDecimals: typeof o.buyDecimals === "number" ? o.buyDecimals : undefined,
+        invert: o.invert === true,
       };
     default: {
       // Exhaustiveness guard — a new FeedSourceType must add a case above.

@@ -61,6 +61,8 @@ export { AdapterRegistry, defaultRegistry } from "./registry";
 export { loadMarkets } from "./config";
 export { loadRoutes, routeToMarket } from "./routes";
 export { loadHookSwapDeployments, getHookSwapChain, computeHookSwapV2Pair } from "./deployments";
+export { getV4Deployment } from "./v4Deployments";
+export { computeV4PoolId } from "./v4Adapter";
 
 // Individual adapters (for custom registries / plugins).
 export { V2Adapter } from "./v2Adapter";

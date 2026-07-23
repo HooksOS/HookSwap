@@ -1,7 +1,7 @@
 # Deploy contracts
 
 The HookSwap on-chain stack (v2 + v3 + Universal Router, **no v4**) is already **deployed** on
-all 6 custom chains — see [developers/contract-addresses.md](../developers/contract-addresses.md).
+all 7 custom chains — see [developers/contract-addresses.md](../developers/contract-addresses.md).
 This page documents the deploy kit and the resolved pipeline for reference / re-deploys.
 
 Kit: [`contracts/`](../../contracts/) — see [`contracts/README.md`](../../contracts/README.md).
@@ -55,10 +55,17 @@ chainId matches config, and that every reused address has code, then writes
 | Ink (57073) | WETH `0x4200000000000000000000000000000000000006` |
 | X Layer (196) | WOKB `0xe538905cf8410324e03A5A23C1c177a474D59b2b` |
 | Tempo (4217) | WETH9 `0xBbBcC62853a5fA27b93d6Bab3E6F7ce841E25Df2` (constructor arg only¹) |
+| Stable (988) | WgUSDT `0x817997ca8394e26cce3de3a076a4889b27dbf9de` (canonical wrapped-native²) |
 | Sepolia (11155111) | WETH `0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14` |
 
 ¹ Tempo pays gas in `pathUSD` (ERC-20) and has no native-gas wrapper; the WETH9 above is only the
 router/periphery constructor argument. Do not use native-gas flows on Tempo.
+
+² Stable pays gas in **USDT0** (18-dec native). Its canonical wrapped-native is **WgUSDT** (18-dec,
+on-chain-verified WETH9-style wrapper) — the DEX was **redeployed** against WgUSDT as the WETH9
+constructor arg (`v2Factory 0xBe3729…EEFA` reused). The earlier throwaway own-WETH9
+(`0xD1Cf66…6B45`) stack is superseded/abandoned. See
+[developers/contract-addresses.md](../developers/contract-addresses.md#unique-addresses--xlayer-196-hyperevm-999-tempo-4217-stable-988).
 
 > Note: the kit's original README targeted 3 chains (Sepolia/HyperEVM/Robinhood) and mentioned
 > deploying a fresh WETH9 on Robinhood. The **actual** deployment reused Robinhood's official
@@ -78,6 +85,12 @@ router/periphery constructor argument. Do not use native-gas flows on Tempo.
 - **XLayer (196):** a duplicate v2Factory was accidentally created at nonce 1 and is unused; the
   canonical `0xD1Cf66…` factory is the one wired everywhere. Downstream addresses are shifted by
   one nonce and differ from the deterministic group.
+- **Stable (988) — WgUSDT redeploy.** An initial stack was deployed against a throwaway own-WETH9
+  (`0xD1Cf66…6B45`), then the DEX was **redeployed** against the real canonical wrapped-native
+  **WgUSDT** (`0x817997ca…f9de`, 18-dec) as the WETH9 constructor arg. The WgUSDT stack
+  (v2Router02 `0xFd0Dd9…c787` / v3Factory `0xf486e6…30CB` / SwapRouter02 `0x5B5738…5D84` /
+  UniversalRouter `0x79F291…A323`) is canonical; `v2Factory 0xBe3729…EEFA` was reused. Native gas
+  is USDT0 (~1.13 gwei; no Tempo-style multiplier). All four v3 fee tiers are enabled.
 
 ## Feeding addresses back into HookSwap
 

@@ -52,6 +52,25 @@ export const V3_POOL_ABI = [
   },
 ] as const;
 
+// Uniswap-v4-style periphery `StateView` — reads singleton PoolManager state by
+// PoolId. getSlot0(poolId) -> (sqrtPriceX96, tick, protocolFee, lpFee). Same
+// shape for Pancake v4/Infinity's StateView-equivalent. sqrtPriceX96 == 0 => the
+// pool is uninitialized (never priced) -> { ok:false }.
+export const V4_STATE_VIEW_ABI = [
+  {
+    type: "function",
+    name: "getSlot0",
+    stateMutability: "view",
+    inputs: [{ name: "poolId", type: "bytes32" }],
+    outputs: [
+      { name: "sqrtPriceX96", type: "uint160" },
+      { name: "tick", type: "int24" },
+      { name: "protocolFee", type: "uint24" },
+      { name: "lpFee", type: "uint24" },
+    ],
+  },
+] as const;
+
 // Chainlink AggregatorV3Interface (external price feed — RWA/stocks/fx).
 export const CHAINLINK_AGGREGATOR_ABI = [
   { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },

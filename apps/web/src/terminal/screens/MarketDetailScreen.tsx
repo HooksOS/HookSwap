@@ -77,6 +77,7 @@ import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks
 import { ComingSoon } from '~/terminal/components/ComingSoon'
 import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
@@ -667,6 +668,7 @@ function MarketDetailScreenBody(): JSX.Element {
 
   const [timeframeIndex, setTimeframeIndex] = useState(0)
   const [sideTab, setSideTab] = useState<'trades' | 'position'>('trades')
+  const isMobile = useIsMobileViewport()
 
   const parsed = useMemo(() => parsePoolId(poolId), [poolId])
   const chainId = parsed?.chainId
@@ -990,7 +992,7 @@ function MarketDetailScreenBody(): JSX.Element {
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 28, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: isMobile ? 16 : 28, alignItems: 'center', flexWrap: 'wrap' }}>
           <HeaderStat label="Price" value={priceLabel} size={19} />
           <HeaderStat
             label={timeframe.changeLabel}
@@ -1054,7 +1056,7 @@ function MarketDetailScreenBody(): JSX.Element {
           live
           title={`${symbol0} / ${symbol1}`}
           meta={[timeframe.label, feeTierLabel ?? (isV2 ? 'v2' : isV3 ? 'v3' : '—')]}
-          style={{ flex: '1 1 360px', minWidth: 320 }}
+          style={{ flex: isMobile ? '1 1 100%' : '1 1 360px', minWidth: isMobile ? 0 : 320 }}
           bodyStyle={{ display: 'flex', flexDirection: 'column' }}
         >
           {/* Timeframe tabs + O/H/L/C readout */}
@@ -1129,7 +1131,14 @@ function MarketDetailScreenBody(): JSX.Element {
           flush
           title="Order Flow"
           meta={[symbol0]}
-          style={{ flex: '0 1 330px', minWidth: 300, display: 'flex', flexDirection: 'column', minHeight: 560, overflow: 'hidden' }}
+          style={{
+            flex: isMobile ? '1 1 100%' : '0 1 330px',
+            minWidth: isMobile ? 0 : 300,
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 560,
+            overflow: 'hidden',
+          }}
           bodyStyle={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
         >
           <div style={{ display: 'flex', padding: '12px 16px 0', gap: 16, borderBottom: `1px solid ${terminalColors.line2}` }}>

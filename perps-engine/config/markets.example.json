@@ -28,6 +28,22 @@
       "maxLeverage": 25
     },
     {
+      "_comment": "EXAMPLE — v4 SINGLETON market (HookSwap's own v4, 'hook-v4') on Robinhood (4663). No poolAddress: a v4 pool is identified by its PoolKey {currency0<currency1, fee, tickSpacing, hooks}; the adapter computes poolId=keccak256(abi.encode(PoolKey)) and reads StateView.getSlot0(poolId). currency0/currency1 = the two pool tokens (WETH 0x0Bd7D308…EAcAD73 REAL + tHOOK 0x3b5a01Ef…D9D REAL); the adapter sorts them into canonical order. quoteToken = the numeraire (WETH). fee/tickSpacing/hooks are the ACTUAL PoolKey params of the real pool — the values below are PLACEHOLDERS (3000/60/0x0), replace with the pool's real params or the poolId won't match. stateView is OPTIONAL: omitted here so it resolves from the per-chain fallback table (v4Deployments.ts, RH StateView 0xF3334192… from trading-api-adapter/src/chains.ts). Set 'uniswap-v4' on Sepolia (canonical) or 'pancake-v4' on BSC (supply stateView via config) for those venues.",
+      "market": "HOOKV4-PERP",
+      "assetClass": "crypto",
+      "oracle": {
+        "sourceType": "hook-v4",
+        "chainId": 4663,
+        "currency0": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+        "currency1": "0x3b5a01Efc59f3465b8Eb04697f97CFE0BA700D9D",
+        "fee": 3000,
+        "tickSpacing": 60,
+        "hooks": "0x0000000000000000000000000000000000000000",
+        "quoteToken": "0x0bd7d308f8e1639fab988df18a8011f41eacad73"
+      },
+      "maxLeverage": 20
+    },
+    {
       "_comment": "EXAMPLE — Uniswap v3 crypto market on Sepolia (11155111, canonical Uniswap stack). Fill poolAddress with the real WETH/USDC v3 pool; quoteToken = USDC.",
       "market": "ETH-PERP",
       "assetClass": "crypto",
@@ -64,6 +80,20 @@
         "feed": "0x0000000000000000000000000000000000000000",
         "decimals": 8,
         "maxStaleSecs": 3600
+      },
+      "collateralToken": "0x0000000000000000000000000000000000000000",
+      "maxLeverage": 5
+    },
+    {
+      "_comment": "EXAMPLE — 0x RFQ SPOT-REFERENCE for the same NVDA market (cross-check ONLY; the AUTHORITATIVE mark is the NVDA-PERP Chainlink feed above). The adapter GETs 0x Swap-API v2 {base}/swap/permit2/price?chainId&sellToken&buyToken&sellAmount with a 1-unit probe and normalizes buyAmount/sellAmount to 1e18. sellToken = NVDA (base), buyToken = USDG (quote) — REPLACE both with real Robinhood addresses. The API key is read from ENV `ZEROX_API_KEY` (never config); if unset the adapter returns {ok:false, reason:'not_configured'}. Host is allowlisted to api.0x.org (override via ZEROX_ALLOWED_HOSTS). sellDecimals/buyDecimals optional (read on-chain if omitted).",
+      "market": "NVDA-RFQ",
+      "assetClass": "stock",
+      "oracle": {
+        "sourceType": "zerox-rfq",
+        "chainId": 4663,
+        "sellToken": "0x0000000000000000000000000000000000000000",
+        "buyToken": "0x0000000000000000000000000000000000000000",
+        "apiKeyEnv": "ZEROX_API_KEY"
       },
       "collateralToken": "0x0000000000000000000000000000000000000000",
       "maxLeverage": 5

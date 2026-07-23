@@ -9,6 +9,7 @@
 - **Do not guess, infer, assume, or say "probably/likely/should be."** Every claim about the code, data, routing, deploys, or state MUST be verified by reading the actual file/route/query/output FIRST, then stated as a fact with the source.
 - If something is not yet verified, say **"not verified yet"** and go verify it — do not fill the gap with a plausible-sounding answer.
 - This applies to status reports, "what's built", data sources (real vs mock), addresses, and every recommendation. No exceptions. This rule is permanent.
+- **⛔ DEPLOYER KEY + ALWAYS-VERIFY-ON-CHAIN (from Reggie, 2026-07-23, indefinite):** Claude HAS the funded HookSwap deployer key `0xc14C897c6bff88a5Eeac31F795693b9230205125` locally in gitignored `contracts/.env` — so **before making ANY claim about on-chain state (balances, funding, pool reserves, deploy status, whether a tx would succeed), VERIFY IT ON-CHAIN FIRST** with `cast` (foundry at `~/.foundry/bin`) against the chain's RPC. Do NOT speak from assumption about on-chain facts — read the chain, then state the fact with the value. (The old "Claude cannot broadcast" capability note is superseded: the key is available; still confirm exact params before broadcasting real-money txs.)
 
 ## ⛔ MANDATORY INFRA RULE — NEW BOX ONLY (from Reggie, 2026-07-22, indefinite)
 - **ALL server work happens on the NEW Hivelocity box `198.244.167.106`** (ssh `ubuntu@`, key `~/.ssh/hivelocity_hookos`). **Do NOT touch the OLD box `15.204.8.186`** — Reggie is tearing it down / deleting all files.
