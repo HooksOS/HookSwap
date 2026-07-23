@@ -24,7 +24,7 @@ than guessed.
 
 ## Global constants (every chain)
 
-- **Deployer** (all 6 custom chains): `0xc14C897c6bff88a5Eeac31F795693b9230205125`
+- **Deployer** (all 7 custom chains): `0xc14C897c6bff88a5Eeac31F795693b9230205125`
 - **Permit2** (canonical CREATE2, identical everywhere): `0x000000000022D473030F116dDEE9F6B43aC78BA3`
 - **Init-code hashes** (canonical, identical everywhere):
   - v2 pair: `0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f`
@@ -182,6 +182,50 @@ the canonical `0xD1Cf66…` factory is the one used everywhere — the duplicate
 ¹ Tempo has **no native-gas wrapper**. This WETH9 is only the router/periphery constructor arg —
 do not use `addLiquidityETH` / `msg.value`. DEX addresses are non-deterministic (deployer nonce
 15→18); all txs landed at the 20 gwei network floor.
+
+## Stable (988) — native gas USDT0
+
+| Contract | Address |
+|---|---|
+| **WgUSDT** (canonical wrapped-native¹) | `0x817997ca8394e26cce3de3a076a4889b27dbf9de` |
+| **USDT0** (native gas ERC-20²) | `0x779Ded0c9e1022225f8E0630b35a9b54bE713736` |
+| v2Factory | `0xBe3729d06E3A17F3c7c5ac394c7bCbe138B6EEFA` |
+| v2Router02 | `0xFd0Dd93a1b6157e68b0A491d94249720506dc787` |
+| v3Factory | `0xf486e625C892C0739A16A3A49B37fD52374B30CB` |
+| NonfungiblePositionManager | `0xEcA2f71C9C4bFb522877B808970b2C06c7A83894` |
+| SwapRouter02 | `0x5B57386e5F882e13946Ea4ef638c30d1f9b95D84` |
+| QuoterV2 | `0x1b51C392DE4e3D3E0Ab066C5F89492ec0fCF21c3` |
+| Multicall2 | `0xa1aa9D69f59b20c0eF2936933D677680D6277351` |
+| TickLens | `0xca82BeFEb52b736e7EE27343A0Ec552Bf7EF8D03` |
+| v3Migrator | `0x1bc611Dbc2373457D114c57B7F22F2DB7EcfBb75` |
+| UniversalRouter | `0x79F291b64e46a5D2adbe150D58516cd19f49A323` |
+| TokenLockerManager | `0x250c3448278f7b71e3e9b641f2efeb6074820e25` |
+| V3PositionLocker | `0x144331bb4c3026d135896cafec3ae3d667f4f376` |
+| ReferralRouter | `0x7EFFe9DD68035f43ad43aE6C31bc1a47Ab4579D0` |
+| StakingRewardsFactory (farms) | `0x0e88a920a522d2e858b5fb0e896f228f4619e0a6` |
+| VestingManager | `0xb5a7bf488f2407479e116f713f116546f67c803b` |
+| TokenFactory | `0x86426094d82bC1fd40F0901965b23D30837Dc66b` |
+| MerkleDistributorFactory (airdrop) | `0x3b5a01efc59f3465b8eb04697f97cfe0ba700d9d` |
+| Multisender (Disperse) | `0xd96fc9629afaf325fcdd7f98dc9b8dc2165adcbb` |
+| LaunchPad launcher / fee vault | — not deployed |
+
+Owner / feeToSetter / fee-receiver across the stack: `0x011d438E3eb3fce848950859591ec037C6529E13`
+(treasury).
+
+¹ **WgUSDT** (`0x817997ca8394e26cce3de3a076a4889b27dbf9de`, 18-dec, on-chain verified) is the
+**canonical wrapped-native / ecosystem wrapper** on Stable — a WETH9-style `deposit()`/`withdraw()`
+token with live v2 DEX pairs. The DEX (v2Router02, v3 periphery, SwapRouter02, UniversalRouter) is
+deployed against WgUSDT as the WETH9 constructor arg, and the app's `wrappedNativeCurrency` in
+`stable.ts` is set to WgUSDT accordingly. This **supersedes** the earlier throwaway own-WETH9
+(`0xD1Cf66…6B45`) WETH9-first stack, which is now **abandoned/unused** (v2Router02
+`0xAa1f5B…D7f3` / v3Factory `0xAB34Bb…07aC` / SwapRouter02 `0x6d8a07…1005` / QuoterV2
+`0x3D3013…93b3` / NPM `0x45DB3e…275A` / UniversalRouter `0x35dB40…E7e2` from that stack no longer
+apply). `v2Factory 0xBe3729…EEFA` was reused across the redeploy. Native gas is still **USDT0** (an
+18-dec native gas token), and all four canonical v3 fee tiers (100 / 500 / 3000 / 10000) are enabled.
+² **USDT0** (`0x779Ded0c9e1022225f8E0630b35a9b54bE713736`, verified symbol `USDT0`, 6-dec ERC-20) is
+the gas-token-override / balances / routing asset (Arc-USDC model). **Permit2** and **Multicall3**
+are the canonical reused addresses (see [Global constants](#global-constants-every-chain)). The DEX
+is **live and on-chain-verified** — a real swap has been executed.
 
 ## Sepolia (11155111) — testnet
 

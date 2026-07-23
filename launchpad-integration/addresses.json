@@ -114,6 +114,26 @@
       "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
       "weth": "0x4200000000000000000000000000000000000006",
       "wethSymbol": "WETH"
+    },
+    "988": {
+      "name": "Stable",
+      "deployment": "hookswap-own",
+      "addressGroup": "unique",
+      "v2Factory": "0xBe3729d06E3A17F3c7c5ac394c7bCbe138B6EEFA",
+      "v2Router02": "0xFd0Dd93a1b6157e68b0A491d94249720506dc787",
+      "v3Factory": "0xf486e625C892C0739A16A3A49B37fD52374B30CB",
+      "nonfungiblePositionManager": "0xEcA2f71C9C4bFb522877B808970b2C06c7A83894",
+      "swapRouter02": "0x5B57386e5F882e13946Ea4ef638c30d1f9b95D84",
+      "quoterV2": "0x1b51C392DE4e3D3E0Ab066C5F89492ec0fCF21c3",
+      "multicall2": "0xa1aa9D69f59b20c0eF2936933D677680D6277351",
+      "tickLens": "0xca82BeFEb52b736e7EE27343A0Ec552Bf7EF8D03",
+      "v3Migrator": "0x1bc611Dbc2373457D114c57B7F22F2DB7EcfBb75",
+      "universalRouter": "0x79F291b64e46a5D2adbe150D58516cd19f49A323",
+      "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      "weth": "0x817997ca8394e26cce3de3a076a4889b27dbf9de",
+      "wethSymbol": "WgUSDT",
+      "v3FeeTiers": [100, 500, 3000, 10000],
+      "wethNote": "WgUSDT (0x8179..f9de, 18-dec) is the REAL canonical wrapped-native / ecosystem WETH9-style wrapper on Stable, passed as the WETH9 constructor arg to the redeployed v3 periphery + routers (all 4 v3 fee tiers enabled). Native gas is still USDT0 (18-dec native; a 6-dec USDT0 ERC-20 at 0x779Ded0c9e1022225f8E0630b35a9b54bE713736 is used for balances/routing). This WgUSDT stack REPLACES the earlier throwaway own-WETH9 (0xD1Cf66..6B45) v3 stack, which is superseded/abandoned. v2Factory 0xBe3729..EEFA reused across the redeploy."
     }
   }
 }

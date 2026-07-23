@@ -54,6 +54,6 @@
     "rpc": "https://rpc.stable.xyz",
     "rpcEnvVar": "STABLE_RPC_URL",
     "gasPriceGwei": 2,
-    "note": "Stable Mainnet (988). Native gas = USDT0 (18-dec native). ~1.13 gwei network price; 2 gwei clears with headroom. Like Tempo, the deployment weth9 is a routing wrapper only (interface wrappedNativeCurrency=null) → auto-wrap of native does NOT work, so seed MINT/MINT pools (see config/stable.json). Set STABLE_RPC_URL in .env (or the public rpc above is used)."
+    "note": "Stable Mainnet (988). Native gas = USDT0 (18-dec native). ~1.13 gwei network price; 2 gwei clears with headroom. The DEX is deployed against the canonical wrapped-native WgUSDT (0x817997ca8394e26cce3de3a076a4889b27dbf9de, 18-dec; interface wrappedNativeCurrency=WgUSDT) — this supersedes the earlier throwaway own-WETH9 stack. Native gas (USDT0) is not WgUSDT, so the seeder's auto-wrap of native does NOT apply; seed MINT/MINT pools (see config/stable.json) or a WgUSDT-paired pool if you already hold WgUSDT. Set STABLE_RPC_URL in .env (or the public rpc above is used)."
   }
 }

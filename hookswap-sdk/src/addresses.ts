@@ -48,6 +48,10 @@ export const LOCKER_ADDRESSES: Record<number, LockerAddresses> = {
     tokenLockerManager: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
     v3PositionLocker: '0xAB34Bb3767020059A35e71D03f13E9e4fbCD07aC',
   },
+  [HOOKSWAP_CHAIN_IDS.Stable]: {
+    tokenLockerManager: '0x250c3448278f7b71e3e9b641f2efeb6074820e25',
+    v3PositionLocker: '0x144331bb4c3026d135896cafec3ae3d667f4f376',
+  },
 }
 
 /** StakingRewardsFactory per chain. */
@@ -58,6 +62,7 @@ export const FARM_FACTORY_ADDRESSES: Record<number, string> = {
   [HOOKSWAP_CHAIN_IDS.MegaETH]: '0xd9d4795f2a12305a12c36455adad011f2d6143ab',
   [HOOKSWAP_CHAIN_IDS.Ink]: '0x144331bb4c3026d135896cafec3ae3d667f4f376',
   [HOOKSWAP_CHAIN_IDS.Tempo]: '0x250c3448278f7b71e3e9b641f2efeb6074820e25',
+  [HOOKSWAP_CHAIN_IDS.Stable]: '0x0e88a920a522d2e858b5fb0e896f228f4619e0a6',
 }
 
 /** HookSwapVestingManager per chain. */
@@ -68,6 +73,7 @@ export const VESTING_ADDRESSES: Record<number, string> = {
   [HOOKSWAP_CHAIN_IDS.MegaETH]: '0x7effe9dd68035f43ad43ae6c31bc1a47ab4579d0',
   [HOOKSWAP_CHAIN_IDS.Ink]: '0x250c3448278f7b71e3e9b641f2efeb6074820e25',
   [HOOKSWAP_CHAIN_IDS.Tempo]: '0xd08e609277ecb0b7e2ef15df5c1fb11436627a63',
+  [HOOKSWAP_CHAIN_IDS.Stable]: '0xb5a7bf488f2407479e116f713f116546f67c803b',
 }
 
 export function getLockerAddresses(chainId?: number): LockerAddresses | undefined {

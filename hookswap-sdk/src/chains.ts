@@ -16,6 +16,7 @@ export const HOOKSWAP_CHAIN_IDS = {
   XLayer: 196,
   Robinhood: 4663,
   Tempo: 4217,
+  Stable: 988,
 } as const
 
 export type HookSwapChainId = (typeof HOOKSWAP_CHAIN_IDS)[keyof typeof HOOKSWAP_CHAIN_IDS]
@@ -35,6 +36,7 @@ export const DEFAULT_RPC: Record<number, string> = {
   196: 'https://rpc.xlayer.tech',
   4663: 'https://rpc.mainnet.chain.robinhood.com',
   4217: 'https://rpc.tempo.xyz',
+  988: 'https://stable-mainnet.rpc.sentio.xyz',
 }
 
 /**
@@ -85,6 +87,16 @@ export const HOOKSWAP_CHAINS: Record<number, Chain> = {
     name: 'Tempo',
     nativeCurrency: { name: 'pathUSD', symbol: 'pathUSD', decimals: 18 },
     rpcUrls: { default: { http: [DEFAULT_RPC[4217]] } },
+  } as Chain,
+  // Stable Mainnet (988) — stablecoin-gas L1. Native gas is USDT0 (18-dec native balance; a
+  // separate 6-dec USDT0 ERC-20 at 0x779Ded..3736 is used for balances/routing). The canonical
+  // wrapped-native / DEX WETH9 is WgUSDT (0x817997ca..f9de, 18-dec).
+  988: {
+    id: 988,
+    name: 'Stable Mainnet',
+    nativeCurrency: { name: 'USDT0', symbol: 'USDT0', decimals: 18 },
+    rpcUrls: { default: { http: [DEFAULT_RPC[988]] } },
+    blockExplorers: { default: { name: 'Stablescan', url: 'https://stablescan.xyz' } },
   } as Chain,
 }
 

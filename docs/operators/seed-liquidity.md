@@ -22,7 +22,9 @@ and `deployments/*.json` records. **Nothing spends money until you pass `--broad
 
 ## Setup
 
-Uses the deploy kit's `../.env` (`DEPLOYER_PRIVATE_KEY`, `INFURA_KEY` for the Sepolia RPC, optional
+Uses the deploy kit's `../.env` (`
+
+`, `INFURA_KEY` for the Sepolia RPC, optional
 per-chain RPC overrides). Build once:
 
 ```bash
