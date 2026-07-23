@@ -25,8 +25,15 @@ export const RELAY_NATIVE_ADDRESS = '0x0000000000000000000000000000000000000000'
  */
 export const HOOKSWAP_TREASURY = '0x011d438E3eb3fce848950859591ec037C6529E13'
 
-/** The recipient of the HookSwap bridge app fee (Relay `appFees[].recipient`). */
-export const BRIDGE_FEE_RECIPIENT = HOOKSWAP_TREASURY
+/** HookSwap deployer — the Relay app-fee claim wallet (Reggie's choice, 2026-07-23). */
+export const HOOKSWAP_DEPLOYER = '0xc14C897c6bff88a5Eeac31F795693b9230205125'
+
+/**
+ * The recipient of the HookSwap bridge app fee (Relay `appFees[].recipient`) — i.e. the
+ * Relay CLAIM address. Set to the deployer so fees are claimed at relay.link/claim-app-fees
+ * by connecting `0xc14C…`. (Change to `HOOKSWAP_TREASURY` to route fees to the treasury instead.)
+ */
+export const BRIDGE_FEE_RECIPIENT = HOOKSWAP_DEPLOYER
 
 /**
  * The HookSwap app fee, in basis points, added to every bridge quote via Relay's
