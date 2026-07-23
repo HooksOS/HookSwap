@@ -66,16 +66,26 @@ export const STABLE_CHAIN_INFO = {
   },
   // Stable pays gas in the 6-decimal ERC-20 USDT0, not a native ETH token.
   gasTokenOverride: stableTokens.USDT0,
-  // No WETH-style wrapped native on Stable.
-  wrappedNativeCurrency: null,
+  // Stable's canonical wrapped-native is WgUSDT (WETH9-style deposit()/withdraw()),
+  // on-chain verified (0x8179..f9de, 18 decimals, 826k+ supply, live v2 DEX pairs).
+  // Native gas is still USDT0 (gasTokenOverride); WgUSDT is only the wrapped form for routing.
+  wrappedNativeCurrency: {
+    name: 'Wrapped gUSDT',
+    symbol: 'WgUSDT',
+    decimals: 18,
+    address: '0x817997ca8394e26cce3de3a076a4889b27dbf9de',
+  },
   networkLayer: NetworkLayer.L1,
   blockTimeMs: 480,
   pendingTransactionsRetryOptions: undefined,
-  // Public Stable RPC (chainId 0x3dc / 988 verified via eth_chainId).
+  // Public Stable RPCs (chainId 0x3dc / 988), ordered auto-fallback. Sentio is PRIMARY
+  // (serves eth_call + fast fresh-tx receipts — the only one reliable for writes);
+  // rpc.stable.xyz is the official endpoint but flaky (503s/timeouts); stable.drpc.org
+  // (dRPC) is a read-only fallback (free tier blocks eth_call).
   rpcUrls: {
-    [RPCType.Default]: { http: ['https://rpc.stable.xyz'] },
-    [RPCType.Public]: { http: ['https://rpc.stable.xyz'] },
-    [RPCType.Interface]: { http: ['https://rpc.stable.xyz'] },
+    [RPCType.Default]: { http: ['https://stable-mainnet.rpc.sentio.xyz', 'https://rpc.stable.xyz', 'https://stable.drpc.org'] },
+    [RPCType.Public]: { http: ['https://stable-mainnet.rpc.sentio.xyz', 'https://rpc.stable.xyz', 'https://stable.drpc.org'] },
+    [RPCType.Interface]: { http: ['https://stable-mainnet.rpc.sentio.xyz', 'https://rpc.stable.xyz', 'https://stable.drpc.org'] },
   },
   supportedURVersions: [TradingApi.UniversalRouterVersion._2_0],
   // No DEX contracts deployed on 988 → do not advertise v4 routing.

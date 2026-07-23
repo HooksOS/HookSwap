@@ -1,6 +1,7 @@
 import { iconSizes } from 'ui/src/theme'
 import { TokenLogo } from 'uniswap/src/components/CurrencyLogo/TokenLogo'
 import { CurrencyInfo } from 'uniswap/src/features/dataApi/types'
+import { currencyAddress } from 'uniswap/src/utils/currencyId'
 
 interface CurrencyLogoProps {
   currencyInfo: Maybe<CurrencyInfo>
@@ -26,6 +27,7 @@ export function CurrencyLogo({
 
   return (
     <TokenLogo
+      address={currencyAddress(currency)}
       chainId={chainId}
       hideNetworkLogo={hideNetworkLogo}
       name={name}

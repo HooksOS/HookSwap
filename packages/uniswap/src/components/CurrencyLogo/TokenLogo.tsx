@@ -23,6 +23,12 @@ interface TokenLogoProps {
   url?: string | null
   symbol?: string
   name?: string | null
+  /**
+   * Token address, used only to derive a deterministic fallback color when there is no logo.
+   * Seeding from the address (rather than name/symbol) keeps launchpad/custom-chain tokens that
+   * share a name or symbol visually distinct. Optional — falls back to name/symbol when absent.
+   */
+  address?: string | null
   chainId?: UniverseChainId | null
   size?: number
   hideNetworkLogo?: boolean
@@ -129,6 +135,7 @@ export const TokenLogo = memo(function TokenLogoInner({
   url,
   symbol,
   name,
+  address,
   chainId,
   size = iconSizes.icon40,
   hideNetworkLogo,
@@ -147,7 +154,14 @@ export const TokenLogo = memo(function TokenLogoInner({
   const [showBackground, setShowBackground] = useState(isMobileApp ? true : false)
 
   const colors = useSporeColors()
-  const { foreground, background } = useColorSchemeFromSeed(name ?? symbol ?? '')
+  // Seed the fallback color from the token address (lowercased for checksum-independent determinism)
+  // so tokens without a logo — and any two tokens sharing a name/symbol — get distinct, stable colors.
+  // Falls back to name/symbol when no address is provided, preserving prior behavior.
+  const { foreground, background } = useColorSchemeFromSeed(address?.toLowerCase() ?? name ?? symbol ?? '')
+
+  // Monogram initials shown inside the fallback circle: first up-to-3 uppercased chars of the symbol,
+  // or "?" when the token has no symbol, so a logo-less token never renders blank.
+  const fallbackInitials = symbol ? symbol.slice(0, 3).toUpperCase() : '?'
 
   const borderWidth = isTestnetToken ? size / TESTNET_BORDER_DIVISOR : 0
 
@@ -196,7 +210,7 @@ export const TokenLogo = memo(function TokenLogoInner({
         minimumFontScale={0.5}
         numberOfLines={1}
       >
-        {symbol?.slice(0, 3)}
+        {fallbackInitials}
       </Text>
     </Flex>
   )

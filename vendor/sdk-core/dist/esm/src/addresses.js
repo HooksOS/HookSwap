@@ -487,16 +487,18 @@ const ARC_TESTNET_ADDRESSES = {
 };
 // Stable / Stable Mainnet (988) — HookSwap own v2+v3+UR deployment (contracts/deployments/stable.json).
 // v2+v3 only; no v4 (supportsV4:false in chain info) → omit all v4 fields.
-// multicallAddress = deploy-v3 Multicall2 (UniswapInterfaceMulticall). weth9 routing wrapper
-// 0xD1Cf..6B45 + v2Factory 0xBe37..EEFA + universalRouter 0x35dB..E7e2 live in stable.json.
+// multicallAddress = deploy-v3 Multicall2 (UniswapInterfaceMulticall).
+// REDEPLOYED against the real canonical wrapped-native WgUSDT (0x8179..f9de, 18-dec) — the earlier
+// throwaway-WETH9 (0xD1Cf..6B45) v3 stack is superseded/abandoned. v2Factory 0xBe37..EEFA reused;
+// v2Router02 0xFd0Dd9..c787 + universalRouter 0x79F291..A323 (WgUSDT) live in stable.json.
 const STABLE_ADDRESSES = {
-    v3CoreFactoryAddress: '0xAB34Bb3767020059A35e71D03f13E9e4fbCD07aC',
-    multicallAddress: '0xA24cD888adAF42011a49d8Eaedb2Fe751C54e7E2',
-    quoterAddress: '0x3D30133F4d4A80684F02d8310faF572E3dc193b3', // QuoterV2
-    v3MigratorAddress: '0xD412b66afAd16a247a12a1eF31A1c6d37BBb9B6f',
-    nonfungiblePositionManagerAddress: '0x45DB3eaE624dBcA631A9C6C1406DA0B8F6Fb275A',
-    tickLensAddress: '0xA87a98a930d90fb8e68D497afE3ADe02B949fc10',
-    swapRouter02Address: '0x6d8a0783213B3b06648DB3708a89732af3661005',
+    v3CoreFactoryAddress: '0xf486e625C892C0739A16A3A49B37fD52374B30CB',
+    multicallAddress: '0xa1aa9D69f59b20c0eF2936933D677680D6277351',
+    quoterAddress: '0x1b51C392DE4e3D3E0Ab066C5F89492ec0fCF21c3', // QuoterV2
+    v3MigratorAddress: '0x1bc611Dbc2373457D114c57B7F22F2DB7EcfBb75',
+    nonfungiblePositionManagerAddress: '0xEcA2f71C9C4bFb522877B808970b2C06c7A83894',
+    tickLensAddress: '0xca82BeFEb52b736e7EE27343A0Ec552Bf7EF8D03',
+    swapRouter02Address: '0x5B57386e5F882e13946Ea4ef638c30d1f9b95D84',
 };
 // HookSwap own v2+v3 deployment (contracts/deployments/robinhood.json).
 // v3 addrs deterministic across MegaETH/Robinhood/Ink. v4 = canonical Uniswap v4 (below);

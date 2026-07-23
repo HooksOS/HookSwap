@@ -26,7 +26,7 @@ const HOOKSWAP_UNIVERSAL_ROUTER: Partial<Record<UniverseChainId, string>> = {
   [UniverseChainId.XLayer]: '0x6d8a0783213B3b06648DB3708a89732af3661005',
   [UniverseChainId.HyperEvm]: '0xD9d4795F2A12305a12C36455ADAD011F2D6143AB',
   [UniverseChainId.Tempo]: '0x62aE013cb2b232C20094B466C94bb39714eF661E',
-  [UniverseChainId.Stable]: '0x35dB40f22143651159056285E92c113ECE65E7e2',
+  [UniverseChainId.Stable]: '0x79F291b64e46a5D2adbe150D58516cd19f49A323',
 }
 
 /**
