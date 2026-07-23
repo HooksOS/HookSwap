@@ -49,6 +49,7 @@ import { ComingSoon } from '~/terminal/components/ComingSoon'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { isHiddenTokenSymbol, pairHasHiddenToken } from '~/terminal/utils/hiddenTokens'
+import { useSeededOnchainPools } from '~/terminal/screens/useSeededOnchainPools'
 import { SparklineCell } from '~/terminal/components/SparklineCell'
 import { terminalColors, terminalFonts, terminalShadows, terminalType } from '~/terminal/theme/tokens'
 import type { PoolStat } from '~/types/explore'
@@ -171,13 +172,22 @@ function lookupMetric(token: TokenStats | undefined, maps: TokenMetricMaps): Tok
 
 /* ------------------------------------------------------------ row building */
 
-function buildRows(pools: PoolStat[] | undefined, maps: TokenMetricMaps): MarketRow[] | undefined {
+function buildRows(
+  pools: PoolStat[] | undefined,
+  maps: TokenMetricMaps,
+  chainOverrides?: ReadonlyMap<string, UniverseChainId>,
+): MarketRow[] | undefined {
   if (!pools) {
     return undefined
   }
 
   return pools.map((pool, index): MarketRow => {
-    const chainId: UniverseChainId | undefined = supportedChainIdFromGQLChain(pool.token0?.chain as GraphQLApi.Chain)
+    // Prefer an explicit chainId (on-chain fallback pools on Stable/HyperEVM have no
+    // GraphQL backendChain → the gql round-trip can't recover their chain). Otherwise
+    // derive it from the backend pool's gql chain as before.
+    const chainId: UniverseChainId | undefined =
+      chainOverrides?.get(pool.id.toLowerCase()) ??
+      supportedChainIdFromGQLChain(pool.token0?.chain as GraphQLApi.Chain)
     // Unwrap WETH → ETH for display (matches the legacy Pools table). Metric lookup
     // uses the ORIGINAL token so the wrapped-native address still resolves.
     const displayToken0 = chainId !== undefined && pool.token0 ? unwrapToken(chainId, pool.token0) : pool.token0
@@ -470,15 +480,28 @@ function MarketsScreenBody(): JSX.Element {
   // Real token list — feeds the price/24H/sparkline join + the top-movers heatmap.
   const { topTokens: rawTokens, isLoading: tokensLoading, isError: tokensError } = useListTokens(undefined)
 
-  // Hide test/seed tokens (tHOOK etc.) so only real assets surface in pools + movers.
-  const topPools = useMemo(
-    () => rawPools?.filter((p) => !pairHasHiddenToken(p.token0?.symbol, p.token1?.symbol)),
-    [rawPools],
-  )
+  // On-chain fallback for seeded pools the data-api doesn't index yet (Stable 988 +
+  // HyperEVM 999 today; all seeded pools registered for resilience). Read directly via
+  // each chain's RPC so they show without waiting on a backend/indexer redeploy.
+  const { pools: seededPools, chainById: seededChainById } = useSeededOnchainPools()
+
+  // Merge backend pools with the on-chain fallback: backend rows ALWAYS win (dedup by
+  // pair address, which is unique per deployment) since they carry richer stats; the
+  // fallback only fills pools the backend omits (Stable 988 + HyperEVM 999 today). Then
+  // hide test/seed tokens (tHOOK etc.) so only real assets surface.
+  const topPools = useMemo(() => {
+    const backendAddrs = new Set((rawPools ?? []).map((p) => p.id.toLowerCase()))
+    const fallbackToAdd = seededPools.filter((p) => !backendAddrs.has(p.id.toLowerCase()))
+    const merged = [...(rawPools ?? []), ...fallbackToAdd]
+    return merged.filter((p) => !pairHasHiddenToken(p.token0?.symbol, p.token1?.symbol))
+  }, [rawPools, seededPools])
   const topTokens = useMemo(() => (rawTokens ?? []).filter((t) => !isHiddenTokenSymbol(t.symbol)), [rawTokens])
 
   const metricMaps = useMemo(() => buildTokenMetrics(topTokens), [topTokens])
-  const rows = useMemo(() => buildRows(topPools, metricMaps), [topPools, metricMaps])
+  const rows = useMemo(
+    () => buildRows(topPools, metricMaps, seededChainById),
+    [topPools, metricMaps, seededChainById],
+  )
   const filteredRows = useMemo(() => applyFilter(rows, filter), [rows, filter])
   const searchedRows = useMemo(() => applySearch(filteredRows, query), [filteredRows, query])
 
