@@ -30,6 +30,7 @@
  */
 import { NONFUNGIBLE_POSITION_MANAGER_ADDRESSES } from '@uniswap/sdk-core'
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router'
 import { useReadContract, useReadContracts, useSimulateContract, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
 import { getChainInfo } from 'uniswap/src/features/chains/chainInfo'
 import { useEnabledChains } from 'uniswap/src/features/chains/hooks/useEnabledChains'
@@ -957,22 +958,31 @@ function TokenLocksList({
               </div>
             </div>
             <StatusPill unlockable={unlockable} />
-            <button
-              type="button"
-              disabled={!unlockable || isPending}
-              onClick={() =>
-                void writeContractAsync({
-                  address: row.contractAddress,
-                  chainId,
-                  abi: tokenLockerAbi,
-                  functionName: 'withdraw',
-                  args: [],
-                })
-              }
-              style={rowActionStyle(unlockable && !isPending)}
-            >
-              Withdraw
-            </button>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {chainId !== undefined ? (
+                // Full owner action center (extend / increase / transfer / recovery) lives on
+                // the per-lock detail page.
+                <Link to={`/lock/${chainId}/${String(row.id)}`} style={{ textDecoration: 'none' }}>
+                  <span style={rowNeutralActionStyle(true)}>Manage ↗</span>
+                </Link>
+              ) : null}
+              <button
+                type="button"
+                disabled={!unlockable || isPending}
+                onClick={() =>
+                  void writeContractAsync({
+                    address: row.contractAddress,
+                    chainId,
+                    abi: tokenLockerAbi,
+                    functionName: 'withdraw',
+                    args: [],
+                  })
+                }
+                style={rowActionStyle(unlockable && !isPending)}
+              >
+                Withdraw
+              </button>
+            </div>
           </div>
         )
       })}
@@ -1479,12 +1489,15 @@ function V3LockRowItem({
   const { writeContractAsync, isPending } = useWriteContract()
   const [extendOpen, setExtendOpen] = useState(false)
   const [extendValue, setExtendValue] = useState('')
+  const [transferOpen, setTransferOpen] = useState(false)
+  const [transferValue, setTransferValue] = useState('')
 
   const now = Math.floor(Date.now() / 1000)
   const unlockable = row.unlockTime <= now
   const extendUnix = toUnix(extendValue)
   // A valid extend must push the unlock strictly later than the current unlock time.
   const canExtend = Boolean(locker) && extendUnix !== undefined && extendUnix > row.unlockTime && !isPending
+  const canTransfer = Boolean(locker) && isAddress(transferValue) && !isPending
 
   const onCollect = (): void => {
     if (!locker) {
@@ -1527,6 +1540,21 @@ function V3LockRowItem({
     setExtendValue('')
   }
 
+  const onTransfer = (): void => {
+    if (!locker || !isAddress(transferValue)) {
+      return
+    }
+    void writeContractAsync({
+      address: locker,
+      chainId,
+      abi: v3PositionLockerAbi,
+      functionName: 'transferLockOwnership',
+      args: [row.id, assume0xAddress(transferValue)],
+    })
+    setTransferOpen(false)
+    setTransferValue('')
+  }
+
   return (
     <div style={{ padding: '12px 0', borderTop: isFirst ? undefined : `1px solid ${terminalColors.line3}` }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1558,6 +1586,14 @@ function V3LockRowItem({
           </button>
           <button
             type="button"
+            disabled={!locker || isPending}
+            onClick={() => setTransferOpen((v) => !v)}
+            style={rowNeutralActionStyle(Boolean(locker) && !isPending)}
+          >
+            Transfer
+          </button>
+          <button
+            type="button"
             disabled={!locker || !unlockable || isPending}
             onClick={onWithdraw}
             style={rowActionStyle(Boolean(locker) && unlockable && !isPending)}
@@ -1566,6 +1602,33 @@ function V3LockRowItem({
           </button>
         </div>
       </div>
+
+      {transferOpen ? (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 }}>
+          <input
+            value={transferValue}
+            onChange={(e) => setTransferValue(e.target.value)}
+            placeholder="0x… new owner address"
+            spellCheck={false}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              boxSizing: 'border-box',
+              border: `1px solid ${terminalColors.line}`,
+              borderRadius: 9,
+              background: terminalColors.panel,
+              padding: '8px 10px',
+              fontFamily: MONO,
+              fontSize: 12.5,
+              color: terminalColors.ink,
+              outline: 'none',
+            }}
+          />
+          <button type="button" disabled={!canTransfer} onClick={onTransfer} style={rowActionStyle(canTransfer)}>
+            {isPending ? 'Confirm…' : 'Confirm transfer'}
+          </button>
+        </div>
+      ) : null}
 
       {extendOpen ? (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 }}>

@@ -1,0 +1,17 @@
+{
+  "chain": "robinhood",
+  "chainId": 4663,
+  "model": "core-p2p (DeployPerps.s.sol — Settlement, NOT the factory model)",
+  "deployedAt": "2026-07-23",
+  "deployer": "0xc14C897c6bff88a5Eeac31F795693b9230205125",
+  "note": "LIVE PILOT on Robinhood mainnet (user-authorized, no external audit yet, owner=deployer 1-of-1). Core P2P perps: deposit collateral + EIP-712 match + on-chain settle. NEXT: point a perps-engine instance at chainId 4663 + these addresses (matcher key 0x46B7), deposit WETH collateral, run settleBatch smoke test. Domain = ('HookSwapPerps','1').",
+  "settlement": "0x7A1f95c9702F78751F305426DeA9F328ed0128FA",
+  "contractRegistry": "0xd032e4d0d44e1e100933d68d9a2723c6669a0693",
+  "insuranceFund": "0xf486e625c892c0739a16a3a49b37fd52374b30cb",
+  "sessionKeyManager": "0xa1aa9d69f59b20c0ef2936933d677680d6277351",
+  "collateral": { "weth": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73", "decimals": 18 },
+  "matcher": "0x46B7fC4978D74c6Eda6b4573E5bE2C9675846adc",
+  "feeReceiver": "0x011d438E3eb3fce848950859591ec037C6529E13",
+  "feeRate": 10,
+  "verified": { "settlementCodesize": 19259, "matcherAuthorized": true }
+}

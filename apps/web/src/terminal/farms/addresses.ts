@@ -22,16 +22,20 @@ import type { Address } from '~/chains'
  * Per-chain deployed `StakingRewardsFactory` addresses. Robinhood-only launch scope;
  * structured so other HookSwap chains can be added from their deploy output.
  */
+// FEE-ENABLED StakingRewardsFactory (createFee $15-native + protocolFeeBps 100 = 1%,
+// feeReceiver = treasury 0x011d438E). Deployed 2026-07-23, on-chain verified. Supersedes
+// the earlier no-fee suite factories. Tempo (4217) uses AA/pathUSD gas → fee-factory deploy
+// deferred; keep its prior no-fee factory until the AA deploy lands.
 export const FARM_FACTORY_ADDRESSES: Partial<Record<UniverseChainId, Address>> = {
-  [UniverseChainId.Robinhood]: '0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33',
-  // Suite mirror deployed 2026-07-16 (see contracts/deployments/<chain>-suite.json).
-  [UniverseChainId.HyperEvm]: '0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33',
-  [UniverseChainId.XLayer]: '0x7f91048007b653b088282a73d180541f9c228677',
-  [UniverseChainId.MegaETH]: '0xd9d4795f2a12305a12c36455adad011f2d6143ab',
-  [UniverseChainId.Ink]: '0x144331bb4c3026d135896cafec3ae3d667f4f376',
+  [UniverseChainId.Robinhood]: '0x1b51c392de4e3d3e0ab066c5f89492ec0fcf21c3',
+  [UniverseChainId.HyperEvm]: '0xef6348e9c3ed869798cd7c711837fc16d13d1488',
+  [UniverseChainId.XLayer]: '0x7e814d843d32e683ae25144430399ed77015ee07',
+  [UniverseChainId.MegaETH]: '0x1eb902735c9d65143e4a67dc05d34fb740a682b4',
+  [UniverseChainId.Ink]: '0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33',
+  [UniverseChainId.Stable]: '0x5520789f08934681510836816b418eff9f5c06cc',
+  [UniverseChainId.Sepolia]: '0x3da293ebf0a35aeb4fcec20fd1101ed471f035a4',
+  // Tempo (4217): fee-factory deploy deferred (AA/pathUSD gas); prior no-fee factory:
   [UniverseChainId.Tempo]: '0x250c3448278f7b71e3e9b641f2efeb6074820e25',
-  // Stable (988) — contracts/deployments/stable.json .suite.stakingRewardsFactory (on-chain code verified).
-  [UniverseChainId.Stable]: '0x0e88a920a522d2e858b5fb0e896f228f4619e0a6',
 }
 
 /**

@@ -1,25 +1,24 @@
 /**
- * HookSwap Terminal — Vesting (create schedules + beneficiaries claim).
+ * HookSwap Terminal — Vesting (create schedules + beneficiaries claim), redesigned.
  *
- * Robinhood-only launch scope. Two tabs:
- *   • "Create"          — HookSwapVestingManager `createVesting(token, beneficiary, amount,
- *                         startTime, cliffDuration, duration)`: deploys a funded, NON-revocable
- *                         `HookSwapVesting` child that releases on a cliff + linear curve.
- *   • "My schedules"    — every schedule the connected wallet is the beneficiary OR the creator
- *                         of, with a real Release (claim) action for the beneficiary.
+ * De-crammed into three clearly-separated modes behind one segmented control, each given
+ * room to breathe in the DAYSIGNAL / Ledger aesthetic:
+ *   • "My schedules"  — a spacious responsive grid of per-schedule cards, each with a real
+ *                       cliff+linear vesting-curve graph + the total/claimed/claimable/locked
+ *                       split + a beneficiary-only Release action (`MySchedulesPanel`).
+ *   • "Create"        — HookSwapVestingManager `createVesting(...)`: deploys a funded,
+ *                       NON-revocable `HookSwapVesting` child that releases on a cliff + linear
+ *                       curve. Allowance-gated (Approve → Create).
+ *   • "Explore"       — the cross-chain vesting-indexer analytics ledger (`VestingExplore`).
  *
  * DATA POLICY (facts-only, no fabricated data — handoff hard rule):
  *   • The manager address is config-driven (`~/terminal/vesting/addresses.ts`). Until it is
  *     deployed on a chain the screen renders an honest "Vesting isn't deployed on {chain} yet"
  *     state — never an error, never mock data.
- *   • The funding token's symbol/decimals, `vestingFee()`, `vestingCount()`, the user's
- *     schedules and every amount (total / vested / claimable / locked) are REAL on-chain reads.
- *     They read "—" until they resolve.
- *   • `createVesting` PULLS the tokens via `transferFrom`, so the button is GATED behind a live
- *     ERC-20 allowance: it stays "Approve token" until the approval is CONFIRMED on-chain, so a
- *     user can never sign a create tx that would revert for a missing allowance.
- *   • `release()` is beneficiary-ONLY on the child contract — the Release button is enabled only
- *     for the beneficiary, and only when the live `releasable()` is non-zero.
+ *   • `vestingFee()`, `vestingCount()`, the user's schedules and every amount are REAL on-chain
+ *     reads; they render "—" until they resolve.
+ *   • `createVesting` PULLS tokens via `transferFrom`, so create stays "Approve token" until the
+ *     approval is CONFIRMED on-chain. `release()` is beneficiary-ONLY and pays live `releasable()`.
  *
  * Contract signatures: see `~/terminal/vesting/abis.ts`
  * (`contracts/vesting/src/HookSwapVestingManager.sol` + `HookSwapVesting.sol`).
@@ -28,20 +27,21 @@ import { useState } from 'react'
 import { getChainInfo } from 'uniswap/src/features/chains/chainInfo'
 import { useEnabledChains } from 'uniswap/src/features/chains/hooks/useEnabledChains'
 import { getChainLabel } from 'uniswap/src/features/chains/utils'
-import { ExplorerDataType } from 'uniswap/src/utils/linking'
 import { useReadContract } from 'wagmi'
 import { formatUnits, type Address } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
 import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
-import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
+import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
+import { MySchedulesPanel } from '~/terminal/screens/vesting/MySchedulesPanel'
 import { VestingExplore } from '~/terminal/screens/vesting/VestingExplore'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { vestingManagerAbi } from '~/terminal/vesting/abis'
 import { getVestingAddress } from '~/terminal/vesting/addresses'
 import { useCreateVesting } from '~/terminal/vesting/useCreateVesting'
-import { useMySchedules, type VestingScheduleRow } from '~/terminal/vesting/useMySchedules'
+import { useMySchedules } from '~/terminal/vesting/useMySchedules'
 import { assume0xAddress } from '~/utils/wagmi'
 import '~/terminal/theme/terminal.css'
 
@@ -49,7 +49,7 @@ const MONO = terminalFonts.mono
 const DISPLAY = terminalFonts.display
 const SANS = terminalFonts.sans
 
-type VestingTab = 'create' | 'claim'
+type VestingTab = 'manage' | 'create' | 'explore'
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -128,18 +128,6 @@ function fmtDuration(seconds: number): string {
   return parts.join(' ')
 }
 
-/** Raw token units → a readable amount using the token's real decimals ("—" until known). */
-function fmtAmount(raw: bigint, decimals?: number): string {
-  if (decimals === undefined) {
-    return '—'
-  }
-  const n = Number(formatUnits(raw, decimals))
-  if (!Number.isFinite(n)) {
-    return '—'
-  }
-  return n.toLocaleString('en-US', { maximumFractionDigits: 6 })
-}
-
 /* ------------------------------------------------------------------ primitives */
 
 function FieldLabel({ children }: { children: React.ReactNode }): JSX.Element {
@@ -175,7 +163,7 @@ function TextField({
         border: `1px solid ${terminalColors.line}`,
         borderRadius: 11,
         background: terminalColors.panel,
-        padding: '10px 12px',
+        padding: '11px 13px',
         fontFamily: mono ? MONO : SANS,
         fontSize: 13.5,
         fontWeight: 500,
@@ -206,7 +194,7 @@ function SelectField({
         border: `1px solid ${terminalColors.line}`,
         borderRadius: 11,
         background: terminalColors.panel,
-        padding: '10px 12px',
+        padding: '11px 13px',
         fontFamily: SANS,
         fontSize: 13.5,
         fontWeight: 500,
@@ -271,7 +259,7 @@ function DurationField({
 
 function SummaryRow({ label, value, valueColor }: { label: string; value: React.ReactNode; valueColor?: string }): JSX.Element {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', gap: 12 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', gap: 12 }}>
       <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, whiteSpace: 'nowrap' }}>{label}</span>
       <span
         style={{
@@ -304,7 +292,7 @@ function Notice({ tone = 'neutral', children }: { tone?: 'neutral' | 'green' | '
         background: bg,
         border: `1px ${tone === 'muted' ? 'dashed' : 'solid'} ${border}`,
         borderRadius: 11,
-        padding: '10px 12px',
+        padding: '11px 13px',
       }}
     >
       {children}
@@ -327,7 +315,7 @@ function PrimaryButton({
       onClick={onClick}
       disabled={disabled}
       style={{
-        marginTop: 12,
+        marginTop: 14,
         width: '100%',
         fontFamily: MONO,
         textTransform: 'uppercase',
@@ -337,7 +325,7 @@ function PrimaryButton({
         color: terminalColors.btnInk,
         background: disabled ? terminalColors.line : terminalColors.brandGreen,
         border: 'none',
-        padding: '12px 0',
+        padding: '13px 0',
         borderRadius: 12,
         cursor: disabled ? 'default' : 'pointer',
       }}
@@ -376,96 +364,6 @@ function NotDeployedNote({ chainLabel }: { chainLabel: string }): JSX.Element {
       </div>
       Vesting isn&apos;t live on {chainLabel} yet — this panel activates automatically once the HookSwap vesting manager
       is deployed.
-    </div>
-  )
-}
-
-function rowActionStyle(enabled: boolean): React.CSSProperties {
-  return {
-    ...terminalKeycap,
-    fontSize: 11.5,
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase',
-    color: enabled ? terminalColors.greenDeep : terminalColors.faint,
-    padding: '6px 12px',
-    cursor: enabled ? 'pointer' : 'default',
-    whiteSpace: 'nowrap',
-  }
-}
-
-function ConnectInline({ onConnect }: { onConnect: () => void }): JSX.Element {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 10, padding: '10px 0' }}>
-      <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink2 }}>
-        Connect a wallet to see your vesting schedules.
-      </div>
-      <button
-        type="button"
-        onClick={onConnect}
-        style={{
-          fontFamily: MONO,
-          textTransform: 'uppercase',
-          letterSpacing: '0.04em',
-          fontSize: 12.5,
-          fontWeight: 600,
-          color: terminalColors.btnInk,
-          background: terminalColors.brandGreen,
-          border: 'none',
-          padding: '9px 18px',
-          borderRadius: 11,
-          cursor: 'pointer',
-        }}
-      >
-        Connect wallet
-      </button>
-    </div>
-  )
-}
-
-function EmptyInline({ text }: { text: string }): JSX.Element {
-  return <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, padding: '6px 0' }}>{text}</div>
-}
-
-function ErrorInline({ onRetry }: { onRetry: () => void }): JSX.Element {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.redDown }}>
-        Failed to load vesting schedules.
-      </span>
-      <button
-        type="button"
-        onClick={onRetry}
-        style={{
-          ...terminalKeycap,
-          fontSize: 11.5,
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-          color: terminalColors.ink2,
-          padding: '5px 12px',
-          cursor: 'pointer',
-        }}
-      >
-        Retry
-      </button>
-    </div>
-  )
-}
-
-function SkeletonRows(): JSX.Element {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      {Array.from({ length: 3 }, (_, i) => (
-        <div key={i}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ height: 12, width: '45%', borderRadius: 4, background: terminalColors.line2 }} />
-              <div style={{ height: 10, width: '65%', borderRadius: 4, background: terminalColors.line3, marginTop: 6 }} />
-            </div>
-            <div style={{ height: 26, width: 78, borderRadius: 9, background: terminalColors.line2 }} />
-          </div>
-          <div style={{ height: 8, borderRadius: 999, background: terminalColors.line3, marginTop: 12 }} />
-        </div>
-      ))}
     </div>
   )
 }
@@ -598,14 +496,14 @@ function CreateTab({
       : undefined
 
   return (
-    <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
       {/* Left: schedule details */}
-      <div style={{ flex: '1 1 340px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ flex: '1 1 380px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
         <InstrumentPanel title="SCHEDULE DETAILS" corners meta={deployed ? undefined : ['not deployed']}>
           {!deployed ? (
             <NotDeployedNote chainLabel={chainLabel} />
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <FieldLabel>Token address</FieldLabel>
                 <TextField value={token} onChange={setToken} placeholder="0x…" />
@@ -678,7 +576,7 @@ function CreateTab({
       </div>
 
       {/* Right: review + create */}
-      <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ flex: '1 1 340px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
         <InstrumentPanel title="REVIEW">
           <SummaryRow label="Token" value={symbolLabel} />
           <SummaryRow
@@ -730,215 +628,19 @@ function CreateTab({
   )
 }
 
-/* ------------------------------------------------------------------ claim tab */
-
-/** Vested / claimable / locked split for one schedule. */
-function ProgressBar({ row }: { row: VestingScheduleRow }): JSX.Element {
-  const total = row.totalAmount
-  const pct = (part: bigint): number => {
-    if (total === 0n) {
-      return 0
-    }
-    // Ratio in basis points to stay exact in bigint, then down to a float percentage.
-    return Number((part * 10_000n) / total) / 100
-  }
-  const releasedPct = pct(row.released)
-  const claimablePct = pct(row.releasable)
-
-  return (
-    <div style={{ display: 'flex', height: 8, borderRadius: 999, overflow: 'hidden', background: terminalColors.panel2 }}>
-      {row.released > 0n ? (
-        <div title="Claimed" style={{ width: `${releasedPct}%`, background: terminalColors.ink3 }} />
-      ) : null}
-      {row.releasable > 0n ? (
-        <div title="Claimable" style={{ width: `${claimablePct}%`, background: terminalColors.greenUp }} />
-      ) : null}
-    </div>
-  )
-}
-
-function ScheduleRowItem({
-  row,
-  isFirst,
-  isReleasing,
-  releasingChild,
-  onRelease,
-  chainId,
-}: {
-  row: VestingScheduleRow
-  isFirst: boolean
-  isReleasing: boolean
-  releasingChild?: Address
-  onRelease: (child: Address) => void
-  chainId?: number
-}): JSX.Element {
-  const d = row.tokenDecimals
-  const thisReleasing = isReleasing && releasingChild?.toLowerCase() === row.contractAddress.toLowerCase()
-  // `release()` is beneficiary-ONLY on the child, and pays out `releasable()` — so the action
-  // is live only for the beneficiary, and only when something is actually claimable.
-  const canRelease = row.isBeneficiary && row.releasable > 0n && !isReleasing
-  const cliffEnd = row.start + row.cliff
-  const now = Math.floor(Date.now() / 1000)
-
-  const releaseLabel = ((): string => {
-    if (thisReleasing) {
-      return 'Claiming…'
-    }
-    if (!row.isBeneficiary) {
-      return 'Beneficiary only'
-    }
-    if (row.releasable === 0n) {
-      return now < cliffEnd ? 'In cliff' : 'Nothing to claim'
-    }
-    return 'Release'
-  })()
-
-  return (
-    <div style={{ padding: '14px 0', borderTop: isFirst ? undefined : `1px solid ${terminalColors.line3}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ExplorerAddress
-              address={row.token}
-              chainId={chainId}
-              type={ExplorerDataType.TOKEN}
-              label={row.tokenSymbol ?? undefined}
-              fontSize={13}
-              fontWeight={600}
-            />
-            <span
-              style={{
-                fontFamily: MONO,
-                fontSize: 10,
-                fontWeight: 600,
-                color: row.isBeneficiary ? terminalColors.greenDeep : terminalColors.accentIndigo,
-                background: row.isBeneficiary ? terminalColors.greenBg : terminalColors.panel2,
-                padding: '1px 6px',
-                borderRadius: 999,
-              }}
-            >
-              {row.isBeneficiary ? 'RECEIVING' : 'GRANTED'}
-            </span>
-          </div>
-          <div style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3Alt, marginTop: 3 }}>
-            {row.isBeneficiary ? (
-              <>From <ExplorerAddress address={row.creator} chainId={chainId} fontSize={12} /></>
-            ) : (
-              <>To <ExplorerAddress address={row.beneficiary} chainId={chainId} fontSize={12} /></>
-            )}{' '}
-            · starts {fmtDate(row.start)} · {fmtDuration(row.duration)}
-            {row.cliff > 0 ? ` · ${fmtDuration(row.cliff)} cliff` : ''}
-          </div>
-        </div>
-        <button
-          type="button"
-          disabled={!canRelease}
-          onClick={() => onRelease(row.contractAddress)}
-          style={rowActionStyle(canRelease)}
-        >
-          {releaseLabel}
-        </button>
-      </div>
-
-      <ProgressBar row={row} />
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px', marginTop: 10 }}>
-        <ScheduleStat label="Total" value={fmtAmount(row.totalAmount, d)} />
-        <ScheduleStat label="Vested" value={fmtAmount(row.vested, d)} />
-        <ScheduleStat label="Claimable" value={fmtAmount(row.releasable, d)} accent={row.releasable > 0n} />
-        <ScheduleStat label="Locked" value={fmtAmount(row.locked, d)} />
-      </div>
-    </div>
-  )
-}
-
-function ScheduleStat({ label, value, accent }: { label: string; value: string; accent?: boolean }): JSX.Element {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-      <span style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.ink3Alt }}>{label}</span>
-      <span
-        style={{
-          fontFamily: MONO,
-          fontSize: 12.5,
-          fontWeight: 500,
-          color: accent ? terminalColors.greenDeep : terminalColors.ink,
-        }}
-      >
-        {value}
-      </span>
-    </div>
-  )
-}
-
-function ClaimTab({
-  deployed,
-  connected,
-  chainLabel,
-  chainId,
-  owner,
-  onConnect,
-}: {
-  deployed: boolean
-  connected: boolean
-  chainLabel: string
-  chainId?: number
-  owner: Address | undefined
-  onConnect: () => void
-}): JSX.Element {
-  const schedules = useMySchedules({ chainId, owner })
-
-  const body = ((): JSX.Element => {
-    if (!deployed) {
-      return <NotDeployedNote chainLabel={chainLabel} />
-    }
-    if (!connected) {
-      return <ConnectInline onConnect={onConnect} />
-    }
-    if (schedules.error) {
-      return <ErrorInline onRetry={schedules.refetch} />
-    }
-    if (schedules.rows === undefined) {
-      return <SkeletonRows />
-    }
-    if (schedules.rows.length === 0) {
-      return <EmptyInline text="You have no vesting schedules yet." />
-    }
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
-        {schedules.rows.map((row, i) => (
-          <ScheduleRowItem
-            key={String(row.id)}
-            row={row}
-            isFirst={i === 0}
-            isReleasing={schedules.isReleasing}
-            releasingChild={schedules.releasingChild}
-            onRelease={(child) => void schedules.release(child)}
-            chainId={chainId}
-          />
-        ))}
-      </div>
-    )
-  })()
-
-  return (
-    <InstrumentPanel title="MY VESTING SCHEDULES" meta={['RECEIVING + GRANTED']}>
-      {body}
-
-      {schedules.releaseError ? (
-        <div style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.redDown, marginTop: 12, lineHeight: 1.5 }}>
-          {schedules.releaseError}
-        </div>
-      ) : null}
-    </InstrumentPanel>
-  )
-}
-
 /* ------------------------------------------------------------------ the screen */
+
+const TAB_LABEL: Record<VestingTab, string> = {
+  manage: 'My schedules',
+  create: 'Create',
+  explore: 'Explore',
+}
 
 export function VestingScreen(): JSX.Element {
   const account = useAccount()
   const accountDrawer = useAccountDrawer()
-  const [tab, setTab] = useState<VestingTab>('create')
+  const isMobile = useIsMobileViewport()
+  const [tab, setTab] = useState<VestingTab>('manage')
 
   const connected = Boolean(account.address)
   const owner = assume0xAddress(account.address)
@@ -976,7 +678,7 @@ export function VestingScreen(): JSX.Element {
   const vestingFee = feeRead.data as bigint | undefined
 
   // The user's real schedules — drive the "Your schedules" / "Claimable now" tiles.
-  // wagmi dedupes these identical reads with the Claim tab's copies (same query keys).
+  // wagmi dedupes these identical reads with the Manage tab's copies (same query keys).
   const mine = useMySchedules({ chainId, owner })
   const minesLoading = connected && deployed && !mine.error && mine.rows === undefined
 
@@ -1000,11 +702,11 @@ export function VestingScreen(): JSX.Element {
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
       {/* Header */}
       <Eyebrow style={{ display: 'block', marginBottom: 8 }}>TOKEN VESTING</Eyebrow>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6, flexWrap: 'wrap' }}>
         <h1
           style={{
             fontFamily: DISPLAY,
-            fontSize: 24,
+            fontSize: 26,
             fontWeight: 600,
             letterSpacing: '-0.02em',
             color: terminalColors.ink,
@@ -1014,19 +716,16 @@ export function VestingScreen(): JSX.Element {
           Vesting
         </h1>
         <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, color: terminalColors.ink3Alt }}>
-          {totalCount !== undefined ? `${String(totalCount)} total schedules` : '— total schedules'}
+          {totalCount !== undefined ? `${String(totalCount)} total schedules` : '— total schedules'} · {chainLabel}
         </span>
       </div>
-      <div style={{ fontFamily: SANS, fontSize: 13, color: terminalColors.ink2, marginBottom: 18, maxWidth: 560, lineHeight: 1.5 }}>
+      <div style={{ fontFamily: SANS, fontSize: 13.5, color: terminalColors.ink2, marginBottom: 22, maxWidth: 620, lineHeight: 1.55 }}>
         Vest tokens to a team member, investor, or your own treasury on a cliff + linear schedule. Tokens are held by a
         dedicated contract and unlock over time — the beneficiary claims them as they vest.
       </div>
 
-      {/* Ledger analytics — cross-chain vesting indexer (live). Sits above the create/claim tools. */}
-      <VestingExplore />
-
-      {/* Stat tiles — real contract reads (honest "—" when not deployed / disconnected). */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
+      {/* KPI strip — real contract reads (honest "—" when not deployed / disconnected). */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 24 }}>
         <StatCard
           size="lg"
           label="Total schedules"
@@ -1051,19 +750,19 @@ export function VestingScreen(): JSX.Element {
         />
       </div>
 
-      {/* Tabs */}
+      {/* Mode switcher — clearly separates MANAGE / CREATE / EXPLORE. */}
       <div
         style={{
           display: 'flex',
           gap: 4,
           background: terminalColors.panel2,
           padding: 4,
-          borderRadius: 11,
-          width: 'fit-content',
-          marginBottom: 20,
+          borderRadius: 12,
+          width: isMobile ? '100%' : 'fit-content',
+          marginBottom: 22,
         }}
       >
-        {(['create', 'claim'] as const).map((id) => {
+        {(['manage', 'create', 'explore'] as const).map((id) => {
           const active = tab === id
           return (
             <button
@@ -1071,8 +770,9 @@ export function VestingScreen(): JSX.Element {
               type="button"
               onClick={() => setTab(id)}
               style={{
-                padding: '7px 18px',
-                borderRadius: 8,
+                flex: isMobile ? 1 : undefined,
+                padding: '8px 20px',
+                borderRadius: 9,
                 border: 'none',
                 cursor: 'pointer',
                 fontFamily: SANS,
@@ -1083,13 +783,22 @@ export function VestingScreen(): JSX.Element {
                 boxShadow: active ? terminalShadows.segmentedActive : undefined,
               }}
             >
-              {id === 'create' ? 'Create' : 'My schedules'}
+              {TAB_LABEL[id]}
             </button>
           )
         })}
       </div>
 
-      {tab === 'create' ? (
+      {tab === 'manage' ? (
+        <MySchedulesPanel
+          deployed={deployed}
+          connected={connected}
+          chainLabel={chainLabel}
+          chainId={chainId}
+          owner={owner}
+          onConnect={onConnect}
+        />
+      ) : tab === 'create' ? (
         <CreateTab
           manager={manager}
           chainLabel={chainLabel}
@@ -1101,14 +810,7 @@ export function VestingScreen(): JSX.Element {
           nativeDecimals={native?.decimals}
         />
       ) : (
-        <ClaimTab
-          deployed={deployed}
-          connected={connected}
-          chainLabel={chainLabel}
-          chainId={chainId}
-          owner={owner}
-          onConnect={onConnect}
-        />
+        <VestingExplore />
       )}
     </div>
   )

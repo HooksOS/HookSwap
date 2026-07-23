@@ -103,6 +103,7 @@ export const tokenLockerManagerAbi = [
 
 export const tokenLockerAbi = [
   {
+    // combined increase-amount (amount>0) and/or extend (newUnlockTime>=current & future).
     type: 'function',
     name: 'deposit',
     stateMutability: 'nonpayable',
@@ -113,11 +114,70 @@ export const tokenLockerAbi = [
     outputs: [],
   },
   {
+    // withdraw the full locked balance — reverts until block.timestamp >= unlockTime.
     type: 'function',
     name: 'withdraw',
     stateMutability: 'nonpayable',
     inputs: [],
     outputs: [],
+  },
+  {
+    // Ownable.transferOwnership — change the lock owner. onlyOwner.
+    type: 'function',
+    name: 'transferOwnership',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'newOwner', type: 'address' }],
+    outputs: [],
+  },
+  {
+    // recovery: withdraw a NON-locked token accidentally sent here (reverts on the locked token).
+    type: 'function',
+    name: 'withdrawToken',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'token', type: 'address' }],
+    outputs: [],
+  },
+  {
+    // recovery: sweep stray native ETH (e.g. dividends) to the owner.
+    type: 'function',
+    name: 'withdrawEth',
+    stateMutability: 'nonpayable',
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'owner',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'getIsLpToken',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'bool' }],
+  },
+  {
+    // live on-chain lock data — used to reflect a just-extended time / balance without
+    // waiting for the indexer. Mirrors HookSwapTokenLocker.getLockData().
+    type: 'function',
+    name: 'getLockData',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [
+      { name: 'isLpToken', type: 'bool' },
+      { name: 'id', type: 'uint40' },
+      { name: 'contractAddress', type: 'address' },
+      { name: 'lockOwner', type: 'address' },
+      { name: 'token', type: 'address' },
+      { name: 'createdBy', type: 'address' },
+      { name: 'createdAt', type: 'uint40' },
+      { name: 'unlockTime', type: 'uint40' },
+      { name: 'balance', type: 'uint256' },
+      { name: 'totalSupply', type: 'uint256' },
+    ],
   },
 ] as const
 

@@ -1,15 +1,30 @@
 # ============================================================================
 # HookSwap AI Knowledge Platform — DEV stack (docker-compose)
 # ----------------------------------------------------------------------------
-# Brings up the full platform locally:
-#   datastores : postgres(pgvector) · redis · qdrant · opensearch(+dashboards) · minio(S3)
-#   services   : backend(FastAPI) · frontend(Next15) · ingestion-workers · agents-runtime
+# Brings up the platform locally.
+#
+#   DEFAULT (`docker compose up -d`) — the runnable P1 RAG core:
+#     datastores : postgres(pgvector) · redis · qdrant · opensearch · minio(S3)
+#     services   : backend (FastAPI)
+#
+#   FULL (`docker compose --profile full up -d`) — adds the not-yet-wired
+#     app-layer subsystems: frontend(Next15) · ingestion-workers · agents-runtime.
+#     These are gated behind profiles because their build/runtime is still being
+#     stood up: frontend + ingestion have no in-dir Dockerfile yet (use the
+#     infra/docker/*.Dockerfile fallback via the *_DOCKERFILE overrides), the
+#     long-running ingestion WORKER runtime (app.workers) is not built (P1
+#     ingestion is the one-shot `python ingestion/ingest_docs.py` script), and
+#     the `agents/` subsystem directory does not exist yet (P2). Gating keeps the
+#     default `up` from referencing an unbuilt context.
+#     Individual profiles: `--profile frontend | workers | agents`.
 #
 #   cp infra/env/.env.example .env   # then edit secrets/keys
 #   docker compose up -d             # or: make up
 #
-# Production overlay (TLS/nginx, 127.0.0.1 binds, resource limits):
-#   docker compose -f docker-compose.yml -f docker-compose.production.yml up -d
+# Production overlay (TLS/nginx, 127.0.0.1 binds, resource limits) — pulls
+# pre-built registry images, so add the app services with `--profile full`:
+#   docker compose -f docker-compose.yml -f docker-compose.production.yml \
+#     --profile full up -d
 #
 # Service Dockerfiles are owned by each subsystem dir; infra/docker/*.Dockerfile
 # are FALLBACKS used only when a subsystem has not shipped its own yet.
@@ -221,6 +236,9 @@ services:
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8000/ws}
     image: ${REGISTRY:-ghcr.io/hookswap}/ai-frontend:${IMAGE_TAG:-dev}
     container_name: aiplat-frontend
+    # Gated: frontend has no in-dir Dockerfile yet (use FRONTEND_DOCKERFILE
+    # override → infra/docker/frontend.Dockerfile). Enable with --profile full.
+    profiles: ["frontend", "full"]
     env_file: [.env]
     environment:
       NODE_ENV: ${NODE_ENV:-production}
@@ -245,6 +263,11 @@ services:
       dockerfile: ${WORKER_DOCKERFILE:-Dockerfile}
     image: ${REGISTRY:-ghcr.io/hookswap}/ai-ingestion-workers:${IMAGE_TAG:-dev}
     container_name: aiplat-ingestion-workers
+    # Gated: the long-running worker runtime (app.workers) is not built yet.
+    # P1 ingestion is the one-shot `python ingestion/ingest_docs.py`. When the
+    # worker lands, ship ingestion/Dockerfile or set WORKER_DOCKERFILE to the
+    # infra/docker/worker.Dockerfile fallback. Enable with --profile full.
+    profiles: ["workers", "full"]
     env_file: [.env]
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -269,6 +292,10 @@ services:
       dockerfile: ${AGENTS_DOCKERFILE:-Dockerfile}
     image: ${REGISTRY:-ghcr.io/hookswap}/ai-agents-runtime:${IMAGE_TAG:-dev}
     container_name: aiplat-agents-runtime
+    # Gated: the agents/ subsystem directory does not exist yet (P2). The build
+    # context ./agents is a placeholder until the agent fleet lands. Enable with
+    # --profile full (only after agents/ + its Dockerfile are shipped).
+    profiles: ["agents", "full"]
     env_file: [.env]
     environment:
       APP_ENV: ${APP_ENV:-development}

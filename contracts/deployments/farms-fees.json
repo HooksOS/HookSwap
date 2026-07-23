@@ -1,0 +1,20 @@
+{
+  "_note": "Fee-enabled StakingRewardsFactory rollout (2026-07-23). createFee = $15 in native (per-chain wei), protocolFeeBps = 100 (1%, hard cap 500=5%), feeReceiver = treasury 0x011d438E3eb3fce848950859591ec037C6529E13, owner = deployer 0xc14C. createFee/protocolFeeBps/feeReceiver are onlyOwner-tunable (setCreateFee/setProtocolFeeBps/setFeeReceiver). Supersedes the earlier no-fee suite StakingRewardsFactory. Frontend wired in apps/web/src/terminal/farms/addresses.ts.",
+  "contract": "StakingRewardsFactory (fee-enabled)",
+  "feeReceiver": "0x011d438E3eb3fce848950859591ec037C6529E13",
+  "protocolFeeBps": 100,
+  "createFeeUsdTarget": 15,
+  "maxProtocolFeeBps": 500,
+  "factories": {
+    "sepolia_11155111": { "address": "0x3da293ebf0a35aeb4fcec20fd1101ed471f035a4", "createFeeWei": "1000000000000000", "note": "testnet; createFee left at 0.001 ETH" },
+    "megaeth_4326": { "address": "0x1eb902735c9d65143e4a67dc05d34fb740a682b4", "createFeeWei": "7878000000000000", "nativeUsd": 1904.06 },
+    "robinhood_4663": { "address": "0x1b51c392de4e3d3e0ab066c5f89492ec0fcf21c3", "createFeeWei": "7878000000000000", "nativeUsd": 1904.06 },
+    "ink_57073": { "address": "0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33", "createFeeWei": "7878000000000000", "nativeUsd": 1904.06 },
+    "xlayer_196": { "address": "0x7e814d843d32e683ae25144430399ed77015ee07", "createFeeWei": "179520000000000000", "nativeUsd": 83.56, "native": "OKB" },
+    "hyperevm_999": { "address": "0xef6348e9c3ed869798cd7c711837fc16d13d1488", "createFeeWei": "252440000000000000", "nativeUsd": 59.42, "native": "HYPE" },
+    "stable_988": { "address": "0x5520789f08934681510836816b418eff9f5c06cc", "createFeeWei": "15000000000000000000", "nativeUsd": 1.0, "native": "USDT0" }
+  },
+  "deferred": {
+    "tempo_4217": "AA/pathUSD gas — standard forge broadcast fails ('AA transaction missing keys: gas'). Needs AA-aware deploy tooling. Frontend keeps prior no-fee factory 0x250c3448... until this lands."
+  }
+}

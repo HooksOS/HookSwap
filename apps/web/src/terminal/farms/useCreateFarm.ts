@@ -48,6 +48,18 @@ export interface UseCreateFarm {
   /** Parsed reward budget in base units (`amount * 10**rewardDecimals`), or undefined. */
   rewardAmountRaw?: bigint
 
+  // Protocol fees (REAL on-chain reads; default 0. Absent on pre-fee factories → treated as 0).
+  /** True once the fee reads have settled (success or "function absent" error). */
+  feesKnown: boolean
+  /** Flat native fee (base units, sent as msg.value). 0n when unset / pre-fee factory. */
+  createFeeRaw: bigint
+  /** Reward-budget cut in basis points (0–500). 0 when unset / pre-fee factory. */
+  protocolFeeBps: number
+  /** Reward tokens skimmed to the fee receiver (`rewardAmount * bps / 10000`), or undefined. */
+  protocolFeeAmountRaw?: bigint
+  /** Reward tokens that actually fund the farm (`rewardAmount - protocolFeeAmount`), or undefined. */
+  fundAmountRaw?: bigint
+
   // Field-level validity (drives honest inline errors).
   validAmount: boolean
   validDuration: boolean
@@ -185,6 +197,38 @@ export function useCreateFarm({
 
   const rewardAmountRaw = tryParse(rewardAmount, rewardDecimals)
 
+  /* --------------------------------------------------------------- protocol fees (real reads) */
+
+  // createFee (native) + protocolFeeBps (reward-budget cut). Both default 0. On a factory
+  // deployed BEFORE the fee feature these functions don't exist → the read errors; we treat
+  // an errored (settled-with-error) read as "no fee" so creation still works everywhere.
+  const createFeeRead = useReadContract({
+    address: factory,
+    chainId,
+    abi: stakingRewardsFactoryAbi,
+    functionName: 'createFee',
+    query: { enabled: ready },
+  })
+  const protocolFeeBpsRead = useReadContract({
+    address: factory,
+    chainId,
+    abi: stakingRewardsFactoryAbi,
+    functionName: 'protocolFeeBps',
+    query: { enabled: ready },
+  })
+
+  const createFeeRaw = createFeeRead.isSuccess ? (createFeeRead.data as bigint) : 0n
+  const protocolFeeBps = protocolFeeBpsRead.isSuccess ? Number(protocolFeeBpsRead.data as bigint) : 0
+  // "Settled" = resolved either way (success, or error meaning the fn is absent = no fee).
+  const feesKnown =
+    !ready ||
+    ((createFeeRead.isSuccess || createFeeRead.isError) && (protocolFeeBpsRead.isSuccess || protocolFeeBpsRead.isError))
+
+  const protocolFeeAmountRaw =
+    rewardAmountRaw !== undefined ? (rewardAmountRaw * BigInt(protocolFeeBps)) / 10_000n : undefined
+  const fundAmountRaw =
+    rewardAmountRaw !== undefined && protocolFeeAmountRaw !== undefined ? rewardAmountRaw - protocolFeeAmountRaw : undefined
+
   /* --------------------------------------------------------------- allowance gate (reward token) */
 
   const allowanceRead = useReadContract({
@@ -260,7 +304,9 @@ export function useCreateFarm({
 
   const busy = isWritePending || isConfirming || approving
   const canApprove = inputsValid && needsApproval && !busy
-  const canCreate = inputsValid && allowanceKnown && !needsApproval && !busy && !isDone
+  // Also gate on the fee reads having settled — so the native `createFee` (msg.value) is
+  // never under-sent while the read is still loading (which would revert the create).
+  const canCreate = inputsValid && allowanceKnown && feesKnown && !needsApproval && !busy && !isDone
 
   /* --------------------------------------------------------------- actions */
 
@@ -302,6 +348,8 @@ export function useCreateFarm({
         abi: stakingRewardsFactoryAbi,
         functionName: 'createAndFund',
         args: [stakingAddr, rewardAddr, rewardAmountRaw, BigInt(Math.floor(durationSeconds))],
+        // Flat native protocol fee (0 unless the owner set one; excess is refunded on-chain).
+        value: createFeeRaw,
       })
       setCreateHash(hash)
     } catch (e) {
@@ -327,6 +375,11 @@ export function useCreateFarm({
       rewardDecimals,
       rewardSymbol,
       rewardAmountRaw,
+      feesKnown,
+      createFeeRaw,
+      protocolFeeBps,
+      protocolFeeAmountRaw,
+      fundAmountRaw,
       validAmount,
       validDuration,
       distinctTokens,
@@ -357,6 +410,11 @@ export function useCreateFarm({
       rewardDecimals,
       rewardSymbol,
       rewardAmountRaw,
+      feesKnown,
+      createFeeRaw,
+      protocolFeeBps,
+      protocolFeeAmountRaw,
+      fundAmountRaw,
       validAmount,
       validDuration,
       distinctTokens,

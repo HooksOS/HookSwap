@@ -1,0 +1,117 @@
+{
+  "_note": "Verified HookSwap facts used as the grounding corpus fallback when the RAG engine (app.rag.engine) is not yet wired. Every entry traces to a real in-repo source (CLAUDE.md LOCKED DECISIONS, contracts/deployments/<chain>.json, docs/marketing-rag-spec.md). FACTS-ONLY: nothing here is invented. Live/market-moving numbers (TVL, 24h volume, prices, APR) are DELIBERATELY absent — those must be tool-fetched at generation time, never embedded (marketing-rag-spec.md 2.2). Do not add a stat here.",
+  "facts": [
+    {
+      "id": "brand-name",
+      "kind": "brand",
+      "chain": null,
+      "text": "HookSwap is a self-hosted, multi-chain on-chain DEX styled as a trading desk / terminal, not a form.",
+      "source": "CLAUDE.md#north-star",
+      "keywords": ["hookswap", "dex", "desk", "terminal", "brand", "what is"]
+    },
+    {
+      "id": "brand-taglines",
+      "kind": "brand",
+      "chain": null,
+      "text": "HookSwap taglines: 'Trade on-chain like a desk, not a form' and 'A DEX in terminal form'. Voice: precise, quantitative, understated, no hype; numbers in mono.",
+      "source": "docs/marketing-rag-spec.md#5.1",
+      "keywords": ["tagline", "voice", "brand", "slogan", "desk", "terminal"]
+    },
+    {
+      "id": "product-scope-v2v3",
+      "kind": "feature",
+      "chain": null,
+      "text": "HookSwap ships Uniswap v2 + v3 style pools only. There are NO hooks and NO v4 in the shipped product (LOCKED decision). Never claim hooks or v4.",
+      "source": "CLAUDE.md#locked-decisions",
+      "keywords": ["v2", "v3", "v4", "hooks", "scope", "pools", "features"]
+    },
+    {
+      "id": "fee-tiers",
+      "kind": "fee",
+      "chain": null,
+      "text": "Fee tiers: v2 pools charge a flat 0.30%. v3 pools use 0.01%, 0.05%, 0.30%, or 1.00% fee tiers.",
+      "source": "docs/marketing-rag-spec.md#5.2",
+      "keywords": ["fee", "fees", "0.30%", "0.05%", "0.01%", "1.00%", "tier", "cost"]
+    },
+    {
+      "id": "products-list",
+      "kind": "feature",
+      "chain": null,
+      "text": "HookSwap products: swap, launchpad, locker, farms, referrals, airdrop, and multisender. Perps (HookSwapPerps) is upcoming and must be labeled as upcoming, not live.",
+      "source": "docs/marketing-rag-spec.md#5.1",
+      "keywords": ["products", "launchpad", "locker", "farms", "referrals", "airdrop", "multisender", "perps", "features"]
+    },
+    {
+      "id": "self-hosted-routing",
+      "kind": "feature",
+      "chain": null,
+      "text": "HookSwap self-hosts its own routing and data infrastructure for full independence, owning its complete v2+v3+Universal Router stack on every chain rather than reusing another protocol's deployments.",
+      "source": "CLAUDE.md#deploy-strategy",
+      "keywords": ["self-host", "routing", "independence", "infra", "stack", "own"]
+    },
+    {
+      "id": "stage-honesty",
+      "kind": "stage",
+      "chain": null,
+      "text": "HookSwap is early stage: liquidity is thin / seeded and some pairs have no route yet. HookSwap does not fabricate quotes — a missing route means there is genuinely nothing to route against. Do not oversell readiness.",
+      "source": "docs/users/faq.md",
+      "keywords": ["stage", "early", "liquidity", "route", "honest", "live", "readiness"]
+    },
+    {
+      "id": "chains-overview",
+      "kind": "chain",
+      "chain": null,
+      "text": "HookSwap runs on seven chains: Robinhood Chain (id 4663), HyperEVM (999), Ink (57073), MegaETH (4326), X Layer (196), Tempo (4217), and Sepolia (11155111, the testnet validation chain).",
+      "source": "CLAUDE.md#chains-present + docs/marketing-rag-spec.md#5.1",
+      "keywords": ["chains", "multi-chain", "robinhood", "hyperevm", "ink", "megaeth", "xlayer", "tempo", "sepolia", "networks"]
+    },
+    {
+      "id": "chain-robinhood",
+      "kind": "chain",
+      "chain": "robinhood",
+      "text": "Robinhood Chain is a HookSwap-supported chain with chain id 4663 and native token ETH.",
+      "source": "CLAUDE.md#locked-decisions",
+      "keywords": ["robinhood", "4663", "chain"]
+    },
+    {
+      "id": "chain-hyperevm",
+      "kind": "chain",
+      "chain": "hyperevm",
+      "text": "HyperEVM is a HookSwap-supported chain with chain id 999 and native token HYPE.",
+      "source": "CLAUDE.md#locked-decisions",
+      "keywords": ["hyperevm", "999", "hype", "chain"]
+    },
+    {
+      "id": "addr-robinhood-universal-router",
+      "kind": "address",
+      "chain": "robinhood",
+      "text": "On Robinhood Chain (4663) the HookSwap Universal Router is deployed at 0x3D30133F4d4A80684F02d8310faF572E3dc193b3.",
+      "source": "contracts/deployments/robinhood.json",
+      "keywords": ["universal router", "router", "robinhood", "address", "contract"]
+    },
+    {
+      "id": "addr-robinhood-v2factory",
+      "kind": "address",
+      "chain": "robinhood",
+      "text": "On Robinhood Chain (4663) the HookSwap v2 factory is deployed at 0xD1Cf664944173140AFc302c169eFD55c24966B45.",
+      "source": "contracts/deployments/robinhood.json",
+      "keywords": ["v2 factory", "factory", "robinhood", "address", "contract"]
+    },
+    {
+      "id": "addr-robinhood-v3factory",
+      "kind": "address",
+      "chain": "robinhood",
+      "text": "On Robinhood Chain (4663) the HookSwap v3 factory is deployed at 0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3.",
+      "source": "contracts/deployments/robinhood.json",
+      "keywords": ["v3 factory", "factory", "robinhood", "address", "contract"]
+    },
+    {
+      "id": "addr-robinhood-weth",
+      "kind": "address",
+      "chain": "robinhood",
+      "text": "On Robinhood Chain (4663) HookSwap uses the canonical wrapped-native WETH at 0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73.",
+      "source": "contracts/deployments/robinhood.json",
+      "keywords": ["weth", "wrapped", "robinhood", "address", "contract"]
+    }
+  ]
+}

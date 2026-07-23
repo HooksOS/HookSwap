@@ -21,6 +21,8 @@ import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
 import type { Lock } from '~/terminal/lockers/analytics/client'
 import { useLock } from '~/terminal/lockers/analytics/useLock'
+import { LockOwnerActions } from '~/terminal/screens/locker/LockOwnerActions'
+import { UnlockTimeline } from '~/terminal/screens/locker/UnlockTimeline'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { ExplorerDataType, getExplorerLink } from 'uniswap/src/utils/linking'
 import type { UniverseChainId } from 'uniswap/src/features/chains/types'
@@ -385,7 +387,7 @@ export function LockDetailScreen(): JSX.Element {
             retry={refetch}
           />
         ) : (
-          <LockCard lock={lock} onCopy={onCopy} copied={copied} />
+          <LockCard lock={lock} onCopy={onCopy} copied={copied} onChanged={refetch} />
         )}
       </CenterCard>
     </div>
@@ -394,7 +396,17 @@ export function LockDetailScreen(): JSX.Element {
 
 /* ------------------------------------------------------------------ the card */
 
-function LockCard({ lock, onCopy, copied }: { lock: Lock; onCopy: () => void; copied: boolean }): JSX.Element {
+function LockCard({
+  lock,
+  onCopy,
+  copied,
+  onChanged,
+}: {
+  lock: Lock
+  onCopy: () => void
+  copied: boolean
+  onChanged: () => void
+}): JSX.Element {
   const initials = (lock.symbol || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || '?'
   const lockerUrl = explorerAddr(lock.chainId, lock.lockerContract)
   const tokenUrl = explorerAddr(lock.chainId, lock.token)
@@ -470,6 +482,16 @@ function LockCard({ lock, onCopy, copied }: { lock: Lock; onCopy: () => void; co
             </div>
           </div>
         ) : null}
+
+        {/* unlock timeline / countdown graph — real data from the lock's own timestamps */}
+        <UnlockTimeline
+          createdAt={lock.createdAt}
+          unlockTime={lock.unlockTime}
+          unlockable={lock.status === 'unlockable'}
+        />
+
+        {/* owner action center — renders only when the connected wallet owns this lock */}
+        <LockOwnerActions lock={lock} onChanged={onChanged} />
 
         {/* actions */}
         <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>

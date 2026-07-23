@@ -81,6 +81,12 @@ class Settings(BaseSettings):
     rag_context_token_budget: int = 6000
     rag_min_confidence: float = 0.35
     rag_rerank_enabled: bool = True
+    # Ingested-corpus location (shared by the ingestion script + the server).
+    # When None, resolves to ``<ai-platform>/data/corpus.json`` (see retrieval.store).
+    corpus_path: str | None = None
+    # LLM generation
+    llm_model: str = "claude-opus-4-8"
+    llm_max_tokens: int = 4096
 
     # --- live data tools ---
     data_api_base_url: str = "https://data.hookswap.org"

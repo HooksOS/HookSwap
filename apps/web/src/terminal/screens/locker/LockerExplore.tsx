@@ -27,6 +27,7 @@ import { useLockerPools } from '~/terminal/lockers/analytics/useLockerPools'
 import { useLockerStats } from '~/terminal/lockers/analytics/useLockerStats'
 import { useLockerTokens } from '~/terminal/lockers/analytics/useLockerTokens'
 import { useLockerTvlHistory } from '~/terminal/lockers/analytics/useLockerTvlHistory'
+import { UnlockScheduleChart } from '~/terminal/screens/locker/UnlockScheduleChart'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
@@ -740,6 +741,23 @@ export function LockerExplore(): JSX.Element {
             />
           </div>
         </div>
+      </InstrumentPanel>
+
+      {/* Unlock schedule — when locks come due (real per-lock unlockTime from /locks) */}
+      <InstrumentPanel
+        title="UNLOCK SCHEDULE"
+        meta={[
+          <span key="up" style={{ fontFamily: MONO }}>
+            next {12} months
+          </span>,
+        ]}
+        style={{ marginBottom: 14 }}
+      >
+        {locksHook.error ? (
+          <EmptyState text="Couldn’t load the unlock schedule from the analytics service." />
+        ) : (
+          <UnlockScheduleChart locks={locksHook.locks} isLoading={locksHook.isLoading} />
+        )}
       </InstrumentPanel>
 
       {/* Ledger — tokens / pools explore */}

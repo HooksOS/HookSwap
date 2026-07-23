@@ -32,6 +32,15 @@ than guessed.
 - **Multicall3** (used by the indexer; deployed on every chain): `0xcA11bde05977b3631167028862bE2a173976CA11`
 - **Locker fee** (every chain with lockers): `0.04` native (`40000000000000000` wei), adjustable via `setLockFee` (owner-only).
 
+> **Farms factory — fee-enabled rollout (2026-07-23).** The `StakingRewardsFactory (farms)` rows
+> below are the **fee-enabled** `StakingRewardsFactory` (createFee ≈ **$15 in native** per chain +
+> **protocolFeeBps = 100 (1%)**, hard cap 500 = 5%; `feeReceiver` = treasury
+> `0x011d438E3eb3fce848950859591ec037C6529E13`; owner = deployer `0xc14C`). This suite **supersedes**
+> the earlier no-fee suite farms factories. Canonical addresses are lifted from
+> `contracts/deployments/farms-fees.json`. **Tempo (4217) is deferred** (AA / pathUSD gas —
+> standard forge broadcast fails) and keeps its prior **no-fee** factory `0x250c3448…` until an
+> AA-aware deploy lands.
+
 ---
 
 ## Robinhood (4663) — native ETH · priority chain
@@ -50,7 +59,7 @@ than guessed.
 | UniversalRouter | `0x3D30133F4d4A80684F02d8310faF572E3dc193b3` |
 | TokenLockerManager | `0x35dB40f22143651159056285E92c113ECE65E7e2` |
 | V3PositionLocker | `0x86426094d82bC1fd40F0901965b23D30837Dc66b` |
-| StakingRewardsFactory (farms) | `0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33` |
+| StakingRewardsFactory (farms) | `0x1b51c392de4e3d3e0ab066c5f89492ec0fcf21c3` |
 | VestingManager | `0x7f91048007b653b088282a73d180541f9c228677` |
 | TokenFactory | `0x13064247c5687a912fb362e2bb28f24e24f3bdca` |
 | MerkleDistributorFactory (airdrop) | `0x1a1c0c6f9eadd115e6fed973b1c3cfa71dadd8d5` |
@@ -76,7 +85,7 @@ because the WETH/USDG pool is the sole on-chain price anchor.
 | UniversalRouter | `0xD9d4795F2A12305a12C36455ADAD011F2D6143AB` |
 | TokenLockerManager | `0x7EFFe9DD68035f43ad43aE6C31bc1a47Ab4579D0` |
 | V3PositionLocker | `0xD08E609277eCB0B7E2eF15dF5C1Fb11436627a63` |
-| StakingRewardsFactory (farms) | `0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33` |
+| StakingRewardsFactory (farms) | `0xef6348e9c3ed869798cd7c711837fc16d13d1488` |
 | VestingManager | `0x7f91048007b653b088282a73d180541f9c228677` |
 | TokenFactory | `0x13064247c5687a912fb362e2bb28f24e24f3bdca` |
 | MerkleDistributorFactory (airdrop) | `0x1a1c0c6f9eadd115e6fed973b1c3cfa71dadd8d5` |
@@ -101,7 +110,7 @@ Robinhood suite (identical deterministic addresses, nonce 0-4).
 | UniversalRouter | `0x3D30133F4d4A80684F02d8310faF572E3dc193b3` |
 | TokenLockerManager | `0x86426094d82bC1fd40F0901965b23D30837Dc66b` |
 | V3PositionLocker | `0xB5A7BF488f2407479E116f713f116546F67c803b` |
-| StakingRewardsFactory (farms) | `0x144331bb4c3026d135896cafec3ae3d667f4f376` |
+| StakingRewardsFactory (farms) | `0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33` |
 | VestingManager | `0x250c3448278f7b71e3e9b641f2efeb6074820e25` |
 | TokenFactory | `0x7effe9dd68035f43ad43ae6c31bc1a47ab4579d0` |
 | MerkleDistributorFactory (airdrop) | `0xd9d4795f2a12305a12c36455adad011f2d6143ab` |
@@ -125,7 +134,7 @@ DEX addresses match the deterministic group (MegaETH / Robinhood).
 | TokenLockerManager | `0x35dB40f22143651159056285E92c113ECE65E7e2` |
 | V3PositionLocker | `0x86426094d82bC1fd40F0901965b23D30837Dc66b` |
 | ReferralRouter | `0xB5A7BF488f2407479E116f713f116546F67c803b` (default 30 bps) |
-| StakingRewardsFactory (farms) | `0xd9d4795f2a12305a12c36455adad011f2d6143ab` |
+| StakingRewardsFactory (farms) | `0x1eb902735c9d65143e4a67dc05d34fb740a682b4` |
 | VestingManager | `0x7effe9dd68035f43ad43ae6c31bc1a47ab4579d0` |
 | TokenFactory | `0x144331bb4c3026d135896cafec3ae3d667f4f376` |
 | MerkleDistributorFactory (airdrop) | `0x250c3448278f7b71e3e9b641f2efeb6074820e25` |
@@ -148,7 +157,7 @@ DEX addresses match the deterministic group (Ink / Robinhood).
 | UniversalRouter | `0x6d8a0783213B3b06648DB3708a89732af3661005` |
 | TokenLockerManager | `0x35dB40f22143651159056285E92c113ECE65E7e2` |
 | V3PositionLocker | `0x86426094d82bC1fd40F0901965b23D30837Dc66b` |
-| StakingRewardsFactory (farms) | `0x7f91048007b653b088282a73d180541f9c228677` |
+| StakingRewardsFactory (farms) | `0x7e814d843d32e683ae25144430399ed77015ee07` |
 | VestingManager | `0xb8b8e647259d5de25754278878893456c72c2a56` |
 | TokenFactory | `0x70b9025746387e10a9ced77a4c1670def0871376` |
 | MerkleDistributorFactory (airdrop) | `0xfd0dd93a1b6157e68b0a491d94249720506dc787` |
@@ -172,7 +181,7 @@ the canonical `0xD1Cf66…` factory is the one used everywhere — the duplicate
 | UniversalRouter | `0x62aE013cb2b232C20094B466C94bb39714eF661E` |
 | TokenLockerManager | `0x86426094d82bC1fd40F0901965b23D30837Dc66b` |
 | V3PositionLocker | `0xB5A7BF488f2407479E116f713f116546F67c803b` |
-| StakingRewardsFactory (farms) | `0x250c3448278f7b71e3e9b641f2efeb6074820e25` |
+| StakingRewardsFactory (farms) | `0x250c3448278f7b71e3e9b641f2efeb6074820e25` (no-fee — fee rollout **deferred**³) |
 | VestingManager | `0xd08e609277ecb0b7e2ef15df5c1fb11436627a63` |
 | TokenFactory | `0x7effe9dd68035f43ad43ae6c31bc1a47ab4579d0` |
 | MerkleDistributorFactory (airdrop) | `0x144331bb4c3026d135896cafec3ae3d667f4f376` |
@@ -182,6 +191,10 @@ the canonical `0xD1Cf66…` factory is the one used everywhere — the duplicate
 ¹ Tempo has **no native-gas wrapper**. This WETH9 is only the router/periphery constructor arg —
 do not use `addLiquidityETH` / `msg.value`. DEX addresses are non-deterministic (deployer nonce
 15→18); all txs landed at the 20 gwei network floor.
+
+³ The 2026-07-23 fee-enabled farms rollout is **deferred** on Tempo (AA / pathUSD gas — standard
+forge broadcast fails with `AA transaction missing keys: gas`; needs AA-aware deploy tooling). Tempo
+keeps its prior **no-fee** `StakingRewardsFactory 0x250c3448…` until that lands.
 
 ## Stable (988) — native gas USDT0
 
@@ -202,7 +215,7 @@ do not use `addLiquidityETH` / `msg.value`. DEX addresses are non-deterministic 
 | TokenLockerManager | `0x250c3448278f7b71e3e9b641f2efeb6074820e25` |
 | V3PositionLocker | `0x144331bb4c3026d135896cafec3ae3d667f4f376` |
 | ReferralRouter | `0x7EFFe9DD68035f43ad43aE6C31bc1a47Ab4579D0` |
-| StakingRewardsFactory (farms) | `0x0e88a920a522d2e858b5fb0e896f228f4619e0a6` |
+| StakingRewardsFactory (farms) | `0x5520789f08934681510836816b418eff9f5c06cc` |
 | VestingManager | `0xb5a7bf488f2407479e116f713f116546f67c803b` |
 | TokenFactory | `0x86426094d82bC1fd40F0901965b23D30837Dc66b` |
 | MerkleDistributorFactory (airdrop) | `0x3b5a01efc59f3465b8eb04697f97cfe0ba700d9d` |
@@ -244,18 +257,21 @@ HookSwap self-service suite + lockers ARE deployed here (for testing).
 | UniversalRouter (v2_0, canonical) | `0x3a9d48ab9751398bbfa63ad67599bb04e4bdf98b` |
 | TokenLockerManager (HookSwap) | `0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3` |
 | V3PositionLocker (HookSwap) | `0xAB34Bb3767020059A35e71D03f13E9e4fbCD07aC` |
-| StakingRewardsFactory (farms) | `0x144331bb4c3026d135896cafec3ae3d667f4f376`² |
+| StakingRewardsFactory (farms) | `0x3da293ebf0a35aeb4fcec20fd1101ed471f035a4`² |
 | VestingManager | `0x250c3448278f7b71e3e9b641f2efeb6074820e25` |
 | TokenFactory | `0xf248c369c125094cdb95e8abee095c11758c8f14` |
 | MerkleDistributorFactory (airdrop) | `0xa87a98a930d90fb8e68d497afe3ade02b949fc10` |
 | Multisender (Disperse) | `0xd9d4795f2a12305a12c36455adad011f2d6143ab` |
 | LaunchPad launcher / fee vault | — not deployed |
 
-² A superseded (pre-security-fix) StakingRewardsFactory `0xb9df9afbcf909a16218285889912820c3f2c6313`,
-Multisender `0xa24cd888adaf42011a49d8eaedb2fe751c54e7e2`, and VestingManager
-`0xb92598fa464b96fec394a17a269ad18060ec60b2` were replaced on 2026-07-14 by the security-fix
-redeploy above. Kept for provenance only — **do not use**. The locker indexer's Farms module
-indexes both the current and the superseded factory on Sepolia.
+² The current `StakingRewardsFactory 0x3da293eb…` is the **fee-enabled** factory (2026-07-23; on
+Sepolia the createFee is left at 0.001 ETH — testnet). It supersedes the earlier no-fee
+`0x144331bb4c3026d135896cafec3ae3d667f4f376` factory, which in turn had replaced the pre-security-fix
+`0xb9df9afbcf909a16218285889912820c3f2c6313` (also superseding Multisender
+`0xa24cd888adaf42011a49d8eaedb2fe751c54e7e2` and VestingManager
+`0xb92598fa464b96fec394a17a269ad18060ec60b2` on 2026-07-14). The superseded factories are kept for
+provenance only — **do not use**. The locker indexer's Farms module indexes both current and
+superseded factories on Sepolia.
 
 ---
 

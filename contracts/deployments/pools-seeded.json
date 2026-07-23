@@ -1,0 +1,44 @@
+{
+  "_note": "Real-stablecoin liquidity pools seeded 2026-07-23 by deployer 0xc14C897c6bff88a5Eeac31F795693b9230205125. STABLECOINS ONLY — NO mock/test tokens (per Reggie, 2026-07-23). Each is a v2 pair (HookSwap v2Router 0xBe3729d0.., v2Factory 0xD1Cf6649..) of the chain's wrapped-native against a REAL stablecoin the deployer holds. Sizes are native-gas-limited dust/proof pools — routing-proven via getAmountsOut, not deep liquidity. All txs status 0x1, verified on-chain.",
+  "seededThisSession": {
+    "stable_988": {
+      "pair": "0x7F9023729F92ecb5aCbe9A4d9F9463fCDf5b2B9f",
+      "protocol": "v2",
+      "tokens": "WgUSDT 0x817997ca..f9de (18-dec) / USDT0 0x779Ded0c..3736 (6-dec)",
+      "seeded": "5 WgUSDT : 5 USDT0",
+      "testSwap": "1 USDT0 -> 0.831248957812239453 WgUSDT (mined, status 0x1)",
+      "rpc": "https://rpc.stable.xyz"
+    },
+    "ink_57073": {
+      "pair": "0xB738BBaC16121D11B1F59AbC619A359413503d12",
+      "protocol": "v2",
+      "tokens": "WETH 0x4200..0006 (18-dec) / USD₮0 0x0200C29006150606B650577BBE7B6248F58470c1 (6-dec, canonical USDT0)",
+      "seeded": "0.00527 WETH : 10 USD₮0",
+      "quote": "1 USD₮0 -> 0.000477783941074838 WETH",
+      "rpc": "https://rpc-qnd.inkonchain.com",
+      "note": "USD₮0 is Tether-style: approve emitted, but rpc-gel load-balancer lags reads/nonce -> use rpc-qnd + explicit --nonce."
+    },
+    "megaeth_4326": {
+      "pair": "0xAD12931B2ff618C4aFEA9d9BCB7508Ccb51fF674",
+      "protocol": "v2",
+      "tokens": "WETH 0x4200..0006 (18-dec) / USDm 0xfafddbb3fc7688494971a79cc65dca3ef82079e7 (18-dec)",
+      "seeded": "0.0025 WETH : 4.75 USDm",
+      "quote": "1 USDm -> 0.000433704541499912 WETH",
+      "rpc": "https://mainnet.megaeth.com/rpc",
+      "note": "Native-limited (~$5/side): deployer had only 0.00308 ETH; can't reach $10/side without more native."
+    }
+  },
+  "alreadyLive": {
+    "robinhood_4663": {
+      "pair": "0xF7ddC3837eAF447689a365f5f6f6B7C2AcdB72D7",
+      "tokens": "WETH 0x0Bd7D308..AD73 / USDG 0x5fc5360D..d168 (6-dec)",
+      "reserves": "0.00833263 WETH : 16.294787 USDG (~$32 TVL, real stablecoin anchor)",
+      "note": "Pre-existing anchor; no action needed."
+    },
+    "xlayer_196": "existing STT/WOKB pool (per CLAUDE.md 2026-07-08 XLayer routing deep-dive)"
+  },
+  "blocked": {
+    "hyperevm_999": "Deployer 0xc14C holds NO stablecoin on-chain (verified: USD₮0 0xB8CE.., USDe 0x5d3a.., feUSD 0x02c6.., USDHL 0xb50A.., USDXL 0xca79.., KEI 0xB5fE.. all = 0; hyperscan token-balances = empty). Native 0.2244 HYPE present. Needs a real stablecoin sent to the deployer (or the correct wallet/token address) before a stablecoins-only pool can be seeded.",
+    "tempo_4217": "pathUSD/AA gas -> forge/cast standard broadcast fails ('AA transaction missing keys: gas'). Needs AA-aware tooling. Blocked."
+  }
+}

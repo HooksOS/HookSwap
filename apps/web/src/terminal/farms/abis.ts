@@ -9,11 +9,16 @@
  * FACTS-ONLY: every entry mirrors a real function / event on the contract.
  *
  * Factory (`StakingRewardsFactory`):
- *   • `createAndFund(stakingToken, rewardToken, rewardAmount, duration) returns (address farm)`
+ *   • `createAndFund(stakingToken, rewardToken, rewardAmount, duration) payable returns (address farm)`
  *     — deploys a `StakingRewards` child and PULLS `rewardAmount` of `rewardToken` from the
  *     caller via `safeTransferFrom` → the caller must `approve(factory, rewardAmount)` FIRST.
  *     Reverts unless `stakingToken != rewardToken`, `rewardAmount > 0`, `duration > 0`
- *     (`duration` is the reward-stream length in SECONDS).
+ *     (`duration` is the reward-stream length in SECONDS). PROTOCOL FEES (owner-set, default 0):
+ *     a `protocolFeeBps` slice of `rewardAmount` is skimmed to `feeReceiver` (the REMAINDER funds
+ *     the farm), and a flat native `createFee` must be sent as `msg.value` (excess refunded).
+ *     Both default to 0 → full budget funded, no native required. `createFee()` / `protocolFeeBps()`
+ *     / `feeReceiver()` are views; they’re absent on factories predating the fee feature (read
+ *     error ⇒ treat as no fee).
  *   • `allFarms() view returns (address[])` / `farmsLength() view` / `farmAt(uint256) view` —
  *     the creation-ordered registry of every farm this factory has deployed.
  *   • `FarmCreated(farm indexed, stakingToken indexed, rewardToken indexed)` — emitted BY the
@@ -35,9 +40,12 @@
 
 export const stakingRewardsFactoryAbi = [
   {
+    // `payable`: the factory forwards a flat native `createFee` (default 0) to the
+    // feeReceiver and refunds any excess. Calling with value 0 is valid whether the
+    // deployed factory charges a fee or predates the fee feature entirely.
     type: 'function',
     name: 'createAndFund',
-    stateMutability: 'nonpayable',
+    stateMutability: 'payable',
     inputs: [
       { name: 'stakingToken', type: 'address' },
       { name: 'rewardToken', type: 'address' },
@@ -45,6 +53,29 @@ export const stakingRewardsFactoryAbi = [
       { name: 'duration', type: 'uint256' },
     ],
     outputs: [{ name: 'farm', type: 'address' }],
+  },
+  // Protocol-fee views (owner-configurable, default 0). Absent on factories deployed
+  // before the fee feature — callers treat a read error as "no fee".
+  {
+    type: 'function',
+    name: 'createFee',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'protocolFeeBps',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'feeReceiver',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'address' }],
   },
   {
     type: 'function',
