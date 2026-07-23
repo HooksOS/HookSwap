@@ -483,18 +483,37 @@ function MarketsScreenBody(): JSX.Element {
   // On-chain fallback for seeded pools the data-api doesn't index yet (Stable 988 +
   // HyperEVM 999 today; all seeded pools registered for resilience). Read directly via
   // each chain's RPC so they show without waiting on a backend/indexer redeploy.
-  const { pools: seededPools, chainById: seededChainById } = useSeededOnchainPools()
+  const { pools: seededPools, chainById: seededChainById, tvlByAddress: seededTvl } = useSeededOnchainPools()
 
-  // Merge backend pools with the on-chain fallback: backend rows ALWAYS win (dedup by
-  // pair address, which is unique per deployment) since they carry richer stats; the
-  // fallback only fills pools the backend omits (Stable 988 + HyperEVM 999 today). Then
-  // hide test/seed tokens (tHOOK etc.) so only real assets surface.
+  // Merge backend pools with the on-chain fallback, then DEDUP so a pool never appears
+  // twice. A v2 pair address is globally unique per deployment (verified: every seeded
+  // pool + the XLayer pool has a distinct address), so the lowercased address is the
+  // dedup key — this collapses (a) any pool the data-api returns more than once and
+  // (b) a fallback copy of a pool the backend already serves. Backend rows come first,
+  // so they win (richer stats). For a backend pool that ships WITHOUT stats (Ink /
+  // MegaETH have no TVL in the feed), backfill TVL from the on-chain reserve read.
+  // The fallback then contributes only pools the backend omits (Stable 988, HyperEVM
+  // 999). Finally hide test/seed tokens (tHOOK etc.) so only real assets surface.
   const topPools = useMemo(() => {
-    const backendAddrs = new Set((rawPools ?? []).map((p) => p.id.toLowerCase()))
-    const fallbackToAdd = seededPools.filter((p) => !backendAddrs.has(p.id.toLowerCase()))
-    const merged = [...(rawPools ?? []), ...fallbackToAdd]
+    const seen = new Set<string>()
+    const merged: PoolStat[] = []
+    for (const pool of [...(rawPools ?? []), ...seededPools]) {
+      const addr = pool.id.toLowerCase()
+      if (seen.has(addr)) {
+        continue
+      }
+      seen.add(addr)
+      const hasTvl = pool.totalLiquidity?.value !== undefined && pool.totalLiquidity.value > 0
+      const onchainTvl = seededTvl.get(addr)
+      if (!hasTvl && onchainTvl !== undefined) {
+        // Clone (don't mutate the cached query object) and backfill TVL.
+        merged.push({ ...pool, totalLiquidity: { value: onchainTvl } } as PoolStat)
+      } else {
+        merged.push(pool)
+      }
+    }
     return merged.filter((p) => !pairHasHiddenToken(p.token0?.symbol, p.token1?.symbol))
-  }, [rawPools, seededPools])
+  }, [rawPools, seededPools, seededTvl])
   const topTokens = useMemo(() => (rawTokens ?? []).filter((t) => !isHiddenTokenSymbol(t.symbol)), [rawTokens])
 
   const metricMaps = useMemo(() => buildTokenMetrics(topTokens), [topTokens])

@@ -168,21 +168,29 @@ function computeTvlUsd(
   return undefined
 }
 
-/** Shape a seeded pool + its (optional) reserves into a `PoolStat` row. */
-function toPoolStat(pool: SeededPool, reserve0?: bigint, reserve1?: bigint): PoolStat {
+/**
+ * USD TVL for a seeded pool from its (optional) on-chain reserves, or `undefined` when
+ * reserves aren't loaded / no stablecoin side exists. `reserve0`/`reserve1` are the raw
+ * `getReserves` outputs (reserve0 ↔ the lower token address).
+ */
+function poolTvl(pool: SeededPool, reserve0?: bigint, reserve1?: bigint): number | undefined {
+  if (reserve0 === undefined || reserve1 === undefined) {
+    return undefined
+  }
+  // UniswapV2: reserve0 ↔ lower token address. Map reserves to tokenA/tokenB by address.
+  const aIsToken0 = pool.tokenA.address.toLowerCase() < pool.tokenB.address.toLowerCase()
+  const reserveA = aIsToken0 ? reserve0 : reserve1
+  const reserveB = aIsToken0 ? reserve1 : reserve0
+  return computeTvlUsd(pool.tokenA, pool.tokenB, reserveA, reserveB)
+}
+
+/** Shape a seeded pool + its precomputed on-chain `tvl` into a `PoolStat` row. */
+function toPoolStat(pool: SeededPool, tvl: number | undefined): PoolStat {
   // Use the chain's URL-param string (e.g. "stable", "hyperevm") as the token `chain`.
   // `gqlToCurrency` resolves it via `getChainIdFromChainUrlParam`, so real currencies
   // (logos, native-unwrap) build for chains that have NO GraphQL backendChain enum
   // (Stable/HyperEVM map to UnknownChain). Row-level chainId comes from `chainById`.
   const chain = getChainUrlParam(pool.chainId)
-  // UniswapV2: reserve0 ↔ lower token address. Map reserves to tokenA/tokenB by address.
-  const aIsToken0 = pool.tokenA.address.toLowerCase() < pool.tokenB.address.toLowerCase()
-  const reserveA = aIsToken0 ? reserve0 : reserve1
-  const reserveB = aIsToken0 ? reserve1 : reserve0
-  const tvl =
-    reserveA !== undefined && reserveB !== undefined
-      ? computeTvlUsd(pool.tokenA, pool.tokenB, reserveA, reserveB)
-      : undefined
 
   return {
     id: pool.poolId,
@@ -227,6 +235,12 @@ export function useSeededOnchainPools(): {
   isLoading: boolean
   /** Lowercased pair address → chainId, so MarketsScreen can resolve the row's chain. */
   chainById: ReadonlyMap<string, UniverseChainId>
+  /**
+   * Lowercased pair address → on-chain-derived USD TVL. Used to backfill TVL on
+   * backend-indexed pools that ship without stats (e.g. Ink / MegaETH). Only present
+   * when reserves loaded AND a stablecoin side exists.
+   */
+  tvlByAddress: ReadonlyMap<string, number>
 } {
   const { data, isLoading } = useReadContracts({
     // `chainId` is a valid per-contract field wagmi reads at runtime; cast to viem's base
@@ -242,19 +256,23 @@ export function useSeededOnchainPools(): {
     query: { staleTime: 30_000 },
   })
 
-  const pools = useMemo(
-    () =>
-      SEEDED_POOLS.map((pool, i) => {
-        const entry = data?.[i]
-        if (entry?.status === 'success') {
-          const [reserve0, reserve1] = entry.result as readonly [bigint, bigint, number]
-          return toPoolStat(pool, reserve0, reserve1)
-        }
-        // Read pending or failed → still show the real pool with an honest "—" TVL.
-        return toPoolStat(pool)
-      }),
-    [data],
-  )
+  const { pools, tvlByAddress } = useMemo(() => {
+    const tvlMap = new Map<string, number>()
+    const built = SEEDED_POOLS.map((pool, i) => {
+      const entry = data?.[i]
+      let tvl: number | undefined
+      if (entry?.status === 'success') {
+        const [reserve0, reserve1] = entry.result as readonly [bigint, bigint, number]
+        tvl = poolTvl(pool, reserve0, reserve1)
+      }
+      if (tvl !== undefined) {
+        tvlMap.set(pool.poolId.toLowerCase(), tvl)
+      }
+      // Read pending/failed or no stable side → real pool with an honest "—" TVL.
+      return toPoolStat(pool, tvl)
+    })
+    return { pools: built, tvlByAddress: tvlMap as ReadonlyMap<string, number> }
+  }, [data])
 
   // Static registry mapping — stable identity for the consumer's memo deps.
   const chainById = useMemo(
@@ -262,5 +280,5 @@ export function useSeededOnchainPools(): {
     [],
   )
 
-  return { pools, isLoading, chainById }
+  return { pools, isLoading, chainById, tvlByAddress }
 }
