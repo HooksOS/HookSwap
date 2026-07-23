@@ -1,0 +1,1 @@
+{ "chain":"stable","chainId":988,"referralRouter":"TBD","defaultFeeBps":30,"feeAdmin":"0xc14C897c6bff88a5Eeac31F795693b9230205125","swapRouter02Wired":false,"swapRouter02WiredNote":"set true once constructor arg = stable.json swapRouter02 is filled from the real deploy","_status":"PENDING — awaiting USDT0 gas funding on 988; all addresses TBD until broadcast" }

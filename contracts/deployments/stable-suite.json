@@ -1,0 +1,25 @@
+{
+  "_note": "STABLE MAINNET (chainId 988, USDT0 native gas) HookSwap self-service suite. Deployer 0xc14C897c6bff88a5Eeac31F795693b9230205125. PENDING — not yet broadcast. Verification: not verified yet (no explorer API key; explorer https://stablescan.xyz).",
+  "chainId": 988,
+  "network": "stable",
+  "deployer": "0xc14C897c6bff88a5Eeac31F795693b9230205125",
+  "contracts": {
+    "multisender_Disperse": "TBD",
+    "stakingRewardsFactory": "TBD",
+    "merkleDistributorFactory": "TBD",
+    "tokenFactory": "TBD",
+    "vestingManager": "TBD"
+  },
+  "contractParams": {
+    "tokenFactory": { "createFee": "0", "feeReceiver": "0xc14C897c6bff88a5Eeac31F795693b9230205125" },
+    "vestingManager": { "vestingFee": "0", "feeReceiver": "0xc14C897c6bff88a5Eeac31F795693b9230205125" }
+  },
+  "deployTx": {
+    "multisender_Disperse": "TBD",
+    "stakingRewardsFactory": "TBD",
+    "merkleDistributorFactory": "TBD",
+    "tokenFactory": "TBD",
+    "vestingManager": "TBD"
+  },
+  "_status": "PENDING — awaiting USDT0 gas funding on 988; all addresses TBD until broadcast"
+}

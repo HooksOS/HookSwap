@@ -1,0 +1,14 @@
+{
+  "_readme": "Stable Mainnet (988) seed pools. Run: SEED_POOLS=config/stable.json ./scripts/seed.sh stable [--broadcast]. IMPORTANT: like Tempo, Stable's deployment weth9 is a ROUTING WRAPPER ONLY (interface wrappedNativeCurrency=null; native gas = USDT0 18-dec) — the seeder's auto-wrap of native does NOT work here. So this config uses a MINT/MINT pool (two fresh test tokens), which needs no wrapped-native. ~1.13 gwei; chains.json sets gasPriceGwei=2. Set STABLE_RPC_URL in ../.env (or the public https://rpc.stable.xyz default). priceAperB / amounts are DEMO-scale — replace with real seed amounts + the real USDT0 ERC-20 (0x779Ded0c9e1022225f8E0630b35a9b54bE713736, 6-dec) paired pools for production depth. To later seed a WETH-wrapper-paired pool, first acquire/hold the deployed WETH9 wrapper token and add a WETH-kind pool.",
+  "988": [
+    {
+      "protocol": "v2",
+      "label": "tHOOK / USDT0 v2 (Stable — MINT/MINT demo, no native wrap)",
+      "tokenA": { "kind": "MINT", "name": "Test Hook Token", "symbol": "tHOOK", "decimals": 18 },
+      "tokenB": { "kind": "MINT", "name": "Test USDT0", "symbol": "tUSDT0", "decimals": 6 },
+      "priceAperB": 1,
+      "amountA": 200,
+      "amountB": 200
+    }
+  ]
+}

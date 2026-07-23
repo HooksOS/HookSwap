@@ -48,5 +48,12 @@
     "rpcEnvVar": "TEMPO_RPC_URL",
     "gasPriceGwei": 20,
     "note": "20 gwei NETWORK FLOOR (txs below it are rejected). Gas is paid in pathUSD (ERC-20). The deployment weth9 here is a routing wrapper only; a WETH-side pool needs you to already hold that wrapper token — auto-wrap of native will NOT work on Tempo. Set TEMPO_RPC_URL in .env."
+  },
+  "stable": {
+    "chainId": 988,
+    "rpc": "https://rpc.stable.xyz",
+    "rpcEnvVar": "STABLE_RPC_URL",
+    "gasPriceGwei": 2,
+    "note": "Stable Mainnet (988). Native gas = USDT0 (18-dec native). ~1.13 gwei network price; 2 gwei clears with headroom. Like Tempo, the deployment weth9 is a routing wrapper only (interface wrappedNativeCurrency=null) → auto-wrap of native does NOT work, so seed MINT/MINT pools (see config/stable.json). Set STABLE_RPC_URL in .env (or the public rpc above is used)."
   }
 }

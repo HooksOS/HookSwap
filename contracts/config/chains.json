@@ -37,5 +37,18 @@
     "skipDeploy": false,
     "deployNeeded": ["weth9", "v2Factory", "v2Router", "v3 (via @uniswap/deploy-v3)", "universalRouter"],
     "note": "Permit2 already exists. Deploy WETH9 + v2 + v3 + UniversalRouter. Costs real ETH."
+  },
+  "stable": {
+    "name": "stable",
+    "chainId": 988,
+    "rpcEnvVar": "STABLE_RPC_URL",
+    "weth": "DEPLOY",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "nativeSymbol": "USDT0",
+    "nativeLabel": "USDT0",
+    "explorer": "https://stablescan.xyz",
+    "skipDeploy": false,
+    "deployNeeded": ["weth9", "v2Factory", "v2Router", "v3 (via @uniswap/deploy-v3)", "universalRouter"],
+    "note": "Stable Mainnet (chainId 988). Native gas = USDT0 (18-dec native balance); USDT0 ERC-20 0x779Ded0c9e1022225f8E0630b35a9b54bE713736 is 6-dec (routing/balances, Arc-USDC model). No canonical wrapped-native → weth=DEPLOY deploys own WETH9 as the router/periphery WETH9 arg ONLY (interface wrappedNativeCurrency stays null, Tempo model). Permit2 + Multicall3 (0xcA11..) + CREATE2 deployer (0x4e59..) already present. nativeLabel USDT0 is passed to deploy-v3 as --native-currency-label. RPC https://rpc.stable.xyz, gas ~1.13 gwei (deploy-v3 --gas-price 1 is fine — integer-gwei). Costs real USDT0."
   }
 }
