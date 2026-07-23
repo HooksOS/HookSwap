@@ -206,6 +206,9 @@ const TERMINAL_LIVE_CHAIN_IDS: ReadonlySet<UniverseChainId> = new Set([
   UniverseChainId.Ink,
   UniverseChainId.Tempo,
   UniverseChainId.XLayer,
+  // Stable Mainnet (988): full v2+v3+UR stack + self-service suite deployed and
+  // on-chain-verified (contracts/deployments/stable.json); native gas = USDT0.
+  UniverseChainId.Stable,
 ])
 
 /**
