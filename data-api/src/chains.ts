@@ -114,6 +114,11 @@ export const CHAINS: Record<number, ChainConfig> = {
     tokenFactory: '0x144331bb4c3026d135896cafec3ae3d667f4f376',
     launcher: '0x528Bcecff5DA16cE65C198fBe42dA55A0088d4c2',
     // TODO(v3DeployBlock): v3 factory deploy block not recorded in contracts/deployments/megaeth.json.
+    // USD anchor: real stablecoin USDm (18 decimals). Seeded WETH/USDm v2 pool
+    // 0xAD12931B2ff618C4aFEA9d9BCB7508Ccb51fF674 (contracts/deployments/pools-seeded.json, verified
+    // on-chain 2026-07-23: token0 WETH 0x4200..0006 / token1 USDm 0xFAfD..79E7). usdPerNative derives
+    // from its reserves; every USD field lights up once ingested.
+    stablecoin: { address: '0xFAfDdbb3FC7688494971a79cc65DCa3EF82079E7', symbol: 'USDm', decimals: 18 },
   },
 
   // ---- Ink (57073) ----
@@ -130,6 +135,10 @@ export const CHAINS: Record<number, ChainConfig> = {
     // tokenFactory from apps/web/src/terminal/tokenfactory/addresses.ts. No launcher on Ink (not a @hookos/sdk chain).
     tokenFactory: '0x7effe9dd68035f43ad43ae6c31bc1a47ab4579d0',
     // TODO(v3DeployBlock): v3 factory deploy block not recorded in contracts/deployments/ink.json.
+    // USD anchor: canonical USD₮0 (6 decimals). Seeded WETH/USD₮0 v2 pool
+    // 0xB738BBaC16121D11B1F59AbC619A359413503d12 (contracts/deployments/pools-seeded.json, verified
+    // on-chain 2026-07-23: token0 USD₮0 0x0200..70c1 / token1 WETH 0x4200..0006).
+    stablecoin: { address: '0x0200C29006150606B650577BBE7B6248F58470c1', symbol: 'USD₮0', decimals: 6 },
   },
 
   // ---- XLayer (196) — has a seeded WOKB/SeedTestToken v2 pool (per CLAUDE.md 2026-07-08). ----
@@ -170,6 +179,39 @@ export const CHAINS: Record<number, ChainConfig> = {
     tokenFactory: '0x13064247c5687a912fb362e2bb28f24e24f3bdca',
     launcher: '0x2dB1b1e2123c3d61B0cAfE4aF5864E4FAB3a5F74',
     // TODO(v3DeployBlock): v3 factory deploy block not recorded in contracts/deployments/hyperevm.json.
+    // USD anchor: real HyperEVM USDC (6 decimals, 0xb883..630f — acquired via swap, NOT the bridged
+    // USD₮0). Seeded WHYPE/USDC v2 pool 0x8628AfE800ca8C26F1d4Dc41e2B02C85e0B19Fc3
+    // (contracts/deployments/pools-seeded.json, verified on-chain 2026-07-23: token0 WHYPE 0x5555.. /
+    // token1 USDC 0xb883..630f). NB: this chain's own v2Factory 0xB925..60B2 (not the 0xD1Cf.. one).
+    stablecoin: { address: '0xb88339CB7199b77E23DB6E890353E22632Ba630f', symbol: 'USDC', decimals: 6 },
+  },
+
+  // ---- Stable / Stable Mainnet (988) — stablecoin-gas L1. Canonical DEX on the WgUSDT stack. ----
+  988: {
+    chainId: 988,
+    name: 'stable',
+    rpcEnvVar: 'WEB3_RPC_988',
+    // rpc.stable.xyz is the official endpoint but documented flaky (503s/timeouts); Sentio is the
+    // interface's primary (packages/uniswap/.../evm/info/stable.ts). Override via WEB3_RPC_988.
+    publicRpc: 'https://stable-mainnet.rpc.sentio.xyz',
+    // Native gas token is USDT0 (18-dec balance); the routing/wrapped form is WgUSDT (see stable.ts).
+    nativeSymbol: 'USDT0',
+    nativeDecimals: 18,
+    // Canonical wrapped-native = WgUSDT (WETH9-style deposit()/withdraw(), 18-dec), verified in
+    // contracts/deployments/stable.json (weth9Note) + packages/uniswap/.../evm/info/stable.ts.
+    wrappedNative: { address: '0x817997Ca8394E26CCE3dE3A076a4889b27DbF9dE', symbol: 'WgUSDT', name: 'Wrapped gasUSDT', decimals: 18 },
+    // Canonical Stable v2 factory — verified on-chain via the seeded pair's factory() call 2026-07-23
+    // (== contracts/deployments/stable.json v2Factory). NOTE: a DIFFERENT address from the 0xD1Cf.. one
+    // the L2s share.
+    v2Factory: '0xBe3729d06E3A17F3c7c5ac394c7bCbe138B6EEFA',
+    v3Factory: '0xf486e625C892C0739A16A3A49B37fD52374B30CB',
+    tokenFactory: '0x86426094d82bC1fd40F0901965b23D30837Dc66b',
+    // TODO(v3DeployBlock): v3 factory deploy block not recorded in contracts/deployments/stable.json.
+    // USD anchor: USDT0 (6-dec ERC-20, 0x779D..3736) — the seeded WgUSDT/USDT0 v2 pool
+    // 0x7F9023729F92ecb5aCbe9A4d9F9463fCDf5b2B9f (verified on-chain 2026-07-23: token0 USDT0 6-dec /
+    // token1 WgUSDT 18-dec). Both sides are ~$1 stablecoins; usdPerNative (USDT0-per-WgUSDT) derives
+    // from the pool's real reserves (≈1.05), so TVL/prices are honest market-rate values.
+    stablecoin: { address: '0x779Ded0c9e1022225f8E0630b35a9b54bE713736', symbol: 'USDT0', decimals: 6 },
   },
 
   // ---- Sepolia (11155111) — canonical Uniswap stack (testing). ----

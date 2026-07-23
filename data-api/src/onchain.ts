@@ -124,6 +124,18 @@ function staticRegistry(chain: ChainConfig): Map<string, TokenMeta> {
       isWrappedNative: false,
     })
   }
+  // The chain's USD-anchor stablecoin is a real, verified token — register it so its metadata
+  // (esp. decimals, which drive USD math) comes from config without a live ERC-20 round-trip.
+  if (chain.stablecoin) {
+    reg.set(chain.stablecoin.address.toLowerCase(), {
+      chainId: chain.chainId,
+      address: chain.stablecoin.address,
+      symbol: chain.stablecoin.symbol,
+      name: chain.stablecoin.symbol,
+      decimals: chain.stablecoin.decimals,
+      isWrappedNative: false,
+    })
+  }
   return reg
 }
 
@@ -307,7 +319,14 @@ export async function enumerateEcosystemTokens(chainId: number): Promise<TokenMe
 
 /** Seeded-set CREATE2 candidate pair addresses (lowercased) for a chain's curated token combos. */
 function seededComboCandidates(chain: ChainConfig): string[] {
-  const tokens = [chain.wrappedNative.address, ...(chain.seededTokens ?? []).map((t) => t.address)]
+  const tokens = [
+    chain.wrappedNative.address,
+    ...(chain.seededTokens ?? []).map((t) => t.address),
+    // Include the USD-anchor stablecoin so the wrapped-native/stablecoin ANCHOR pool is CREATE2-found
+    // even on a chain whose RPC won't serve factory enumeration — the anchor is what every USD value
+    // depends on. (Enumeration remains the primary source; this is belt-and-suspenders.)
+    ...(chain.stablecoin ? [chain.stablecoin.address] : []),
+  ]
   const out: string[] = []
   for (let i = 0; i < tokens.length; i++) {
     for (let j = i + 1; j < tokens.length; j++) {

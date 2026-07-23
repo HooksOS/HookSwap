@@ -31,9 +31,11 @@ import {
   insertSwapEvents,
   insertSyncEvents,
   setCursor,
+  SNAPSHOT_LOG_INDEX,
   SwapEventRow,
   SyncEventRow,
   upsertPoolMeta,
+  writeReserveSnapshot,
 } from './schema'
 import { parseSwapLog, parseSyncLog, SWAP_TOPIC, SYNC_TOPIC } from './abis'
 
@@ -247,6 +249,22 @@ export async function runIngestOnce(): Promise<IngestPoolResult[]> {
             decimals1: pair.token1.decimals,
             symbol0: pair.token0.symbol,
             symbol1: pair.token1.symbol,
+          })
+
+          // Live-reserves snapshot (robust USD anchor): getV2Pairs already read this pool's CURRENT
+          // reserves on-chain, so persist them as the pool's latest Sync point. This makes the USD
+          // anchor (getUsdPerNative) + pool TVL light up on the FIRST pass from real current reserves,
+          // independent of how far the getLogs backfill below reaches — critical on fast chains where
+          // the seed block can fall outside the backfill window. Real Sync logs are still ingested for
+          // history/volume (see ingestPool). Never fabricated (see writeReserveSnapshot).
+          writeReserveSnapshot(db, {
+            chainId,
+            pool,
+            blockNumber: latest,
+            logIndex: SNAPSHOT_LOG_INDEX,
+            reserve0: pair.reserve0.toString(),
+            reserve1: pair.reserve1.toString(),
+            timestamp: Math.floor(Date.now() / 1000),
           })
 
           const cursor = getCursor(db, chainId, pool)

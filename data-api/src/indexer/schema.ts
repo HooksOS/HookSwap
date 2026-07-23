@@ -255,6 +255,41 @@ export function insertSyncEvents(db: SqliteDatabase, rows: SyncEventRow[]): numb
   return insertAll(rows) as number
 }
 
+/**
+ * Synthetic logIndex marking a LIVE-reserves snapshot row (never a real on-chain log index — real
+ * Sync logs sit at small tx-local indexes). Chosen large so the snapshot sorts LAST within its block
+ * in latestSync()'s `logIndex DESC` ordering, i.e. it is treated as the freshest reserve point.
+ */
+export const SNAPSHOT_LOG_INDEX = 2_000_000_000
+
+/**
+ * Write a LIVE-reserves snapshot for a pool: the pool's CURRENT on-chain reserves (already read by
+ * getV2Pairs via getReserves) stored as a single Sync row at the current block with SNAPSHOT_LOG_INDEX.
+ *
+ * WHY: the USD anchor + pool TVL (see indexer/metrics.ts) read the pool's LATEST Sync reserves from
+ * this store. Relying solely on the getLogs backfill to capture that latest Sync is fragile — on a
+ * very fast chain the seed block can fall outside the backfill window, and some public RPCs cap/deny
+ * getLogs ranges. This snapshot makes USD TVL work immediately from real current reserves, on the
+ * first ingest pass, independent of log backfill. It is NOT fabricated: reserves are a real on-chain
+ * read; blockNumber is the real current block; timestamp is the read time (reserves are current).
+ *
+ * Kept to exactly ONE snapshot row per pool (the prior snapshot is deleted first), so it never
+ * accumulates. Real ingested Sync events (small logIndex) are left untouched for history/volume; the
+ * snapshot only guarantees a current-reserves point exists.
+ */
+export function writeReserveSnapshot(db: SqliteDatabase, row: SyncEventRow): void {
+  const del = db.prepare(`DELETE FROM sync_events WHERE chainId=? AND pool=? AND logIndex=?`)
+  const ins = db.prepare(
+    `INSERT OR REPLACE INTO sync_events (chainId, pool, blockNumber, logIndex, reserve0, reserve1, timestamp)
+     VALUES (?,?,?,?,?,?,?)`,
+  )
+  const tx = db.transaction(() => {
+    del.run(row.chainId, row.pool, SNAPSHOT_LOG_INDEX)
+    ins.run(row.chainId, row.pool, row.blockNumber, SNAPSHOT_LOG_INDEX, row.reserve0, row.reserve1, row.timestamp)
+  })
+  tx()
+}
+
 /** Upsert pool token metadata (real on-chain values from getV2Pairs). */
 export function upsertPoolMeta(db: SqliteDatabase, row: PoolMetaRow): void {
   db.prepare(
