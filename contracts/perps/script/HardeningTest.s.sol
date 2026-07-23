@@ -9,6 +9,7 @@ import "../src/factory/FeeRouter.sol";
 import "../src/factory/MarketRegistry.sol";
 import "../src/factory/OracleGuard.sol";
 import "../src/factory/ParamGuard.sol";
+import "../src/factory/BondManager.sol";
 
 interface IAgg {
     function decimals() external view returns (uint8);
@@ -69,6 +70,9 @@ contract HardeningTest is Script {
         // ---- Deploy hardening layers ----
         ParamGuard paramGuard = new ParamGuard(20 * 1e4 /*maxLev 20x*/, 50 /*minMM bps*/, 2 /*minFee*/, 15 /*maxFee*/);
         OracleGuard oracleGuard = new OracleGuard();
+        // BondManager is now a required factory constructor arg (spec §4/§5). Min-bonds are left
+        // at their 0 default here, so the value-less createMarket calls below stay valid.
+        BondManager bondManager = new BondManager(deployer /*treasury*/, MARKET_REGISTRY);
 
         // ---- New PerpMarket impl (with on-chain marketMaxLeverage) + new factory ----
         PerpMarket impl = new PerpMarket();
@@ -82,12 +86,14 @@ contract HardeningTest is Script {
             deployer, // treasury
             0, // listingFee
             address(oracleGuard),
-            address(paramGuard)
+            address(paramGuard),
+            address(bondManager)
         );
 
         // Repoint existing shared core at the new factory (deployer owns both).
         FeeRouter(FEE_ROUTER).setFactory(address(factory));
         MarketRegistry(MARKET_REGISTRY).setFactory(address(factory));
+        bondManager.setFactory(address(factory));
 
         // Oracle allowlist: permit the live Chainlink ETH/USD feed as a "chainlink" venue.
         oracleGuard.setFactory(address(factory));
