@@ -18,6 +18,7 @@ export const REFERRAL_ROUTER_ADDRESSES: Partial<Record<number, Address>> = {
   4663: '0x6d8a0783213B3b06648DB3708a89732af3661005', // Robinhood
   4326: '0xB5A7BF488f2407479E116f713f116546F67c803b', // MegaETH
   11155111: '0xfEb3eA6212761c1891389e77ee5Bf27c3b385E1A', // Sepolia
+  988: '0x7EFFe9DD68035f43ad43aE6C31bc1a47Ab4579D0', // Stable (contracts/deployments/stable.json .suite.referralRouter, on-chain code verified)
 }
 
 export function getReferralRouter(chainId?: number | UniverseChainId): Address | undefined {

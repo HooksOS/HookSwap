@@ -30,6 +30,8 @@ export const VESTING_ADDRESSES: Partial<Record<UniverseChainId, Address>> = {
   [UniverseChainId.MegaETH]: '0x7effe9dd68035f43ad43ae6c31bc1a47ab4579d0',
   [UniverseChainId.Ink]: '0x250c3448278f7b71e3e9b641f2efeb6074820e25',
   [UniverseChainId.Tempo]: '0xd08e609277ecb0b7e2ef15df5c1fb11436627a63',
+  // Stable (988) — contracts/deployments/stable.json .suite.vestingManager (on-chain code verified).
+  [UniverseChainId.Stable]: '0xb5a7bf488f2407479e116f713f116546f67c803b',
 }
 
 /**

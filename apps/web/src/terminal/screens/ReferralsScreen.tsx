@@ -32,6 +32,7 @@ import { getChainLabel } from 'uniswap/src/features/chains/utils'
 import { zeroAddress, type Address } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { referralRouterAbi } from '~/terminal/referral/abis'
@@ -47,10 +48,6 @@ const SANS = terminalFonts.sans
 const REFERRAL_LINK_BASE = 'https://hookswap.org'
 
 /* ------------------------------------------------------------------ helpers */
-
-function shortAddr(a?: string): string {
-  return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—'
-}
 
 /** keccak256 of the UTF-8 code bytes → the on-chain bytes32, or undefined if empty. */
 function codeHash(code: string): Hex | undefined {
@@ -106,7 +103,7 @@ function TextField({
   )
 }
 
-function SummaryRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
+function SummaryRow({ label, value, valueColor }: { label: string; value: React.ReactNode; valueColor?: string }): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '7px 0' }}>
       <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3, whiteSpace: 'nowrap' }}>{label}</span>
@@ -554,7 +551,10 @@ export function ReferralsScreen(): JSX.Element {
 
           <InstrumentPanel title="Register" corners>
             <SummaryRow label="Referral fee" value={feeValue ?? '…'} valueColor={feeValue && feeValue !== '—' ? terminalColors.ink : terminalColors.faint} />
-            <SummaryRow label="Claim wallet" value={connected ? shortAddr(account.address) : 'Not connected'} />
+            <SummaryRow
+              label="Claim wallet"
+              value={connected ? <ExplorerAddress address={account.address} chainId={chainId} fontSize={12.5} fontWeight={500} /> : 'Not connected'}
+            />
             <SummaryRow label="Network" value={connected ? chainLabel : '—'} />
             <PrimaryButton label={registerLabel} onClick={() => void onRegister()} disabled={connected && !canRegister} />
             {deployed ? (

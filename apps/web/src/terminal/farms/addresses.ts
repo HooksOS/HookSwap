@@ -30,6 +30,8 @@ export const FARM_FACTORY_ADDRESSES: Partial<Record<UniverseChainId, Address>> =
   [UniverseChainId.MegaETH]: '0xd9d4795f2a12305a12c36455adad011f2d6143ab',
   [UniverseChainId.Ink]: '0x144331bb4c3026d135896cafec3ae3d667f4f376',
   [UniverseChainId.Tempo]: '0x250c3448278f7b71e3e9b641f2efeb6074820e25',
+  // Stable (988) — contracts/deployments/stable.json .suite.stakingRewardsFactory (on-chain code verified).
+  [UniverseChainId.Stable]: '0x0e88a920a522d2e858b5fb0e896f228f4619e0a6',
 }
 
 /**

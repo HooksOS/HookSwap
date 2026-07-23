@@ -38,6 +38,7 @@ import { useAccount } from '~/hooks/useAccount'
 import { merkleDistributorFactoryAbi } from '~/terminal/airdrop/abis'
 import { getAirdropFactory } from '~/terminal/airdrop/addresses'
 import { useClaimAirdrop, useCreateAirdrop, type ClaimsFile } from '~/terminal/airdrop/useAirdrop'
+import { ExplorerAddress, shortAddr } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
@@ -51,10 +52,6 @@ const SANS = terminalFonts.sans
 type AirdropTab = 'create' | 'claim'
 
 /* ------------------------------------------------------------------ helpers */
-
-function shortAddr(a?: string): string {
-  return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—'
-}
 
 function shortHash(h?: string): string {
   return h ? `${h.slice(0, 10)}…${h.slice(-6)}` : '—'
@@ -162,7 +159,7 @@ function TextArea({
   )
 }
 
-function SummaryRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
+function SummaryRow({ label, value, valueColor }: { label: string; value: React.ReactNode; valueColor?: string }): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', gap: 12 }}>
       <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, whiteSpace: 'nowrap' }}>{label}</span>
@@ -309,9 +306,11 @@ function ConnectInline({ text, onConnect }: { text: string; onConnect: () => voi
 function RecipientsPreview({
   parsed,
   symbol,
+  chainId,
 }: {
   parsed: ReturnType<typeof useCreateAirdrop>['parsed']
   symbol?: string
+  chainId?: number
 }): JSX.Element | null {
   if (parsed.rows.length === 0) {
     return null
@@ -358,7 +357,11 @@ function RecipientsPreview({
             }}
           >
             <span style={{ fontFamily: MONO, fontSize: 11.5, color: r.valid ? terminalColors.ink2 : terminalColors.redDown, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {r.address ? shortAddr(r.address) : `line ${r.line}`}
+              {r.address ? (
+                <ExplorerAddress address={r.address} chainId={chainId} fontSize={11.5} color={r.valid ? undefined : terminalColors.redDown} />
+              ) : (
+                `line ${r.line}`
+              )}
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
               <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 600, color: r.valid ? terminalColors.ink : terminalColors.faint }}>
@@ -530,7 +533,7 @@ function CreateTab({
                     {create.scaleError}
                   </div>
                 ) : null}
-                <RecipientsPreview parsed={create.parsed} symbol={create.tokenSymbol} />
+                <RecipientsPreview parsed={create.parsed} symbol={create.tokenSymbol} chainId={chainId} />
               </div>
             </div>
           )}
@@ -555,8 +558,14 @@ function CreateTab({
             value={create.tree ? `${fmtAmount(create.tree.tokenTotal, create.tokenDecimals)} ${create.tokenSymbol ?? ''}`.trim() : '—'}
           />
           <SummaryRow label="Merkle root" value={create.tree ? shortHash(create.tree.root) : '—'} valueColor={create.tree ? terminalColors.greenDeep : undefined} />
-          <SummaryRow label="Distributor" value={create.distributor ? shortAddr(create.distributor) : 'Created on deploy'} />
-          <SummaryRow label="Funded by" value={connected && owner ? shortAddr(owner) : '—'} />
+          <SummaryRow
+            label="Distributor"
+            value={create.distributor ? <ExplorerAddress address={create.distributor} chainId={chainId} fontSize={12.5} fontWeight={500} /> : 'Created on deploy'}
+          />
+          <SummaryRow
+            label="Funded by"
+            value={connected && owner ? <ExplorerAddress address={owner} chainId={chainId} fontSize={12.5} fontWeight={500} /> : '—'}
+          />
           <SummaryRow label="Network" value={deployed ? chainLabel : 'Not available'} />
 
           <PrimaryButton label={primaryLabel} onClick={onPrimary} disabled={primaryDisabled} />
@@ -565,7 +574,7 @@ function CreateTab({
           {create.distributor && !create.isFunded ? (
             <div style={{ marginTop: 10 }}>
               <Notice tone="green">
-                Distributor deployed at <span style={{ fontFamily: MONO }}>{shortAddr(create.distributor)}</span>. Now fund
+                Distributor deployed at <ExplorerAddress address={create.distributor} chainId={chainId} />. Now fund
                 it by transferring the total in — recipients can claim as soon as it holds the tokens.
               </Notice>
             </div>
@@ -574,7 +583,7 @@ function CreateTab({
           {create.isFunded ? (
             <div style={{ marginTop: 10 }}>
               <Notice tone="green">
-                Airdrop is live. Distributor <span style={{ fontFamily: MONO }}>{shortAddr(create.distributor)}</span> is
+                Airdrop is live. Distributor <ExplorerAddress address={create.distributor} chainId={chainId} /> is
                 funded — download the claims file below and host it so recipients can claim.
               </Notice>
             </div>
@@ -774,7 +783,10 @@ function ClaimTab({
       <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <InstrumentPanel title="CLAIM">
           <SummaryRow label="Token" value={claim.tokenSymbol ?? (claim.validDistributor ? '…' : '—')} />
-          <SummaryRow label="Your address" value={connected && owner ? shortAddr(owner) : '—'} />
+          <SummaryRow
+            label="Your address"
+            value={connected && owner ? <ExplorerAddress address={owner} chainId={chainId} fontSize={12.5} fontWeight={500} /> : '—'}
+          />
           <SummaryRow
             label="Your allocation"
             value={allocationLabel}

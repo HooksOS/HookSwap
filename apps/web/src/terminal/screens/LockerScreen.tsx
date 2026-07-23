@@ -39,6 +39,7 @@ import { ExplorerDataType, getExplorerLink } from 'uniswap/src/utils/linking'
 import { erc20Abi, erc721Abi, formatUnits, isAddress, parseUnits, type Address, type Hash } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { LockerExplore } from '~/terminal/screens/locker/LockerExplore'
 import {
@@ -934,9 +935,7 @@ function TokenLocksList({
           >
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 600, color: terminalColors.ink }}>
-                  {shortAddr(row.token)}
-                </span>
+                <ExplorerAddress address={row.token} chainId={chainId} type={ExplorerDataType.TOKEN} fontSize={13} fontWeight={600} />
                 {row.isLpToken ? (
                   <span
                     style={{

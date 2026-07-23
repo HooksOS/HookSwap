@@ -29,6 +29,8 @@ export const TOKEN_FACTORY_ADDRESSES: Partial<Record<UniverseChainId, Address>> 
   [UniverseChainId.MegaETH]: '0x144331bb4c3026d135896cafec3ae3d667f4f376',
   [UniverseChainId.Ink]: '0x7effe9dd68035f43ad43ae6c31bc1a47ab4579d0',
   [UniverseChainId.Tempo]: '0x7effe9dd68035f43ad43ae6c31bc1a47ab4579d0',
+  // Stable (988) — contracts/deployments/stable.json .suite.tokenFactory (on-chain code verified).
+  [UniverseChainId.Stable]: '0x86426094d82bC1fd40F0901965b23D30837Dc66b',
 }
 
 /**

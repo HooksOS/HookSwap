@@ -30,6 +30,8 @@ export const AIRDROP_FACTORY_ADDRESSES: Partial<Record<UniverseChainId, Address>
   [UniverseChainId.MegaETH]: '0x250c3448278f7b71e3e9b641f2efeb6074820e25',
   [UniverseChainId.Ink]: '0xd9d4795f2a12305a12c36455adad011f2d6143ab',
   [UniverseChainId.Tempo]: '0x144331bb4c3026d135896cafec3ae3d667f4f376',
+  // Stable (988) — contracts/deployments/stable.json .suite.merkleDistributorFactory (on-chain code verified).
+  [UniverseChainId.Stable]: '0x3b5a01efc59f3465b8eb04697f97cfe0ba700d9d',
 }
 
 /**

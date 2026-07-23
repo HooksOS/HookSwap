@@ -1,7 +1,7 @@
 import { Token } from '@uniswap/sdk-core'
 import { GraphQLApi, TradingApi } from '@universe/api'
 import { SwapConfigKey } from '@universe/gating'
-import { ALL_NETWORKS_LOGO } from 'ui/src/assets'
+import { USDT0_LOGO } from 'ui/src/assets'
 import { ALL_APPS_CHAIN_SUPPORTED_APPS } from 'uniswap/src/features/chains/chainAppSupport'
 import { CHAIN_ID_TO_URL_PARAM } from 'uniswap/src/features/chains/chainUrlParam'
 import { DEFAULT_MS_BEFORE_WARNING, DEFAULT_NATIVE_ADDRESS } from 'uniswap/src/features/chains/evm/rpc'
@@ -54,7 +54,7 @@ export const STABLE_CHAIN_INFO = {
   },
   interfaceName: 'stable',
   label: 'Stable',
-  logo: ALL_NETWORKS_LOGO,
+  logo: USDT0_LOGO,
   name: 'Stable Mainnet',
   // Native gas token is USDT0 (18-decimal native balance), not ETH.
   nativeCurrency: {
@@ -62,7 +62,7 @@ export const STABLE_CHAIN_INFO = {
     symbol: 'USDT0',
     decimals: 18,
     address: DEFAULT_NATIVE_ADDRESS,
-    logo: ALL_NETWORKS_LOGO,
+    logo: USDT0_LOGO,
   },
   // Stable pays gas in the 6-decimal ERC-20 USDT0, not a native ETH token.
   gasTokenOverride: stableTokens.USDT0,

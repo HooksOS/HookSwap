@@ -543,7 +543,16 @@ export function SwapTicket(): JSX.Element {
     const errMsg = typeof trade.error === 'object' && trade.error !== null && 'message' in trade.error
       ? (trade.error as { message: string }).message
       : undefined
-    swapLabel = errMsg && errMsg.length < 60 ? errMsg : 'Quote unavailable — try again'
+    // A 404 / NO_ROUTE_FOUND from the quote service is NOT a service failure — it means the
+    // requested trade has no executable route, virtually always because pool liquidity is
+    // absent/too thin for that size. Show the honest liquidity state, never a raw
+    // "Response status: 404" (see the adapter's NO_ROUTE_FOUND detail).
+    const isNoRoute = errMsg ? /\b404\b|no[_\s-]?route|not\s?found|insufficient\s?liquidity/i.test(errMsg) : false
+    if (isNoRoute) {
+      swapLabel = 'No route — insufficient liquidity'
+    } else {
+      swapLabel = errMsg && errMsg.length < 60 ? errMsg : 'Quote unavailable — try again'
+    }
   } else if (!activeTrade) {
     swapLabel = 'No route available'
   } else {

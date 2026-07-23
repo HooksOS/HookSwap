@@ -75,6 +75,7 @@ import { serializeSwapAddressesToURLParameters } from '~/pages/Swap/Swap/state/t
 import { useAccount } from '~/hooks/useAccount'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { ComingSoon } from '~/terminal/components/ComingSoon'
+import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
@@ -984,8 +985,8 @@ function MarketDetailScreenBody(): JSX.Element {
                 </span>
               ) : null}
             </div>
-            <div style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.ink3Alt, marginTop: 4 }}>
-              {shortAddress(resolvedPoolAddress)}
+            <div style={{ marginTop: 4 }}>
+              <ExplorerAddress address={resolvedPoolAddress} chainId={chainId} fontSize={12} />
             </div>
           </div>
         </div>

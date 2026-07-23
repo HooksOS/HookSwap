@@ -31,6 +31,7 @@ import { useEnabledChains } from 'uniswap/src/features/chains/hooks/useEnabledCh
 import { formatUnits, type Address } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { ExplorerAddress, shortAddr } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
@@ -50,10 +51,6 @@ type FarmsTab = 'create' | 'manage'
 /* ------------------------------------------------------------------ helpers */
 
 const SECONDS_PER_DAY = 86_400
-
-function shortAddr(a?: string): string {
-  return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—'
-}
 
 /** Whole days string → seconds, or undefined when empty/invalid. */
 function daysToSeconds(value: string): number | undefined {
@@ -153,7 +150,7 @@ function TextField({
   )
 }
 
-function SummaryRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
+function SummaryRow({ label, value, valueColor }: { label: string; value: React.ReactNode; valueColor?: string }): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', gap: 12 }}>
       <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, whiteSpace: 'nowrap' }}>{label}</span>
@@ -512,7 +509,10 @@ function CreateTab({
                 : '—'
             }
           />
-          <SummaryRow label="Funded by" value={connected && owner ? shortAddr(owner) : '—'} />
+          <SummaryRow
+            label="Funded by"
+            value={connected && owner ? <ExplorerAddress address={owner} chainId={chainId} fontSize={12.5} fontWeight={500} /> : '—'}
+          />
           <SummaryRow label="Network" value={deployed ? chainLabel : 'Not available'} />
 
           <PrimaryButton label={primaryLabel} onClick={onPrimary} disabled={primaryDisabled} />
@@ -520,8 +520,16 @@ function CreateTab({
           {farm.isDone ? (
             <div style={{ marginTop: 10 }}>
               <Notice tone="green">
-                Farm created and funded.{farm.createdFarm ? ` Address ${shortAddr(farm.createdFarm)}.` : ''} Stakers can
-                now deposit from the &ldquo;Stake / manage&rdquo; tab and earn the reward stream.
+                Farm created and funded.
+                {farm.createdFarm ? (
+                  <>
+                    {' '}
+                    Address <ExplorerAddress address={farm.createdFarm} chainId={chainId} />.
+                  </>
+                ) : (
+                  ''
+                )}{' '}
+                Stakers can now deposit from the &ldquo;Stake / manage&rdquo; tab and earn the reward stream.
               </Notice>
             </div>
           ) : farm.error ? (

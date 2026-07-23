@@ -27,6 +27,7 @@ import { erc20Abi, formatUnits, isAddress, parseUnits, type Address } from '~/ch
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { NATIVE_CHAIN_ID } from '~/constants/tokens'
 import { useAccount } from '~/hooks/useAccount'
+import { ExplorerAddress, shortAddr } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { MAX_PER_TX, useMultisend, type MultisendEntry } from '~/terminal/multisender/useMultisend'
@@ -48,11 +49,6 @@ interface TokenOption {
   decimals: number
 }
 
-/* ------------------------------------------------------------------ helpers */
-
-function shortAddr(a?: string): string {
-  return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—'
-}
 
 function fmtAmount(raw: bigint, decimals: number): string {
   const n = Number(formatUnits(raw, decimals))
@@ -655,7 +651,16 @@ export function MultisenderScreen(): JSX.Element {
                     }}
                   >
                     <span style={{ fontFamily: MONO, fontSize: 11.5, color: row.error ? terminalColors.redDown : terminalColors.ink2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {row.recipient ? shortAddr(row.recipient) : `L${row.line}`}
+                      {row.recipient ? (
+                        <ExplorerAddress
+                          address={row.recipient}
+                          chainId={chainId}
+                          fontSize={11.5}
+                          color={row.error ? terminalColors.redDown : undefined}
+                        />
+                      ) : (
+                        `L${row.line}`
+                      )}
                     </span>
                     {row.error ? (
                       <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.redDown, flexShrink: 0 }}>{row.error}</span>

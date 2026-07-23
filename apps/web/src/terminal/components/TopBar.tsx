@@ -1,4 +1,5 @@
 import { ReactNode } from 'react'
+import { AccountIcon } from 'uniswap/src/features/accounts/AccountIcon'
 import { ChainLogo } from '~/components/Logo/ChainLogo'
 import { HookLogo } from '~/terminal/components/HookLogo'
 import { terminalColors, terminalFonts, terminalTokenGradients } from '~/terminal/theme/tokens'
@@ -32,7 +33,7 @@ export interface TopBarProps {
   /** Per-screen actions rendered at the far right (e.g. Save/Reset, Export). */
   actions?: ReactNode
   /** Connected wallet summary. Omit → render the green "Connect wallet" button. */
-  wallet?: { addressShort: string }
+  wallet?: { addressShort: string; address?: string }
   /** Click handler when disconnected (open the wallet drawer to connect). */
   onConnectWallet?: () => void
   /** Click handler when connected (toggle the account drawer — switch/disconnect). */
@@ -195,15 +196,19 @@ export function TopBar({
                   flexShrink: 0,
                 }}
               >
-                <span
-                  style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: 6,
-                    background: terminalTokenGradients.walletAvatar,
-                    flexShrink: 0,
-                  }}
-                />
+                {wallet.address ? (
+                  <AccountIcon address={wallet.address} size={18} />
+                ) : (
+                  <span
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 6,
+                      background: terminalTokenGradients.walletAvatar,
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
                 {wallet.addressShort}
               </button>
             ) : (
@@ -373,15 +378,19 @@ export function TopBar({
               cursor: 'pointer',
             }}
           >
-            <span
-              style={{
-                width: 18,
-                height: 18,
-                borderRadius: 6,
-                background: terminalTokenGradients.walletAvatar,
-                flexShrink: 0,
-              }}
-            />
+            {wallet.address ? (
+              <AccountIcon address={wallet.address} size={18} />
+            ) : (
+              <span
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: 6,
+                  background: terminalTokenGradients.walletAvatar,
+                  flexShrink: 0,
+                }}
+              />
+            )}
             {wallet.addressShort}
           </span>
         ) : (

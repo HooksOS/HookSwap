@@ -23,6 +23,7 @@ import { getChainLabel } from 'uniswap/src/features/chains/utils'
 import { formatUnits } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { getTokenFactoryAddress } from '~/terminal/tokenfactory/addresses'
@@ -33,12 +34,6 @@ import { assume0xAddress } from '~/utils/wagmi'
 const MONO = terminalFonts.mono
 const DISPLAY = terminalFonts.display
 const SANS = terminalFonts.sans
-
-/* ------------------------------------------------------------------ helpers */
-
-function shortAddr(a?: string): string {
-  return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—'
-}
 
 /* ------------------------------------------------------------------ primitives */
 
@@ -106,7 +101,7 @@ function TextField({
   )
 }
 
-function SummaryRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
+function SummaryRow({ label, value, valueColor }: { label: string; value: React.ReactNode; valueColor?: string }): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0' }}>
       <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt }}>{label}</span>
@@ -442,7 +437,10 @@ export function CreateTokenScreen(): JSX.Element {
               valueColor={supplyValue !== '—' ? terminalColors.ink : terminalColors.faint}
             />
             <SummaryRow label="Create fee" value={deployed ? feeLabel : '—'} />
-            <SummaryRow label="Mint to" value={connected && owner ? shortAddr(owner) : '—'} />
+            <SummaryRow
+              label="Mint to"
+              value={connected && owner ? <ExplorerAddress address={owner} chainId={chainId} fontSize={12.5} fontWeight={500} /> : '—'}
+            />
             <SummaryRow label="Network" value={deployed ? chainLabel : 'Not available'} />
 
             <PrimaryButton label={primaryLabel} onClick={onPrimary} disabled={primaryDisabled} />

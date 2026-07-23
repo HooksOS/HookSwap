@@ -19,9 +19,11 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import { UniverseChainId } from 'uniswap/src/features/chains/types'
 import { getChainLabel } from 'uniswap/src/features/chains/utils'
+import { ExplorerDataType } from 'uniswap/src/utils/linking'
 import { formatUnits } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import {
@@ -41,10 +43,6 @@ const DISPLAY = terminalFonts.display
 const SANS = terminalFonts.sans
 
 /* ------------------------------------------------------------------ helpers */
-
-function shortAddr(a?: string): string {
-  return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—'
-}
 
 function onlyDigits(v: string): string {
   return v.replace(/[^0-9]/g, '')
@@ -145,7 +143,7 @@ function TextField({
   )
 }
 
-function SummaryRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
+function SummaryRow({ label, value, valueColor }: { label: string; value: React.ReactNode; valueColor?: string }): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0' }}>
       <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt }}>{label}</span>
@@ -355,8 +353,8 @@ function MyLaunchesPanel({ chainId, owner }: { chainId?: number; owner?: `0x${st
                   gap: 6,
                 }}
               >
-                <SummaryRow label="Token" value={shortAddr(l.token)} />
-                <SummaryRow label="Pool" value={shortAddr(l.pool)} />
+                <SummaryRow label="Token" value={<ExplorerAddress address={l.token} chainId={chainId} type={ExplorerDataType.TOKEN} fontSize={12.5} fontWeight={500} />} />
+                <SummaryRow label="Pool" value={<ExplorerAddress address={l.pool} chainId={chainId} fontSize={12.5} fontWeight={500} />} />
                 <SummaryRow label="DEX" value={dexLabel} />
                 <SummaryRow label="Position #" value={String(l.tokenId)} />
                 <SummaryRow
@@ -791,7 +789,10 @@ export function LaunchCreateScreen(): JSX.Element {
               value={deployed ? totalValueLabel : '—'}
               valueColor={deployed ? terminalColors.ink : terminalColors.faint}
             />
-            <SummaryRow label="Creator" value={connected && owner ? shortAddr(owner) : '—'} />
+            <SummaryRow
+              label="Creator"
+              value={connected && owner ? <ExplorerAddress address={owner} chainId={chainId} fontSize={12.5} fontWeight={500} /> : '—'}
+            />
             <SummaryRow label="Network" value={deployed ? chainLabel : 'Not available'} />
 
             <PrimaryButton label={primaryLabel} onClick={onPrimary} disabled={primaryDisabled} />
@@ -799,8 +800,8 @@ export function LaunchCreateScreen(): JSX.Element {
             {launchState.isDone ? (
               <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <Notice tone="green">Launched — token deployed, pool seeded, LP locked in the fee vault.</Notice>
-                <SummaryRow label="Token" value={shortAddr(launchState.createdToken)} />
-                <SummaryRow label="Pool" value={shortAddr(launchState.createdPool)} />
+                <SummaryRow label="Token" value={<ExplorerAddress address={launchState.createdToken} chainId={chainId} type={ExplorerDataType.TOKEN} fontSize={12.5} fontWeight={500} />} />
+                <SummaryRow label="Pool" value={<ExplorerAddress address={launchState.createdPool} chainId={chainId} fontSize={12.5} fontWeight={500} />} />
                 <SummaryRow
                   label="Position #"
                   value={launchState.createdTokenId !== undefined ? String(launchState.createdTokenId) : '—'}

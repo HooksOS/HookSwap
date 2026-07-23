@@ -17,11 +17,13 @@
  */
 import { ReactNode, useMemo, useState } from 'react'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
+import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import '~/terminal/theme/terminal.css'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import {
+  LEADERBOARD_CHAIN_ID,
   LeaderboardMetric,
   LeaderboardRow,
   LeaderboardWindow,
@@ -90,11 +92,6 @@ function Segmented<T extends string>({
 }
 
 /* --------------------------------------------------------------- helpers */
-
-/** Truncate an address to `0x1234…abcd`. */
-function shortenWallet(address: string): string {
-  return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address
-}
 
 /** Native amount → compact string (e.g. 1.2345). Small values keep more precision. */
 function formatNative(value: number): string {
@@ -166,7 +163,8 @@ function VolumeBars({ rows, loading }: { rows?: LeaderboardRow[]; loading: boole
           <div key={r.wallet} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
               <span style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.ink }}>
-                <span style={{ color: terminalColors.faint }}>{i + 1}.</span> {shortenWallet(r.wallet)}
+                <span style={{ color: terminalColors.faint }}>{i + 1}.</span>{' '}
+                <ExplorerAddress address={r.wallet} chainId={LEADERBOARD_CHAIN_ID} fontSize={12} />
               </span>
               <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: terminalColors.ink, whiteSpace: 'nowrap' }}>
                 {formatNative(r.nativeVolume)} {NATIVE_SYMBOL}
@@ -234,9 +232,7 @@ export function LeaderboardScreen(): JSX.Element {
         width: 'minmax(140px,1.4fr)',
         align: 'left',
         mobileRole: 'title',
-        cell: (row) => (
-          <span style={{ fontFamily: MONO, fontSize: 12.5, color: terminalColors.ink }}>{shortenWallet(row.wallet)}</span>
-        ),
+        cell: (row) => <ExplorerAddress address={row.wallet} chainId={LEADERBOARD_CHAIN_ID} fontSize={12.5} />,
         sortValue: (row) => row.wallet,
       },
       {

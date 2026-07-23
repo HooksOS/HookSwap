@@ -27,6 +27,8 @@ export const DISPERSE_ADDRESSES: Partial<Record<UniverseChainId, Address>> = {
   [UniverseChainId.MegaETH]: '0xd96fc9629afaf325fcdd7f98dc9b8dc2165adcbb',
   [UniverseChainId.Ink]: '0xd96fc9629afaf325fcdd7f98dc9b8dc2165adcbb',
   [UniverseChainId.Tempo]: '0xd9d4795f2a12305a12c36455adad011f2d6143ab',
+  // Stable (988) — contracts/deployments/stable.json .suite.disperse (on-chain code verified).
+  [UniverseChainId.Stable]: '0xd96fc9629afaf325fcdd7f98dc9b8dc2165adcbb',
 }
 
 /**

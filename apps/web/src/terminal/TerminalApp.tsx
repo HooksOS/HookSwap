@@ -389,6 +389,7 @@ export function TerminalChrome({
   const wallet = account.address
     ? {
         addressShort: shortenAddress(account.address),
+        address: account.address,
         portfolioUsdLabel:
           totalValue.data?.balanceUSD !== undefined
             ? `$${totalValue.data.balanceUSD.toLocaleString('en-US', {
@@ -407,6 +408,7 @@ export function TerminalChrome({
           onNavigate: (path) => navigate(path),
           wallet,
           onConnectWallet: () => accountDrawer.open(),
+          onWalletClick: () => accountDrawer.toggle(),
         }}
         topBar={{
           searchPlaceholder: 'Search markets, tokens…',

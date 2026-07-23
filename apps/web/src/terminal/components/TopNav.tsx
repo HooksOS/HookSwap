@@ -1,4 +1,5 @@
 import { CSSProperties, ReactNode, useState } from 'react'
+import { AccountIcon } from 'uniswap/src/features/accounts/AccountIcon'
 import { ChainLogo } from '~/components/Logo/ChainLogo'
 import { HookLogo } from '~/terminal/components/HookLogo'
 import { ChainInfo } from '~/terminal/components/TopBar'
@@ -129,7 +130,7 @@ export interface TopNavProps {
   /** Chain selector click (open the chain switcher). */
   onChainClick?: () => void
   /** Connected wallet summary. Omit → green "Connect" button. */
-  wallet?: { addressShort: string }
+  wallet?: { addressShort: string; address?: string }
   /** Disconnected click (open the wallet drawer to connect). */
   onConnectWallet?: () => void
   /** Connected click (toggle the account drawer). */
@@ -441,7 +442,11 @@ export function TopNav({
               cursor: 'pointer',
             }}
           >
-            <span style={{ width: 18, height: 18, borderRadius: 6, background: terminalTokenGradients.walletAvatar, flexShrink: 0 }} />
+            {wallet.address ? (
+              <AccountIcon address={wallet.address} size={18} />
+            ) : (
+              <span style={{ width: 18, height: 18, borderRadius: 6, background: terminalTokenGradients.walletAvatar, flexShrink: 0 }} />
+            )}
             {wallet.addressShort}
           </button>
         ) : (

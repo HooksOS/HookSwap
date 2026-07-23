@@ -65,6 +65,11 @@ export const LOCKER_ADDRESSES: Partial<Record<UniverseChainId, LockerAddresses>>
     tokenLockerManager: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
     v3PositionLocker: '0xAB34Bb3767020059A35e71D03f13E9e4fbCD07aC',
   },
+  // Stable (988) — contracts/deployments/stable.json .suite (on-chain code verified).
+  [UniverseChainId.Stable]: {
+    tokenLockerManager: '0x250c3448278f7b71e3e9b641f2efeb6074820e25',
+    v3PositionLocker: '0x144331bb4c3026d135896cafec3ae3d667f4f376',
+  },
 }
 
 /**

@@ -18,13 +18,13 @@
  *     is validated on Sepolia first per the mandatory-Sepolia rule); the write is disabled.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { UniverseChainId } from 'uniswap/src/features/chains/types'
 import { getChainLabel } from 'uniswap/src/features/chains/utils'
-import { ExplorerDataType, getExplorerLink } from 'uniswap/src/utils/linking'
+import { ExplorerDataType } from 'uniswap/src/utils/linking'
 import { formatUnits } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
 import { useSelectChain } from '~/hooks/useSelectChain'
+import { ExplorerAddress, shortAddr } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { PerpsTutorial, type TutorialStep } from '~/terminal/screens/perps/PerpsTutorial'
 import { StatCard } from '~/terminal/components/StatCard'
@@ -88,10 +88,6 @@ const LAUNCH_TUTORIAL_STEPS: TutorialStep[] = [
 ]
 
 /* ------------------------------------------------------------------ helpers */
-
-function shortAddr(a?: string): string {
-  return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—'
-}
 
 function fmtFee(wei: bigint | undefined): string {
   if (wei === undefined) {
@@ -212,7 +208,7 @@ function Slider({
   )
 }
 
-function SummaryRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
+function SummaryRow({ label, value, valueColor }: { label: string; value: React.ReactNode; valueColor?: string }): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0' }}>
       <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt }}>{label}</span>
@@ -393,17 +389,6 @@ function statusLabel(status: RegistryStatus): string {
 function MarketsDirectory({ chainId }: { chainId?: number }): JSX.Element {
   const { ready, markets, count, isLoading, error } = useMarkets({ chainId })
 
-  const explorer = (addr: string): string | undefined => {
-    if (chainId === undefined) {
-      return undefined
-    }
-    try {
-      return getExplorerLink({ chainId: chainId as UniverseChainId, data: addr, type: ExplorerDataType.ADDRESS })
-    } catch {
-      return undefined
-    }
-  }
-
   return (
     <Panel title="Live markets" meta={ready && count !== undefined ? [`${count} total`] : isLoading ? ['loading…'] : undefined}>
       {!ready ? (
@@ -417,7 +402,6 @@ function MarketsDirectory({ chainId }: { chainId?: number }): JSX.Element {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {markets.map((m: MarketRow) => {
-            const href = explorer(m.market)
             return (
               <div
                 key={m.market}
@@ -430,26 +414,13 @@ function MarketsDirectory({ chainId }: { chainId?: number }): JSX.Element {
                   padding: '9px 11px',
                 }}
               >
-                {href ? (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ fontFamily: MONO, fontSize: 12, fontWeight: 500, color: terminalColors.brandGreen, textDecoration: 'none' }}
-                  >
-                    {shortAddr(m.market)}
-                  </a>
-                ) : (
-                  <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 500, color: terminalColors.ink }}>
-                    {shortAddr(m.market)}
-                  </span>
-                )}
+                <ExplorerAddress address={m.market} chainId={chainId} fontSize={12} fontWeight={500} />
                 <TierBadge tier={m.tier} />
                 <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt }}>
                   {statusLabel(m.status)}
                 </span>
                 <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.faint, marginLeft: 'auto' }}>
-                  by {shortAddr(m.creator)}
+                  by <ExplorerAddress address={m.creator} chainId={chainId} fontSize={11} />
                 </span>
               </div>
             )
@@ -709,7 +680,7 @@ export function CreatePerpMarketScreen(): JSX.Element {
               </div>
               {defaults?.weth && collateral.toLowerCase() === defaults.weth.toLowerCase() ? (
                 <div style={{ fontFamily: SANS, fontSize: 10.5, color: terminalColors.faint }}>
-                  Default: WETH ({shortAddr(defaults.weth)}).
+                  Default: WETH (<ExplorerAddress address={defaults.weth} chainId={chainId} type={ExplorerDataType.TOKEN} fontSize={10.5} />).
                 </div>
               ) : null}
               <div>
@@ -805,7 +776,10 @@ export function CreatePerpMarketScreen(): JSX.Element {
           <div data-tut="launch-review">
           <Panel title="Review" corners>
             <SummaryRow label="Market" value={symbolValue} />
-            <SummaryRow label="Collateral" value={collateral.trim() !== '' ? shortAddr(collateral) : '—'} />
+            <SummaryRow
+              label="Collateral"
+              value={collateral.trim() !== '' ? <ExplorerAddress address={collateral} chainId={chainId} type={ExplorerDataType.TOKEN} fontSize={12.5} fontWeight={500} /> : '—'}
+            />
             <SummaryRow label="Fee (per side)" value={feeValue} />
             <SummaryRow label="Max leverage" value={levValue} />
             <SummaryRow label="Tier" value={tierValue} />
@@ -813,7 +787,18 @@ export function CreatePerpMarketScreen(): JSX.Element {
             <SummaryRow label="Listing fee" value={deployed ? fmtFee(state.listingFee) : '—'} />
             <SummaryRow label="Creation bond" value={deployed ? fmtFee(state.bond) : '—'} />
             <SummaryRow label="Total to pay" value={deployed ? fmtFee(state.totalCost) : '—'} />
-            <SummaryRow label="Creator" value={creator.trim() !== '' ? shortAddr(creator) : connected && owner ? shortAddr(owner) : '—'} />
+            <SummaryRow
+              label="Creator"
+              value={
+                creator.trim() !== '' ? (
+                  <ExplorerAddress address={creator} chainId={chainId} fontSize={12.5} fontWeight={500} />
+                ) : connected && owner ? (
+                  <ExplorerAddress address={owner} chainId={chainId} fontSize={12.5} fontWeight={500} />
+                ) : (
+                  '—'
+                )
+              }
+            />
             <SummaryRow label="Network" value={deployed ? chainLabel : state.wrongChain ? homeLabel : 'Not available'} />
 
             <PrimaryButton label={primaryLabel} onClick={onPrimary} disabled={primaryDisabled} />
@@ -821,7 +806,9 @@ export function CreatePerpMarketScreen(): JSX.Element {
             {state.isDone ? (
               <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <Notice tone="green">Market launched — the isolated market is deployed and registered.</Notice>
-                {state.marketAddress ? <SummaryRow label="Market address" value={shortAddr(state.marketAddress)} /> : null}
+                {state.marketAddress ? (
+                  <SummaryRow label="Market address" value={<ExplorerAddress address={state.marketAddress} chainId={chainId} fontSize={12.5} fontWeight={500} />} />
+                ) : null}
               </div>
             ) : state.error ? (
               <div style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.redDown, marginTop: 10, lineHeight: 1.5 }}>

@@ -28,10 +28,12 @@ import { useState } from 'react'
 import { getChainInfo } from 'uniswap/src/features/chains/chainInfo'
 import { useEnabledChains } from 'uniswap/src/features/chains/hooks/useEnabledChains'
 import { getChainLabel } from 'uniswap/src/features/chains/utils'
+import { ExplorerDataType } from 'uniswap/src/utils/linking'
 import { useReadContract } from 'wagmi'
 import { formatUnits, type Address } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
+import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { VestingExplore } from '~/terminal/screens/vesting/VestingExplore'
@@ -50,10 +52,6 @@ const SANS = terminalFonts.sans
 type VestingTab = 'create' | 'claim'
 
 /* ------------------------------------------------------------------ helpers */
-
-function shortAddr(a?: string): string {
-  return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—'
-}
 
 /** datetime-local value → unix seconds, or undefined if empty/invalid. */
 function toUnix(value: string): number | undefined {
@@ -271,7 +269,7 @@ function DurationField({
   )
 }
 
-function SummaryRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
+function SummaryRow({ label, value, valueColor }: { label: string; value: React.ReactNode; valueColor?: string }): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', gap: 12 }}>
       <span style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, whiteSpace: 'nowrap' }}>{label}</span>
@@ -683,7 +681,10 @@ function CreateTab({
       <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <InstrumentPanel title="REVIEW">
           <SummaryRow label="Token" value={symbolLabel} />
-          <SummaryRow label="Beneficiary" value={vesting.validBeneficiary ? shortAddr(beneficiary) : '—'} />
+          <SummaryRow
+            label="Beneficiary"
+            value={vesting.validBeneficiary ? <ExplorerAddress address={beneficiary} chainId={chainId} fontSize={12.5} fontWeight={500} /> : '—'}
+          />
           <SummaryRow
             label="Amount"
             value={vesting.validAmount && amount !== '' ? `${Number(amount).toLocaleString('en-US')}` : '—'}
@@ -698,7 +699,10 @@ function CreateTab({
             value={durationSeconds !== undefined && durationSeconds > 0 ? fmtDuration(durationSeconds) : '—'}
           />
           <SummaryRow label="Create fee" value={feeLabel} />
-          <SummaryRow label="Funded by" value={connected && owner ? shortAddr(owner) : '—'} />
+          <SummaryRow
+            label="Funded by"
+            value={connected && owner ? <ExplorerAddress address={owner} chainId={chainId} fontSize={12.5} fontWeight={500} /> : '—'}
+          />
           <SummaryRow label="Network" value={deployed ? chainLabel : 'Not available'} />
 
           <PrimaryButton label={primaryLabel} onClick={onPrimary} disabled={primaryDisabled} />
@@ -759,12 +763,14 @@ function ScheduleRowItem({
   isReleasing,
   releasingChild,
   onRelease,
+  chainId,
 }: {
   row: VestingScheduleRow
   isFirst: boolean
   isReleasing: boolean
   releasingChild?: Address
   onRelease: (child: Address) => void
+  chainId?: number
 }): JSX.Element {
   const d = row.tokenDecimals
   const thisReleasing = isReleasing && releasingChild?.toLowerCase() === row.contractAddress.toLowerCase()
@@ -792,9 +798,14 @@ function ScheduleRowItem({
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 600, color: terminalColors.ink }}>
-              {row.tokenSymbol ?? shortAddr(row.token)}
-            </span>
+            <ExplorerAddress
+              address={row.token}
+              chainId={chainId}
+              type={ExplorerDataType.TOKEN}
+              label={row.tokenSymbol ?? undefined}
+              fontSize={13}
+              fontWeight={600}
+            />
             <span
               style={{
                 fontFamily: MONO,
@@ -810,8 +821,12 @@ function ScheduleRowItem({
             </span>
           </div>
           <div style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3Alt, marginTop: 3 }}>
-            {row.isBeneficiary ? `From ${shortAddr(row.creator)}` : `To ${shortAddr(row.beneficiary)}`} · starts{' '}
-            {fmtDate(row.start)} · {fmtDuration(row.duration)}
+            {row.isBeneficiary ? (
+              <>From <ExplorerAddress address={row.creator} chainId={chainId} fontSize={12} /></>
+            ) : (
+              <>To <ExplorerAddress address={row.beneficiary} chainId={chainId} fontSize={12} /></>
+            )}{' '}
+            · starts {fmtDate(row.start)} · {fmtDuration(row.duration)}
             {row.cliff > 0 ? ` · ${fmtDuration(row.cliff)} cliff` : ''}
           </div>
         </div>
@@ -898,6 +913,7 @@ function ClaimTab({
             isReleasing={schedules.isReleasing}
             releasingChild={schedules.releasingChild}
             onRelease={(child) => void schedules.release(child)}
+            chainId={chainId}
           />
         ))}
       </div>

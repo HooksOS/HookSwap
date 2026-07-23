@@ -36,6 +36,7 @@ import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks
 import { DoubleCurrencyLogo } from '~/components/Logo/DoubleLogo'
 import { useAccount } from '~/hooks/useAccount'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
+import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { AddLiquidityModal } from '~/terminal/pools/AddLiquidityModal'
@@ -631,7 +632,7 @@ export function PositionsScreen(): JSX.Element {
   return (
     <>
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
-      <Header address={address} onNewPosition={onNewPosition} showAction />
+      <Header address={address} chainId={account.chainId} onNewPosition={onNewPosition} showAction />
 
       {/* Stat tiles — real counts + totals over the returned positions. */}
       <div
@@ -712,10 +713,12 @@ export function PositionsScreen(): JSX.Element {
 
 function Header({
   address,
+  chainId,
   onNewPosition,
   showAction,
 }: {
   address: string | undefined
+  chainId?: number
   onNewPosition: () => void
   showAction: boolean
 }): JSX.Element {
@@ -762,9 +765,7 @@ function Header({
             v2 · v3
           </span>
           {address ? (
-            <span style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.ink3Alt }}>
-              {`${address.slice(0, 6)}…${address.slice(-4)}`}
-            </span>
+            <ExplorerAddress address={address} chainId={chainId} fontSize={12} color={terminalColors.ink3Alt} fontWeight={400} />
           ) : null}
         </div>
         <div style={{ fontFamily: SANS, fontSize: 13, color: terminalColors.ink3Alt, marginTop: 6 }}>

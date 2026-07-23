@@ -33,6 +33,7 @@ const TerminalPoolsPage = lazy(() => import('~/terminal/TerminalPoolsPage'))
 const TerminalPositionsPage = lazy(() => import('~/terminal/TerminalPositionsPage'))
 const TerminalLockerPage = lazy(() => import('~/terminal/TerminalLockerPage'))
 const TerminalLockDetailPage = lazy(() => import('~/terminal/TerminalLockDetailPage'))
+const TerminalTokenPage = lazy(() => import('~/terminal/TerminalTokenPage'))
 const TerminalMultisenderPage = lazy(() => import('~/terminal/TerminalMultisenderPage'))
 const TerminalCreateTokenPage = lazy(() => import('~/terminal/TerminalCreateTokenPage'))
 const TerminalVestingPage = lazy(() => import('~/terminal/TerminalVestingPage'))
@@ -395,6 +396,16 @@ export const routes: RouteDefinition[] = [
     getElement: () => (
       <Suspense fallback={null}>
         <TerminalLockDetailPage />
+      </Suspense>
+    ),
+  }),
+  createRouteDefinition({
+    path: '/token/:chainId/:address',
+    getTitle: () => 'Token · HookSwap',
+    getDescription: () => 'View a token on HookSwap — live price, liquidity, pools and activity.',
+    getElement: () => (
+      <Suspense fallback={null}>
+        <TerminalTokenPage />
       </Suspense>
     ),
   }),

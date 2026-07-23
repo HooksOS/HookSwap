@@ -52,6 +52,7 @@ import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks
 import { DoubleCurrencyLogo } from '~/components/Logo/DoubleLogo'
 import { useAccount } from '~/hooks/useAccount'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
+import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { LedgerTvlChart, type TvlPoint } from '~/terminal/components/LedgerTvlChart'
 import '~/terminal/theme/terminal.css'
@@ -746,7 +747,7 @@ export function PortfolioScreen(): JSX.Element {
 
   return (
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
-      <Header address={address} />
+      <Header address={address} chainId={account.chainId} />
 
       {/* KPI row — Net worth (emphasised, wider) + 24h PnL + Fees + LP positions, one line, shrink to fit (design B5). */}
       <div
@@ -856,7 +857,7 @@ export function PortfolioScreen(): JSX.Element {
 
 /* --------------------------------------------------------------- sub-pieces */
 
-function Header({ address }: { address: string | undefined }): JSX.Element {
+function Header({ address, chainId }: { address: string | undefined; chainId?: number }): JSX.Element {
   return (
     <div style={{ marginBottom: 18 }}>
       <Eyebrow style={{ display: 'block', marginBottom: 8 }}>Account · live holdings</Eyebrow>
@@ -874,9 +875,7 @@ function Header({ address }: { address: string | undefined }): JSX.Element {
           Portfolio
         </h1>
         {address ? (
-          <span style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.ink3Alt }}>
-            {`${address.slice(0, 6)}…${address.slice(-4)}`}
-          </span>
+          <ExplorerAddress address={address} chainId={chainId} fontSize={12} color={terminalColors.ink3Alt} fontWeight={400} />
         ) : null}
       </div>
     </div>

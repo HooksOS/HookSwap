@@ -17,6 +17,8 @@
  * Nothing here invents a schedule, price, amount or date.
  */
 import { useMemo, useState } from 'react'
+import { ExplorerDataType } from 'uniswap/src/utils/linking'
+import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
 import { LedgerDonut, type DonutSlice } from '~/terminal/components/LedgerDonut'
@@ -114,10 +116,6 @@ function fmtDate(unixSec: number | undefined): string {
     day: 'numeric',
     timeZone: 'UTC',
   })
-}
-
-function shortAddr(a?: string): string {
-  return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—'
 }
 
 function initials(symbol: string | undefined, len = 2): string {
@@ -236,7 +234,6 @@ const mobileStatGridStyle: React.CSSProperties = {
 function ScheduleRow({ s }: { s: VestingSchedule }): JSX.Element {
   const [hover, setHover] = useState(false)
   const isMobile = useIsMobileViewport()
-  const sym = s.token.symbol || shortAddr(s.token.addr)
 
   // Mobile: stacked card — identity + % vested bar full-width on top, stats as a
   // label→value chip grid below (no hover-only affordances).
@@ -252,25 +249,22 @@ function ScheduleRow({ s }: { s: VestingSchedule }): JSX.Element {
           />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-              <span
-                style={{
-                  fontFamily: MONO,
-                  fontSize: 13.5,
-                  fontWeight: 600,
-                  color: terminalColors.ink,
-                  letterSpacing: '-0.01em',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {sym}
-              </span>
+              <ExplorerAddress
+                address={s.token.addr}
+                chainId={s.chainId}
+                type={ExplorerDataType.TOKEN}
+                label={s.token.symbol || undefined}
+                fontSize={13.5}
+                fontWeight={600}
+                style={{ letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis' }}
+              />
               <StatusPill status={s.status} />
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.ink3 }}>{s.chainName}</span>
-              <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>to {shortAddr(s.beneficiary)}</span>
+              <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
+                to <ExplorerAddress address={s.beneficiary} chainId={s.chainId} fontSize={11} />
+              </span>
               <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
                 {s.cliff > 0 ? `cliff ${fmtDate(s.cliffTime)} · ` : ''}ends {fmtDate(s.endTime)}
               </span>
@@ -320,26 +314,21 @@ function ScheduleRow({ s }: { s: VestingSchedule }): JSX.Element {
       {/* Token + chain + parties + dates */}
       <div style={{ minWidth: 0, flex: '1 1 200px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-          <span
-            style={{
-              fontFamily: MONO,
-              fontSize: 13.5,
-              fontWeight: 600,
-              color: terminalColors.ink,
-              letterSpacing: '-0.01em',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {sym}
-          </span>
+          <ExplorerAddress
+            address={s.token.addr}
+            chainId={s.chainId}
+            type={ExplorerDataType.TOKEN}
+            label={s.token.symbol || undefined}
+            fontSize={13.5}
+            fontWeight={600}
+            style={{ letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis' }}
+          />
           <StatusPill status={s.status} />
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
           <span style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.ink3 }}>{s.chainName}</span>
           <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
-            to {shortAddr(s.beneficiary)}
+            to <ExplorerAddress address={s.beneficiary} chainId={s.chainId} fontSize={11} />
           </span>
           <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
             {s.cliff > 0 ? `cliff ${fmtDate(s.cliffTime)} · ` : ''}ends {fmtDate(s.endTime)}

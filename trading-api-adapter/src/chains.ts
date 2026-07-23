@@ -237,6 +237,32 @@ export const CHAINS: Record<number, ChainConfig> = {
     ready: false,
   },
 
+  // ---- Stable (988) — DEPLOYED (canonical WgUSDT stack; contracts/deployments/stable.json) ----
+  988: {
+    chainId: 988,
+    name: 'stable',
+    rpcEnvVar: 'WEB3_RPC_988',
+    publicRpc: 'https://stable-mainnet.rpc.sentio.xyz',
+    // Native gas is USDT0 (18-dec native balance), NOT ETH; the wrapped-native / WETH9 arg is WgUSDT.
+    nativeSymbol: 'USDT0',
+    nativeDecimals: 18,
+    wrappedNative: { address: '0x817997ca8394e26cce3de3a076a4889b27dbf9de', symbol: 'WgUSDT', name: 'Wrapped gUSDT', decimals: 18 },
+    v2Factory: '0xBe3729d06E3A17F3c7c5ac394c7bCbe138B6EEFA',
+    v2Router02: '0xFd0Dd93a1b6157e68b0A491d94249720506dc787',
+    v3Factory: '0xf486e625C892C0739A16A3A49B37fD52374B30CB',
+    v3QuoterV2: '0x1b51C392DE4e3D3E0Ab066C5F89492ec0fCF21c3',
+    swapRouter02: '0x5B57386e5F882e13946Ea4ef638c30d1f9b95D84',
+    universalRouter: '0x79F291b64e46a5D2adbe150D58516cd19f49A323',
+    multicall2: '0xa1aa9D69f59b20c0eF2936933D677680D6277351',
+    permit2: PERMIT2,
+    protocols: ['v2', 'v3'], // no v4 on 988 (stable.ts supportsV4:false)
+    // ready:false until (1) the SOR fork adds 988 to HOOKSWAP_V2_FACTORY_ADDRESSES + static
+    // subgraph providers (same fix pattern as XLayer, SOR commits 5b28db5/3acce5b) AND
+    // (2) on-chain liquidity is seeded (no WgUSDT pool exists yet). Contracts + web SDK are wired;
+    // this entry makes getChain(988) defined so the chain is served instead of crashing.
+    ready: false,
+  },
+
   // ---- Sepolia (11155111) — canonical Uniswap stack reused (testing) ----
   11155111: {
     chainId: 11155111,

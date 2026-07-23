@@ -1,4 +1,5 @@
 import { CSSProperties } from 'react'
+import { AccountIcon } from 'uniswap/src/features/accounts/AccountIcon'
 import { HookLogo } from '~/terminal/components/HookLogo'
 import { NavIcon } from '~/terminal/components/NavIcon'
 import {
@@ -16,6 +17,8 @@ import { terminalColors, terminalFonts, terminalTokenGradients } from '~/termina
 export interface WalletSummary {
   /** Truncated address, e.g. "0x8f…3aE2". Rendered mono. */
   addressShort: string
+  /** Full checksummed address — drives the real account identicon (Unicon/ENS avatar). */
+  address?: string
   /** Live portfolio total, pre-formatted, e.g. "$48,210.55". Rendered mono. */
   portfolioUsdLabel: string
 }
@@ -29,6 +32,8 @@ export interface LeftRailProps {
   wallet?: WalletSummary
   /** Handler for the wallet chip when disconnected. */
   onConnectWallet?: () => void
+  /** Handler for the wallet chip when connected (toggle the account drawer). */
+  onWalletClick?: () => void
   /** Collapsed = icon-only 64px rail. Expanded (default) = 226px with labels. */
   collapsed?: boolean
   /** Toggle collapse (rendered as a chevron button by the logo). */
@@ -181,6 +186,7 @@ export function LeftRail({
   onNavigate,
   wallet,
   onConnectWallet,
+  onWalletClick,
   collapsed,
   onToggleCollapse,
   hideCollapseToggle,
@@ -275,10 +281,10 @@ export function LeftRail({
           role="button"
           tabIndex={0}
           title={collapsed ? (wallet ? wallet.addressShort : 'Connect wallet') : undefined}
-          onClick={wallet ? undefined : onConnectWallet}
+          onClick={wallet ? onWalletClick : onConnectWallet}
           onKeyDown={(e) => {
-            if (!wallet && (e.key === 'Enter' || e.key === ' ')) {
-              onConnectWallet?.()
+            if (e.key === 'Enter' || e.key === ' ') {
+              ;(wallet ? onWalletClick : onConnectWallet)?.()
             }
           }}
           style={{
@@ -290,18 +296,22 @@ export function LeftRail({
             borderRadius: 12,
             padding: collapsed ? '9px 0' : '9px 10px',
             color: terminalColors.ink,
-            cursor: wallet ? 'default' : 'pointer',
+            cursor: 'pointer',
           }}
         >
-          <span
-            style={{
-              width: 26,
-              height: 26,
-              borderRadius: 8,
-              background: terminalTokenGradients.walletAvatar,
-              flexShrink: 0,
-            }}
-          />
+          {wallet?.address ? (
+            <AccountIcon address={wallet.address} size={26} />
+          ) : (
+            <span
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: 8,
+                background: terminalTokenGradients.walletAvatar,
+                flexShrink: 0,
+              }}
+            />
+          )}
           {collapsed ? null : (
             <div style={{ lineHeight: 1.25, minWidth: 0 }}>
               {wallet ? (

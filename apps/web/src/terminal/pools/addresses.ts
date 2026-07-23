@@ -63,6 +63,12 @@ export const POOL_ADDRESSES: Partial<Record<UniverseChainId, PoolContractAddress
     v2Factory: '0xB92598Fa464B96FEC394a17A269Ad18060Ec60B2',
     weth: '0x5555555555555555555555555555555555555555',
   },
+  // Stable (988) — contracts/deployments/stable.json (WgUSDT stack; v2Router02/v2Factory/WgUSDT all on-chain code verified)
+  [UniverseChainId.Stable]: {
+    v2Router02: '0xFd0Dd93a1b6157e68b0A491d94249720506dc787',
+    v2Factory: '0xBe3729d06E3A17F3c7c5ac394c7bCbe138B6EEFA',
+    weth: '0x817997ca8394e26cce3de3a076a4889b27dbf9de',
+  },
   // NOTE: Tempo (4217) is intentionally omitted — gas is paid in pathUSD and its
   // `wrappedNativeCurrency` is null, so the native-ETH pool path does not apply. Its
   // v2 stack IS deployed (tempo.json), but wiring it needs ERC20↔ERC20-only handling

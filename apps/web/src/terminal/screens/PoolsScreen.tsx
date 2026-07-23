@@ -42,6 +42,7 @@ import { ExploreContextProvider } from '~/features/Explore/state'
 import { ExploreTablesFilterStoreContextProvider } from '~/features/Explore/state/exploreTablesFilterStore'
 import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens'
 import { useAccount } from '~/hooks/useAccount'
+import { shortAddr } from '~/terminal/components/ExplorerAddress'
 import { AddLiquidityModal } from '~/terminal/pools/AddLiquidityModal'
 import { getPoolAddresses } from '~/terminal/pools/addresses'
 import { useCreateV2Pool } from '~/terminal/pools/useCreateV2Pool'
@@ -92,9 +93,6 @@ function fmtPrice(value: number): string {
   })
 }
 
-function shortAddr(a?: string): string {
-  return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '—'
-}
 
 /* ------------------------------------------------------------------ token select */
 
