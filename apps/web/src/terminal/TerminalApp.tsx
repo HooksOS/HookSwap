@@ -19,7 +19,8 @@ import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 're
 import { useEnabledChains } from 'uniswap/src/features/chains/hooks/useEnabledChains'
 import { usePortfolioTotalValue } from 'uniswap/src/features/dataApi/balances/balancesRest'
 import { UniverseChainId } from 'uniswap/src/features/chains/types'
-import { getChainLabel } from 'uniswap/src/features/chains/utils'
+import { getChainLabel, isTestnetChain } from 'uniswap/src/features/chains/utils'
+import { CHAIN_TO_ADDRESSES_MAP } from '@uniswap/sdk-core'
 import { AccountDrawer } from '~/components/AccountDrawer'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { ChainLogo } from '~/components/Logo/ChainLogo'
@@ -190,30 +191,28 @@ function shortenAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`
 }
 
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
 /**
- * Chains the HookSwap Terminal is live on — the full v2+v3+UR stack AND the
- * self-service suite (multisender/token-factory/farms/airdrop/vesting/lockers/referral)
- * are deployed on all of these (see contracts/deployments/<chain>-suite.json). All are
- * selectable so users can reach their data + Tools on any chain, regardless of the
- * wallet's connected chain. NOTE: swap liquidity is only seeded on some chains yet, so
- * the Swap screen shows an honest "No route available" where a pair has no pool — that's
- * a per-pair data state, not a reason to gate the whole chain.
+ * Whether a chain is selectable in the Terminal chain switcher — DATA-DRIVEN, not a
+ * hardcoded list. A chain is "live" when HookSwap's DEX is actually deployed on it
+ * (a non-zero `swapRouter02Address` in the sdk address book) AND it's a mainnet.
+ * This means a newly-deployed chain becomes selectable automatically the moment its
+ * contracts are wired into `CHAIN_TO_ADDRESSES_MAP` — no more editing a manual set
+ * (which was the recurring cause of "my chain shows as Soon"). Testnets are excluded
+ * from the mainnet switcher (they can get a dedicated Testnet section later). Swap
+ * liquidity being thin on some chains is a per-pair "No route" state, not a reason to
+ * gate the chain.
  */
-const TERMINAL_LIVE_CHAIN_IDS: ReadonlySet<UniverseChainId> = new Set([
-  UniverseChainId.Robinhood,
-  UniverseChainId.MegaETH,
-  UniverseChainId.HyperEvm,
-  UniverseChainId.Ink,
-  UniverseChainId.Tempo,
-  UniverseChainId.XLayer,
-  // Stable Mainnet (988): full v2+v3+UR stack + self-service suite deployed and
-  // on-chain-verified (contracts/deployments/stable.json); native gas = USDT0.
-  UniverseChainId.Stable,
-])
+function isChainDexLive(id: UniverseChainId): boolean {
+  const swapRouter = (CHAIN_TO_ADDRESSES_MAP as Record<number, { swapRouter02Address?: string }>)[id]
+    ?.swapRouter02Address
+  return Boolean(swapRouter) && swapRouter !== ZERO_ADDRESS && !isTestnetChain(id)
+}
 
 /**
  * Chain switcher dropdown, rendered in the top bar's `actions` slot. Lists the
- * app's real enabled chains (`useEnabledChains`); only `TERMINAL_LIVE_CHAIN_IDS`
+ * app's real enabled chains (`useEnabledChains`); only `isChainDexLive`
  * are selectable — the rest render disabled with a "Coming soon" badge. Switches
  * the connected wallet via `useSelectChain` (wagmi) for the live chain(s).
  */
@@ -230,8 +229,8 @@ function ChainSwitcherMenu({
 }): JSX.Element {
   // Live chains first, so the one thing you can actually pick is right at the top.
   const orderedChains = [...chains].sort((a, b) => {
-    const aLive = TERMINAL_LIVE_CHAIN_IDS.has(a) ? 0 : 1
-    const bLive = TERMINAL_LIVE_CHAIN_IDS.has(b) ? 0 : 1
+    const aLive = isChainDexLive(a) ? 0 : 1
+    const bLive = isChainDexLive(b) ? 0 : 1
     return aLive - bLive
   })
   return (
@@ -269,7 +268,7 @@ function ChainSwitcherMenu({
         </div>
         {orderedChains.map((id) => {
           const active = id === activeChainId
-          const isLive = TERMINAL_LIVE_CHAIN_IDS.has(id)
+          const isLive = isChainDexLive(id)
           return (
             <button
               key={id}
@@ -374,7 +373,7 @@ export function TerminalChrome({
   // Chain chip: show the connected chain when a wallet is connected, else the
   // default enabled HookSwap chain (so the chip shows a real network + logo and
   // the switcher is always meaningful — never a bare "—"). Prefer Robinhood — the
-  // only chain the Terminal currently offers for trading (see TERMINAL_LIVE_CHAIN_IDS)
+  // only chain the Terminal currently offers for trading (see isChainDexLive)
   // — over whatever `defaultChainId`/ordering would otherwise surface.
   const displayChainId =
     account.chainId ??
