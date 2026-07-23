@@ -28,10 +28,12 @@
  *     price chart draws). Price = the series' last close; change/O/H/L/C are derived
  *     from the selected-timeframe series. The area chart is drawn from that real
  *     close series (no fabricated points); an empty series → honest empty state.
- *   • Trade tape — LIVE from the real pool-transactions feed (`usePoolTransactions`,
- *     swaps only). Price = token1/token0 executed ratio, size = token0 amount, side
- *     colours the mono price (buy green / sell red), time = relative from the tx
- *     timestamp.
+ *   • Trades table — LIVE from the real pool-transactions feed (`usePoolTransactions`:
+ *     swaps + liquidity adds/removes). Each row shows the tx type (Buy/Sell/Add/Remove,
+ *     coloured green/red for swap direction, gold for liquidity), both token amounts,
+ *     the tx USD value (honest "—" when the feed omits it), the maker address (linked to
+ *     the chain explorer), and relative time from the tx timestamp. On chains the feed
+ *     doesn't serve it returns empty → an honest "No trades yet", never fabricated.
  *   • Your position — LIVE from the wallet's real LP positions (`useWalletPositions`)
  *     filtered to this pool; disconnected → an honest connect prompt, connected with
  *     none → an honest empty state.
@@ -54,6 +56,7 @@ import { useLocalizationContext } from 'uniswap/src/features/language/Localizati
 import { useWalletPositions } from 'uniswap/src/features/positions/hooks/useWalletPositions'
 import type { PositionInfo } from 'uniswap/src/features/positions/types'
 import { AddressStringFormat, normalizeAddress } from 'uniswap/src/utils/addresses'
+import { ExplorerDataType, getExplorerLink } from 'uniswap/src/utils/linking'
 import { isEVMAddress } from 'utilities/src/addresses/evm/evm'
 import { NumberType } from 'utilities/src/format/types'
 import { PoolData, usePoolData } from '~/appGraphql/data/pools/usePoolData'
@@ -306,53 +309,65 @@ function HeaderStat({ label, value, valueColor, size }: { label: string; value: 
   )
 }
 
-/* ---------------------------------------------------------------- trade tape */
+/* --------------------------------------------------------------- trades table */
+
+/** Per-type label + colour: swap direction is green/red, liquidity events are gold. */
+const TRADE_TYPE_META: Record<PoolTableTransactionType, { label: string; color: string }> = {
+  [PoolTableTransactionType.BUY]: { label: 'Buy', color: terminalColors.greenUp },
+  [PoolTableTransactionType.SELL]: { label: 'Sell', color: terminalColors.redDown },
+  [PoolTableTransactionType.ADD]: { label: 'Add', color: terminalColors.warn },
+  [PoolTableTransactionType.REMOVE]: { label: 'Remove', color: terminalColors.warn },
+}
 
 interface TradeRow {
   key: string
-  price: string
-  size: string
+  typeLabel: string
+  typeColor: string
+  amount0: string
+  amount1: string
+  usd: string
+  makerShort: string
+  makerFull: string
   time: string
-  isBuy: boolean
 }
 
-function buildTradeRows(txns: PoolTableTransaction[]): TradeRow[] {
-  return txns
-    .filter((tx) => tx.type === PoolTableTransactionType.BUY || tx.type === PoolTableTransactionType.SELL)
-    .map((tx, index) => {
-      const size0 = Math.abs(tx.amount0)
-      const size1 = Math.abs(tx.amount1)
-      const price = size0 > 0 ? size1 / size0 : undefined
-      return {
-        key: `${tx.transaction}-${index}`,
-        price: formatRatio(price),
-        size: size0 > 0 ? size0.toLocaleString('en-US', { maximumFractionDigits: 3 }) : '—',
-        time: relativeFromSeconds(tx.timestamp),
-        isBuy: tx.type === PoolTableTransactionType.BUY,
-      }
-    })
+function buildTradeRows(txns: PoolTableTransaction[], symbol0: string, symbol1: string): TradeRow[] {
+  return txns.map((tx, index) => {
+    const meta = TRADE_TYPE_META[tx.type]
+    return {
+      key: `${tx.transaction}-${index}`,
+      typeLabel: meta.label,
+      typeColor: meta.color,
+      amount0: `${formatCompact(Math.abs(tx.amount0))} ${symbol0}`,
+      amount1: `${formatCompact(Math.abs(tx.amount1))} ${symbol1}`,
+      // Honest "—" when the feed omits/zeroes the USD value (custom chains often do).
+      usd: tx.amountUSD > 0 ? tx.amountUSD.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }) : '—',
+      makerShort: shortAddress(tx.maker),
+      makerFull: tx.maker,
+      time: relativeFromSeconds(tx.timestamp),
+    }
+  })
 }
 
 function TradesTab({
   rows,
   loading,
   error,
-  symbol0,
-  symbol1,
+  chainId,
 }: {
   rows: TradeRow[]
   loading: boolean
   error: boolean
-  symbol0: string
-  symbol1: string
+  chainId?: UniverseChainId
 }): JSX.Element {
   return (
     <>
+      {/* Column header */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr 44px',
-          gap: 6,
+          gridTemplateColumns: '58px 1fr auto',
+          gap: 8,
           padding: '9px 16px',
           fontFamily: MONO,
           fontSize: 10,
@@ -360,39 +375,72 @@ function TradesTab({
           borderBottom: `1px solid ${terminalColors.line3}`,
         }}
       >
-        <span>PRICE ({symbol1})</span>
-        <span style={{ textAlign: 'right' }}>SIZE ({symbol0})</span>
-        <span style={{ textAlign: 'right' }}>TIME</span>
+        <span>TYPE</span>
+        <span>AMOUNTS</span>
+        <span style={{ textAlign: 'right' }}>VALUE</span>
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
         {loading ? (
-          Array.from({ length: 12 }, (_, i) => (
-            <div
-              key={i}
-              style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 44px', gap: 6, padding: '7px 16px', alignItems: 'center' }}
-            >
-              <span style={{ height: 11, width: '70%', borderRadius: 3, background: terminalColors.line2 }} />
-              <span style={{ height: 11, width: '50%', borderRadius: 3, background: terminalColors.line3, justifySelf: 'end' }} />
-              <span style={{ height: 10, width: '80%', borderRadius: 3, background: terminalColors.line3, justifySelf: 'end' }} />
+          Array.from({ length: 10 }, (_, i) => (
+            <div key={i} style={{ padding: '9px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={{ height: 11, width: '85%', borderRadius: 3, background: terminalColors.line2 }} />
+              <span style={{ height: 10, width: '55%', borderRadius: 3, background: terminalColors.line3 }} />
             </div>
           ))
         ) : error ? (
-          <ComingSoon variant="panel" subtext="Trades appear here as they occur on-chain." minHeight={140} />
+          <div style={{ padding: '24px 16px', textAlign: 'center', fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt }}>
+            Trades unavailable on this network.
+          </div>
         ) : rows.length === 0 ? (
           <div style={{ padding: '24px 16px', textAlign: 'center', fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt }}>
-            No recent trades.
+            No trades yet.
           </div>
         ) : (
-          rows.map((row) => (
-            <div
-              key={row.key}
-              style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 44px', gap: 6, padding: '7px 16px', fontFamily: MONO, fontSize: 12, alignItems: 'center' }}
-            >
-              <span style={{ color: row.isBuy ? terminalColors.greenUp : terminalColors.redDown }}>{row.price}</span>
-              <span style={{ textAlign: 'right', color: terminalColors.ink }}>{row.size}</span>
-              <span style={{ textAlign: 'right', color: terminalColors.faint, fontSize: 10.5 }}>{row.time}</span>
-            </div>
-          ))
+          rows.map((row) => {
+            const explorerHref =
+              chainId !== undefined
+                ? getExplorerLink({ chainId, data: row.makerFull, type: ExplorerDataType.ADDRESS })
+                : ''
+            return (
+              <div
+                key={row.key}
+                style={{
+                  padding: '9px 16px',
+                  borderBottom: `1px solid ${terminalColors.line3}`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                }}
+              >
+                {/* Line 1 — type + amounts + USD value */}
+                <div style={{ display: 'grid', gridTemplateColumns: '58px 1fr auto', gap: 8, alignItems: 'baseline' }}>
+                  <span style={{ fontFamily: SANS, fontSize: 11.5, fontWeight: 600, color: row.typeColor }}>{row.typeLabel}</span>
+                  <span style={{ fontFamily: MONO, fontSize: 11.5, color: terminalColors.ink, minWidth: 0 }}>
+                    {row.amount0} <span style={{ color: terminalColors.ink3Alt }}>·</span> {row.amount1}
+                  </span>
+                  <span style={{ fontFamily: MONO, fontSize: 11.5, color: terminalColors.ink2, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {row.usd}
+                  </span>
+                </div>
+                {/* Line 2 — maker (explorer link) + relative time */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  {explorerHref ? (
+                    <a
+                      href={explorerHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ fontFamily: MONO, fontSize: 10.5, color: terminalColors.greenDeep, textDecoration: 'none' }}
+                    >
+                      {row.makerShort} ↗
+                    </a>
+                  ) : (
+                    <span style={{ fontFamily: MONO, fontSize: 10.5, color: terminalColors.ink3Alt }}>{row.makerShort}</span>
+                  )}
+                  <span style={{ fontFamily: MONO, fontSize: 10.5, color: terminalColors.faint }}>{row.time}</span>
+                </div>
+              </div>
+            )
+          })
         )}
       </div>
     </>
@@ -671,13 +719,18 @@ function MarketDetailScreenBody(): JSX.Element {
     priceInverted: false,
   })
 
-  // Real recent swaps for the trade tape.
+  // Real recent transactions for the trades table (swaps + liquidity add/remove).
   const txResult = usePoolTransactions({
     address: address ?? '',
     chainId,
     token0: poolData?.token0,
     protocolVersion,
-    filter: [PoolTableTransactionType.BUY, PoolTableTransactionType.SELL],
+    filter: [
+      PoolTableTransactionType.BUY,
+      PoolTableTransactionType.SELL,
+      PoolTableTransactionType.ADD,
+      PoolTableTransactionType.REMOVE,
+    ],
   })
 
   // Real wallet LP positions, filtered to this pool.
@@ -813,7 +866,10 @@ function MarketDetailScreenBody(): JSX.Element {
     return `${apr.toFixed(1)}%`
   }, [resolvedVolume24h, resolvedTvl, resolvedFeeAmount])
 
-  const tradeRows = useMemo(() => buildTradeRows(txResult.transactions), [txResult.transactions])
+  const tradeRows = useMemo(
+    () => buildTradeRows(txResult.transactions, symbol0, symbol1),
+    [txResult.transactions, symbol0, symbol1],
+  )
 
   // Pool composition — USD split from real reserves × real token prices.
   const usd0 = poolData?.tvlToken0 !== undefined && poolData.token0Price !== undefined ? poolData.tvlToken0 * poolData.token0Price : undefined
@@ -1110,8 +1166,7 @@ function MarketDetailScreenBody(): JSX.Element {
                 rows={tradeRows}
                 loading={txResult.loading && tradeRows.length === 0}
                 error={Boolean(txResult.error)}
-                symbol0={symbol0}
-                symbol1={symbol1}
+                chainId={chainId}
               />
             ) : (
               <YourPositionTab

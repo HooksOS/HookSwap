@@ -15,6 +15,7 @@
  * present — a count line never masquerades as dollars.
  */
 import { useEffect, useMemo, useRef } from 'react'
+import type { LedgerStack } from '~/terminal/components/ledgerPerChain'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 export interface TvlPoint {
@@ -24,12 +25,22 @@ export interface TvlPoint {
   value: number
 }
 
+/** Compact legend value formatter for the stacked (per-chain) mode. */
+function fmtStackValue(v: number, mode: LedgerStack['mode']): string {
+  const compact = new Intl.NumberFormat('en-US', {
+    notation: Math.abs(v) >= 1000 ? 'compact' : 'standard',
+    maximumFractionDigits: mode === 'usd' ? 2 : 0,
+  }).format(v)
+  return mode === 'usd' ? `$${compact}` : compact
+}
+
 export function LedgerTvlChart({
   points,
   countPoints = [],
   countLabel = 'Activity over time',
   height = 240,
   emptyText = 'History builds as daily snapshots accrue.',
+  stack,
 }: {
   points: TvlPoint[]
   /** Optional count series (activity) plotted when the USD series is empty/flat. */
@@ -39,9 +50,22 @@ export function LedgerTvlChart({
   height?: number
   /** Overlay note shown when NEITHER series has ≥ 2 points (honest empty state). */
   emptyText?: string
+  /**
+   * Optional per-chain STACKED mode. When provided, the chart draws one filled band per
+   * chain (`stack.series`) instead of the single `points`/`countPoints` line, and renders
+   * a chain legend below. `points`/`countPoints` are ignored in this mode.
+   */
+  stack?: LedgerStack
 }): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+
+  // Stacked mode is valid only with ≥ 2 x-labels, ≥ 1 chain band, and something non-zero.
+  const stackValid =
+    stack !== undefined &&
+    stack.xLabels.length >= 2 &&
+    stack.series.length >= 1 &&
+    stack.series.some((s) => s.values.some((v) => v > 0))
 
   // A USD series always wins; the count series is the honest activity fallback.
   const mode: 'usd' | 'count' | 'none' =
@@ -85,6 +109,62 @@ export function LedgerTvlChart({
         ctx.moveTo(0, y)
         ctx.lineTo(width, y)
         ctx.stroke()
+      }
+
+      // ── STACKED (per-chain) mode ────────────────────────────────────────────────
+      if (stack && stackValid) {
+        const n = stack.xLabels.length
+        const pad = 16
+        // Peak stacked total across the window → y-scale.
+        let maxTotal = 0
+        for (let x = 0; x < n; x++) {
+          let sum = 0
+          for (const s of stack.series) {
+            sum += s.values[x] || 0
+          }
+          if (sum > maxTotal) {
+            maxTotal = sum
+          }
+        }
+        if (maxTotal <= 0) {
+          return
+        }
+        const px = (i: number): number => (n === 1 ? width / 2 : (i / (n - 1)) * width)
+        const py = (v: number): number => height - pad - (v / maxTotal) * (height - pad * 2)
+
+        // Draw bands bottom-up, each filling from the running baseline to baseline+value.
+        const baseline = new Array<number>(n).fill(0)
+        for (const s of stack.series) {
+          const top = baseline.map((b, i) => b + (s.values[i] || 0))
+          ctx.beginPath()
+          ctx.moveTo(px(0), py(top[0]))
+          for (let i = 1; i < n; i++) {
+            ctx.lineTo(px(i), py(top[i]))
+          }
+          for (let i = n - 1; i >= 0; i--) {
+            ctx.lineTo(px(i), py(baseline[i]))
+          }
+          ctx.closePath()
+          ctx.save()
+          ctx.globalAlpha = 0.55
+          ctx.fillStyle = s.color
+          ctx.fill()
+          ctx.restore()
+          // Crisp top edge.
+          ctx.beginPath()
+          ctx.moveTo(px(0), py(top[0]))
+          for (let i = 1; i < n; i++) {
+            ctx.lineTo(px(i), py(top[i]))
+          }
+          ctx.strokeStyle = s.color
+          ctx.lineWidth = 1.5
+          ctx.lineJoin = 'round'
+          ctx.stroke()
+          for (let i = 0; i < n; i++) {
+            baseline[i] = top[i]
+          }
+        }
+        return
       }
 
       if (series.length < 2) {
@@ -151,15 +231,63 @@ export function LedgerTvlChart({
     draw()
     window.addEventListener('resize', draw)
     return () => window.removeEventListener('resize', draw)
-  }, [series, height])
+  }, [series, height, stack, stackValid])
+
+  // In stacked mode the empty state shows when there's nothing real to draw.
+  const stackEmpty = stack !== undefined && !stackValid
 
   return (
-    <div ref={wrapRef} style={{ position: 'relative', width: '100%', height }}>
-      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height }} />
+    <div>
+      <div ref={wrapRef} style={{ position: 'relative', width: '100%', height }}>
+        <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height }} />
 
-      {/* Count-mode caption — names the plotted series so a count line is never read
+        {/* Stacked-mode caption — names what's plotted (USD vs per-chain count). */}
+        {stack && stackValid ? (
+          <div
+            style={{
+              position: 'absolute',
+              top: 8,
+              left: 10,
+              fontFamily: terminalFonts.mono,
+              fontSize: 10.5,
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              color: terminalColors.faint,
+              background: terminalColors.panel,
+              border: `1px solid ${terminalColors.line}`,
+              borderRadius: 6,
+              padding: '2px 7px',
+              pointerEvents: 'none',
+            }}
+          >
+            {stack.caption}
+          </div>
+        ) : null}
+
+        {stackEmpty ? (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textAlign: 'center',
+              padding: '0 24px',
+              fontFamily: terminalFonts.sans,
+              fontSize: 12.5,
+              color: terminalColors.faint,
+              lineHeight: 1.5,
+            }}
+          >
+            {emptyText}
+          </div>
+        ) : null}
+
+        {/* Count-mode caption — names the plotted series so a count line is never read
           as a USD value (the panel header says "value", but here we plot activity). */}
-      {mode === 'count' ? (
+        {!stack && mode === 'count' ? (
         <div
           style={{
             position: 'absolute',
@@ -180,25 +308,44 @@ export function LedgerTvlChart({
         >
           {countLabel}
         </div>
-      ) : null}
+        ) : null}
 
-      {mode === 'none' ? (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            textAlign: 'center',
-            padding: '0 24px',
-            fontFamily: terminalFonts.sans,
-            fontSize: 12.5,
-            color: terminalColors.faint,
-            lineHeight: 1.5,
-          }}
-        >
-          {emptyText}
+        {!stack && mode === 'none' ? (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textAlign: 'center',
+              padding: '0 24px',
+              fontFamily: terminalFonts.sans,
+              fontSize: 12.5,
+              color: terminalColors.faint,
+              lineHeight: 1.5,
+            }}
+          >
+            {emptyText}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Per-chain legend — chain colour swatch + latest stacked value. */}
+      {stack && stackValid ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px', marginTop: 12 }}>
+          {stack.series.map((s) => {
+            const latest = s.values[s.values.length - 1] || 0
+            return (
+              <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flexShrink: 0 }} />
+                <span style={{ fontFamily: terminalFonts.sans, fontSize: 11.5, color: terminalColors.ink2 }}>{s.label}</span>
+                <span style={{ fontFamily: terminalFonts.mono, fontSize: 11, color: terminalColors.faint }}>
+                  {fmtStackValue(latest, stack.mode)}
+                </span>
+              </div>
+            )
+          })}
         </div>
       ) : null}
     </div>

@@ -24,7 +24,8 @@ export type TerminalScreenId =
   | 'vesting' // Tools — self-service token vesting (HookSwapVestingManager)
   | 'farms' // Tools — self-service staking farms (StakingRewardsFactory)
   | 'airdrop' // Tools — self-service merkle airdrops (MerkleDistributorFactory)
-  | 'launchpad' // Tools — instant token launch + v3 pool (InstantPoolLauncherV2)
+  | 'launchpad' // Tools — LaunchPad Explore/directory (fair-launch analytics + ledger)
+  | 'launch-create' // Tools — LaunchPad create wizard (deploy token + v3 pool, reached via CTA)
   | 'referrals' // Account — referral codes + earnings (deployed referral router)
   | 'portfolio' // B5
   | 'market-detail' // B6
@@ -126,6 +127,13 @@ export const terminalScreens: Record<TerminalScreenId, TerminalScreen> = {
   farms: { id: 'farms', code: 'FM', title: 'Farms', path: `${TERMINAL_BASE}/farms`, kind: 'page' },
   airdrop: { id: 'airdrop', code: 'AD', title: 'Airdrop', path: `${TERMINAL_BASE}/airdrop`, kind: 'page' },
   launchpad: { id: 'launchpad', code: 'LP', title: 'LaunchPad', path: `${TERMINAL_BASE}/launch`, kind: 'page' },
+  'launch-create': {
+    id: 'launch-create',
+    code: 'LC',
+    title: 'Launch a token',
+    path: `${TERMINAL_BASE}/launch/create`,
+    kind: 'page',
+  },
   referrals: { id: 'referrals', code: 'RF', title: 'Referrals', path: `${TERMINAL_BASE}/referrals`, kind: 'page' },
   portfolio: { id: 'portfolio', code: 'B5', title: 'Portfolio', path: `${TERMINAL_BASE}/portfolio`, kind: 'page' },
   'market-detail': {

@@ -155,6 +155,82 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
   )
 }
 
+/* ------------------------------------------------------------------ 7-day activity bars */
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Compact 7-day activity bar chart. `counts[6]` is today, `counts[0]` is 6 days ago —
+ * the exact buckets already computed for the "Activity · 7d" KPI (no new fetch). Bars
+ * scale to the busiest day; an all-zero week shows an honest empty caption.
+ */
+function SevenDayBars({ counts }: { counts: readonly number[] }): JSX.Element {
+  const max = Math.max(1, ...counts)
+  const total = counts.reduce((sum, c) => sum + c, 0)
+  const now = Date.now()
+  const dayLabel = (i: number): string =>
+    new Date(now - (6 - i) * DAY_MS).toLocaleDateString('en-US', { weekday: 'short' })
+
+  if (total === 0) {
+    return (
+      <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, padding: '4px 0' }}>
+        No activity in the last 7 days.
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }}>
+      {counts.map((c, i) => (
+        <div
+          key={i}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, minWidth: 0 }}
+        >
+          <span
+            style={{
+              fontFamily: MONO,
+              fontSize: 11,
+              fontWeight: 600,
+              color: c > 0 ? terminalColors.ink : terminalColors.faint,
+            }}
+          >
+            {c}
+          </span>
+          {/* Fixed-height track keeps every bar bottom-aligned regardless of count. */}
+          <div style={{ width: '100%', height: 64, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div
+              style={{
+                width: '100%',
+                maxWidth: 36,
+                height: c === 0 ? 3 : Math.round((c / max) * 60) + 4,
+                borderRadius: 4,
+                background: c > 0 ? terminalColors.brandGreen : terminalColors.line2,
+              }}
+            />
+          </div>
+          <span style={{ fontFamily: MONO, fontSize: 10, color: terminalColors.ink3 }}>{dayLabel(i)}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SevenDayBarsSkeleton(): JSX.Element {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10 }} aria-busy="true">
+      {Array.from({ length: 7 }, (_, i) => (
+        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+          <span style={{ height: 11, width: 14, borderRadius: 3, background: terminalColors.line3 }} />
+          <div style={{ width: '100%', height: 64, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div style={{ width: '100%', maxWidth: 36, height: 20 + ((i * 7) % 34), borderRadius: 4, background: terminalColors.line2 }} />
+          </div>
+          <span style={{ height: 10, width: 20, borderRadius: 3, background: terminalColors.line3 }} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /* ------------------------------------------------------------------ connect state */
 
 function ConnectState({ onConnect }: { onConnect: () => void }): JSX.Element {
@@ -329,6 +405,17 @@ export function ActivityScreen(): JSX.Element {
           sparklinePosition="right"
           loading={kpiLoading}
         />
+      </div>
+
+      {/* 7-day activity bar chart — real daily-bucket counts (same data as the 7d KPI). */}
+      <div style={{ marginBottom: 20 }}>
+        <InstrumentPanel title="Activity · last 7 days" corners meta={[`${sevenDayCount} events`]}>
+          {kpiLoading ? (
+            <SevenDayBarsSkeleton />
+          ) : (
+            <SevenDayBars counts={dailyCounts.length === 7 ? dailyCounts : new Array<number>(7).fill(0)} />
+          )}
+        </InstrumentPanel>
       </div>
 
       {/* Filter chips */}

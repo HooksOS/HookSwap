@@ -1,5 +1,8 @@
 /**
- * HookSwap Terminal — LaunchPad (HookOSV3Launcher): direct-to-v3 fair launch.
+ * HookSwap Terminal — LaunchPad Create wizard (HookOSV3Launcher): direct-to-v3 fair launch.
+ *
+ * This is the CREATE half of the LaunchPad, mounted at `/launch/create`. The Explore/directory
+ * half (market-cap hero + charts + launches ledger) lives at `/launch` via LaunchpadExplore.
  *
  * Mints a token + seeds a single-sided v3 pool + registers the position in the
  * HookOSV3FeeVault — all in one tx. Creator picks DEX (Uniswap V3 / HookSwap),
@@ -13,21 +16,18 @@
  *   • My launches + pending fees — from the FeeVault; honest empty states.
  */
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Link } from 'react-router'
 import { UniverseChainId } from 'uniswap/src/features/chains/types'
 import { getChainLabel } from 'uniswap/src/features/chains/utils'
 import { formatUnits } from '~/chains'
-import { serializeSwapAddressesToURLParameters } from '~/pages/Swap/Swap/state/tradeQueryParams'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
-import { LaunchpadExplore } from '~/terminal/screens/launchpad/LaunchpadExplore'
 import {
   randomSalt,
   useLaunch,
   useMyLaunches,
-  useRecentLaunches,
   V3Dex,
   PairToken,
   ZERO_SALT,
@@ -410,124 +410,9 @@ function MyLaunchesPanel({ chainId, owner }: { chainId?: number; owner?: `0x${st
   )
 }
 
-/* ------------------------------------------------------------------ recent launches (public) */
-
-function timeAgo(unixSec: bigint): string {
-  const now = Math.floor(Date.now() / 1000)
-  const diff = now - Number(unixSec)
-  if (diff < 60) {
-    return 'just now'
-  }
-  if (diff < 3600) {
-    return `${Math.floor(diff / 60)}m ago`
-  }
-  if (diff < 86400) {
-    return `${Math.floor(diff / 3600)}h ago`
-  }
-  return `${Math.floor(diff / 86400)}d ago`
-}
-
-function RecentLaunchesPanel({ chainId }: { chainId?: number }): JSX.Element {
-  const recent = useRecentLaunches({ chainId, limit: 20 })
-  const navigate = useNavigate()
-
-  // Jump to the Terminal swap with the launched token pre-selected as OUTPUT on the
-  // launch's chain — the same deep-link the Landing tickers + ⌘K palette use
-  // (serializeSwapAddressesToURLParameters → `/swap?chain=…&outputCurrency=<addr>`).
-  // If the token isn't routable yet the swap screen shows its own honest "no route"
-  // state — we add no fake availability check here.
-  const goToTrade = (token: string): void => {
-    let path = '/swap'
-    if (token && chainId !== undefined) {
-      try {
-        path += serializeSwapAddressesToURLParameters({
-          outputTokenAddress: token,
-          chainId: chainId as UniverseChainId,
-        })
-      } catch {
-        path = '/swap'
-      }
-    }
-    navigate(path)
-  }
-
-  return (
-    <Panel title="05 · Recent launches" meta={[recent.isLoading ? 'loading…' : `${recent.launches.length} total`]}>
-      {recent.isLoading ? (
-        <Notice tone="muted">Loading recent launches…</Notice>
-      ) : recent.launches.length === 0 ? (
-        <Notice tone="muted">No tokens launched yet — be the first.</Notice>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {recent.launches.map((l) => (
-            <div
-              key={String(l.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                border: `1px solid ${terminalColors.line}`,
-                borderRadius: 10,
-                padding: '8px 10px',
-                gap: 8,
-              }}
-            >
-              {/* Address links to the explorer (kept). */}
-              <a
-                href={`https://robinscan.io/address/${l.token}`}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  fontFamily: MONO,
-                  fontSize: 12,
-                  fontWeight: 500,
-                  color: terminalColors.brandGreen,
-                  textDecoration: 'none',
-                }}
-              >
-                {shortAddr(l.token)}
-              </a>
-              <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt }}>
-                {l.dex === V3Dex.HookSwap ? 'HookSwap' : 'Legacy'}
-              </span>
-              <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.faint, marginLeft: 'auto' }}>
-                {timeAgo(l.createdAt)}
-              </span>
-              {/* Trade → swap with this token pre-selected as output. Separate control
-                  from the explorer link so the two actions never conflict. Shown only for
-                  HookSwap-DEX launches: those pool on the router's factory and are
-                  routable; legacy (non-HookSwap-factory) launches can't route, so a Trade
-                  button would only dead-end at "no route" — offer the explorer link only. */}
-              {l.dex === V3Dex.HookSwap ? (
-                <button
-                  type="button"
-                  onClick={() => goToTrade(l.token)}
-                  style={{
-                    fontFamily: MONO,
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: terminalColors.greenDeep,
-                    background: terminalColors.greenBg,
-                    border: `1px solid ${terminalColors.greenBorder}`,
-                    borderRadius: 8,
-                    padding: '4px 12px',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                  }}
-                >
-                  Trade
-                </button>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      )}
-    </Panel>
-  )
-}
-
 /* ------------------------------------------------------------------ the screen */
 
-export function LaunchScreen(): JSX.Element {
+export function LaunchCreateScreen(): JSX.Element {
   const account = useAccount()
   const accountDrawer = useAccountDrawer()
 
@@ -611,6 +496,25 @@ export function LaunchScreen(): JSX.Element {
 
   return (
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
+      {/* Back to the LaunchPad Explore directory */}
+      <Link
+        to="/launch"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          fontFamily: MONO,
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: '0.04em',
+          color: terminalColors.ink3Alt,
+          textDecoration: 'none',
+          marginBottom: 14,
+        }}
+      >
+        ← LaunchPad
+      </Link>
+
       {/* Header */}
       <Eyebrow style={{ display: 'block', marginBottom: 8 }}>LaunchPad · Fair launch</Eyebrow>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
@@ -645,10 +549,6 @@ export function LaunchScreen(): JSX.Element {
         Deploy a token, seed its v3 pool, and lock the LP — in a single transaction. Pick your DEX, pair token, and
         optionally make an initial buy.
       </div>
-
-      {/* LaunchPad "Ledger" analytics — live launchpad indexer (Total Market Cap, stat tiles,
-          sortable launch rows linking to each shareable launch page). Sits atop the create UI. */}
-      <LaunchpadExplore />
 
       {/* Stat tiles */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
@@ -702,6 +602,21 @@ export function LaunchScreen(): JSX.Element {
               </div>
             )}
           </Panel>
+
+          {/* Cross-link to the plain fixed-supply token factory (no pool). */}
+          <Link
+            to="/token/new"
+            style={{
+              fontFamily: SANS,
+              fontSize: 11.5,
+              color: terminalColors.ink3Alt,
+              textDecoration: 'none',
+              lineHeight: 1.5,
+            }}
+          >
+            Just need a plain fixed-supply token?{' '}
+            <span style={{ color: terminalColors.brandGreen, fontWeight: 600 }}>Use the token factory →</span>
+          </Link>
 
           {deployed ? (
             <Panel title="02 · Pool">
@@ -904,7 +819,6 @@ export function LaunchScreen(): JSX.Element {
           </Panel>
 
           <MyLaunchesPanel chainId={chainId} owner={owner} />
-          <RecentLaunchesPanel chainId={chainId} />
         </div>
       </div>
     </div>

@@ -20,7 +20,8 @@
  */
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
-import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
+import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
+import { LedgerTvlChart, type TvlPoint } from '~/terminal/components/LedgerTvlChart'
 import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
 import { StatCard } from '~/terminal/components/StatCard'
 import type { Address } from '~/chains'
@@ -34,6 +35,7 @@ import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
 const SANS = terminalFonts.sans
+const DISPLAY = terminalFonts.display
 
 type SortKey = 'mcap' | 'created'
 
@@ -94,7 +96,129 @@ function parseTokenId(raw: string | undefined): bigint | undefined {
   }
 }
 
+const DAY_SECONDS = 86_400
+/** Cap the launches-per-day timeline to this many trailing days (keeps the series bounded). */
+const LAUNCH_HISTORY_MAX_DAYS = 180
+
+/**
+ * Bucket each launch's `createdAt` (UNIX seconds) into UTC daily counts, zero-filling the
+ * gaps between the first and last launch day so the line reads as a real timeline (a 0 means
+ * genuinely zero launches that day — never fabricated). Trailing window capped at
+ * LAUNCH_HISTORY_MAX_DAYS. Feeds LedgerTvlChart's COUNT mode; < 2 days → honest empty state.
+ */
+function buildLaunchesPerDay(launches: Launch[] | undefined): TvlPoint[] {
+  if (!launches || launches.length === 0) {
+    return []
+  }
+  const days = launches
+    .map((l) => l.createdAt)
+    .filter((t) => Number.isFinite(t) && t > 0)
+    .map((t) => Math.floor(t / DAY_SECONDS))
+  if (days.length === 0) {
+    return []
+  }
+  const counts = new Map<number, number>()
+  for (const d of days) {
+    counts.set(d, (counts.get(d) ?? 0) + 1)
+  }
+  const maxDay = Math.max(...days)
+  const minDay = Math.max(Math.min(...days), maxDay - (LAUNCH_HISTORY_MAX_DAYS - 1))
+  const points: TvlPoint[] = []
+  for (let d = minDay; d <= maxDay; d++) {
+    const label = new Date(d * DAY_SECONDS * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    points.push({ label, value: counts.get(d) ?? 0 })
+  }
+  return points
+}
+
 /* ------------------------------------------------------------------ small parts */
+
+/**
+ * LP-locked vs unlocked donut from the indexer stats (`lpLockedLaunches` / `totalLaunches`).
+ * A small inline conic-gradient donut (locked = green, unlocked = gold), mirroring the
+ * LpPill semantics. Loading → muted ring; zero launches → honest empty; never fabricated.
+ */
+function LpLockDonut({
+  locked,
+  total,
+  loading,
+}: {
+  locked: number | undefined
+  total: number | undefined
+  loading: boolean
+}): JSX.Element {
+  const ready = !loading && total !== undefined && locked !== undefined && total > 0
+  const lockedN = ready ? Math.min(locked as number, total as number) : 0
+  const unlockedN = ready ? (total as number) - lockedN : 0
+  const lockedPct = ready ? (lockedN / (total as number)) * 100 : 0
+  const unlockedPct = ready ? 100 - lockedPct : 0
+
+  const gradient = ready
+    ? `conic-gradient(${terminalColors.greenDeep} 0% ${lockedPct.toFixed(2)}%, ${terminalColors.warn} ${lockedPct.toFixed(2)}% 100%)`
+    : undefined
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+      <div style={{ position: 'relative', flexShrink: 0 }}>
+        <div
+          style={{
+            width: 104,
+            height: 104,
+            borderRadius: '50%',
+            background: gradient ?? terminalColors.line2,
+          }}
+        />
+        <div style={{ position: 'absolute', inset: 22, borderRadius: '50%', background: terminalColors.bg }} />
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <span style={{ fontFamily: MONO, fontSize: 18, fontWeight: 600, color: ready ? terminalColors.greenDeep : terminalColors.faint, letterSpacing: '-0.02em' }}>
+            {ready ? `${Math.round(lockedPct)}%` : '—'}
+          </span>
+          <span style={{ fontFamily: SANS, fontSize: 9, letterSpacing: '0.04em', textTransform: 'uppercase', color: terminalColors.faint }}>
+            Locked
+          </span>
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, flex: 1 }}>
+        {loading ? (
+          Array.from({ length: 2 }, (_, i) => (
+            <div key={i} style={{ height: 12, width: '70%', borderRadius: 4, background: terminalColors.line2 }} />
+          ))
+        ) : !ready ? (
+          <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, lineHeight: 1.5 }}>
+            LP-lock ratio appears once launches are indexed.
+          </div>
+        ) : (
+          <>
+            <LpLockLegend color={terminalColors.greenDeep} label="LP Locked" count={lockedN} pct={lockedPct} />
+            <LpLockLegend color={terminalColors.warn} label="Unlocked" count={unlockedN} pct={unlockedPct} />
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function LpLockLegend({ color, label, count, pct }: { color: string; label: string; count: number; pct: number }): JSX.Element {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ width: 9, height: 9, borderRadius: 2, background: color, flexShrink: 0 }} />
+      <span style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink2, flex: 1, minWidth: 0 }}>{label}</span>
+      <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: terminalColors.ink }}>{fmtInt(count)}</span>
+      <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint, width: 40, textAlign: 'right' }}>
+        {pct.toFixed(0)}%
+      </span>
+    </div>
+  )
+}
 
 /**
  * LP-lock status pill driven by the on-chain FeeVault truth (`status`), falling back to the
@@ -500,6 +624,11 @@ export function LaunchpadExplore(): JSX.Element {
     })
   }, [launchesHook.launches, sort])
 
+  // Launches-per-day timeline — bucketed client-side from the SAME /launches payload (no
+  // extra endpoint). Feeds LedgerTvlChart in count mode.
+  const launchesPerDay = useMemo(() => buildLaunchesPerDay(launchesHook.launches), [launchesHook.launches])
+  const isMobile = useIsMobileViewport()
+
   // On-chain LP-lock truth from the FeeVault. The vault is per-chain and today only one
   // chain (Robinhood) has a deployed FeeVault, so query the single chain that has one and
   // include only its tokens; rows on other chains resolve to 'unknown' → LpPill falls back
@@ -524,7 +653,68 @@ export function LaunchpadExplore(): JSX.Element {
   const heroNumber = statsHook.isLoading ? undefined : fmtUsd(mcapDisplay)
 
   return (
-    <div style={{ marginBottom: 24 }}>
+    <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
+      {/* Header — title + primary "Launch a token" CTA (routes to the create wizard). */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'space-between',
+          gap: 16,
+          flexWrap: 'wrap',
+          marginBottom: 18,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <Eyebrow style={{ display: 'block', marginBottom: 8 }}>LaunchPad · Explore</Eyebrow>
+          <h1
+            style={{
+              fontFamily: DISPLAY,
+              fontSize: 24,
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+              color: terminalColors.ink,
+              margin: 0,
+            }}
+          >
+            LaunchPad
+          </h1>
+          <div
+            style={{
+              fontFamily: SANS,
+              fontSize: 13,
+              color: terminalColors.ink2,
+              marginTop: 6,
+              maxWidth: 560,
+              lineHeight: 1.5,
+            }}
+          >
+            Every fair-launched token, tracked live by the LaunchPad indexer. Deploy your own token, seed its v3 pool,
+            and lock the LP — all in a single transaction.
+          </div>
+        </div>
+        <Link
+          to="/launch/create"
+          style={{
+            flexShrink: 0,
+            fontFamily: MONO,
+            fontSize: 13,
+            fontWeight: 600,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            color: terminalColors.btnInk,
+            background: terminalColors.brandGreen,
+            border: 'none',
+            borderRadius: 12,
+            padding: '12px 22px',
+            textDecoration: 'none',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Launch a token →
+        </Link>
+      </div>
+
       {offline ? <OfflineNote onRetry={statsHook.refetch} /> : null}
 
       {/* Hero — total market cap (no launch TVL-history endpoint → single figure, no chart) */}
@@ -587,6 +777,33 @@ export function LaunchpadExplore(): JSX.Element {
           loading={statsHook.isLoading}
           comingSoon={Boolean(stats) && stats!.totalMarketCapUsd === undefined}
         />
+      </div>
+
+      {/* Charts — launches-per-day timeline + LP-lock ratio (both from data already fetched) */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 2fr) minmax(0, 1fr)',
+          gap: 12,
+          marginBottom: 14,
+        }}
+      >
+        <InstrumentPanel title="LAUNCH ACTIVITY" corners>
+          <LedgerTvlChart
+            points={[]}
+            countPoints={launchesPerDay}
+            countLabel="Launches per day"
+            height={200}
+            emptyText={
+              launchesHook.launches === undefined
+                ? 'Loading launch history…'
+                : 'Launch activity builds as fair-launches are created on-chain.'
+            }
+          />
+        </InstrumentPanel>
+        <InstrumentPanel title="LP-LOCK RATIO" corners>
+          <LpLockDonut locked={stats?.lpLockedLaunches} total={stats?.totalLaunches} loading={statsHook.isLoading} />
+        </InstrumentPanel>
       </div>
 
       {/* Ledger — launches explore */}

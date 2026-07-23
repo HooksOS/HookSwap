@@ -17,7 +17,9 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
+import { LedgerDonut, type DonutSlice } from '~/terminal/components/LedgerDonut'
 import { LedgerTvlChart, type TvlPoint } from '~/terminal/components/LedgerTvlChart'
+import { buildPerChainStack } from '~/terminal/components/ledgerPerChain'
 import { StatCard } from '~/terminal/components/StatCard'
 import type { Lock, PoolAgg, TokenAgg, TVLSnapshot } from '~/terminal/lockers/analytics/client'
 import { useLockerLocks } from '~/terminal/lockers/analytics/useLockerLocks'
@@ -31,6 +33,17 @@ import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 const MONO = terminalFonts.mono
 const SANS = terminalFonts.sans
 const DISPLAY = terminalFonts.display
+
+/** Small uppercase subhead above each chart within a shared panel. */
+const subheadStyle: React.CSSProperties = {
+  fontFamily: SANS,
+  fontSize: 11,
+  fontWeight: 600,
+  letterSpacing: '0.05em',
+  textTransform: 'uppercase',
+  color: terminalColors.faint,
+  marginBottom: 12,
+}
 
 /* ------------------------------------------------------------------ formatting */
 
@@ -517,8 +530,31 @@ export function LockerExplore(): JSX.Element {
   const locksHook = useLockerLocks()
 
   const [view, setView] = useState<'tokens' | 'pools'>('tokens')
+  const isMobile = useIsMobileViewport()
 
   const stats = statsHook.stats
+
+  // Priced-vs-unpriced coverage donut — both counts are always present in /stats.
+  const coverageDonut = useMemo<DonutSlice[] | undefined>(() => {
+    if (!stats) {
+      return undefined
+    }
+    return [
+      { label: 'Priced', value: stats.pricedLocks, color: terminalColors.brandGreen },
+      { label: 'Unpriced', value: stats.unpricedLocks, color: terminalColors.faint },
+    ]
+  }, [stats])
+
+  // Per-chain TVL stacked area from /tvl-history snapshots (USD when priced, else the
+  // always-real per-chain lock count — never a fabricated $0).
+  const perChainStack = useMemo(
+    () =>
+      buildPerChainStack(tvlHook.points, (pc) => pc.totalLocks, {
+        usd: 'Per-chain TVL (USD)',
+        count: 'Per-chain locks',
+      }),
+    [tvlHook.points],
+  )
 
   // Resolve a representative lock id per (chain, token) so aggregate rows can link to the
   // per-lock proof-of-lock page (`/lock/:chainId/:id`). Locks arrive TVL-sorted, so the
@@ -669,6 +705,42 @@ export function LockerExplore(): JSX.Element {
           loading={statsHook.isLoading}
         />
       </div>
+
+      {/* Composition — per-chain TVL + price coverage */}
+      <InstrumentPanel title="COMPOSITION" style={{ marginBottom: 14 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.5fr) minmax(240px, 1fr)',
+            gap: isMobile ? 20 : 26,
+            alignItems: 'start',
+          }}
+        >
+          <div>
+            <div style={subheadStyle}>TVL by chain</div>
+            {tvlHook.isLoading ? (
+              <div style={{ height: 200, borderRadius: 10, background: terminalColors.panel }} aria-busy="true" />
+            ) : (
+              <LedgerTvlChart
+                points={[]}
+                stack={perChainStack}
+                height={200}
+                emptyText="Per-chain history builds as daily snapshots accrue."
+              />
+            )}
+          </div>
+          <div>
+            <div style={subheadStyle}>Price coverage</div>
+            <LedgerDonut
+              slices={coverageDonut}
+              loading={statsHook.isLoading}
+              centerValue={stats ? fmtInt(stats.totalLocks) : undefined}
+              centerLabel="Locks"
+              emptyText="No locks to price yet."
+            />
+          </div>
+        </div>
+      </InstrumentPanel>
 
       {/* Ledger — tokens / pools explore */}
       <InstrumentPanel

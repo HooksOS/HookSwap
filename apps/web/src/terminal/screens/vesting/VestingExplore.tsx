@@ -19,7 +19,9 @@
 import { useMemo, useState } from 'react'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
+import { LedgerDonut, type DonutSlice } from '~/terminal/components/LedgerDonut'
 import { LedgerTvlChart, type TvlPoint } from '~/terminal/components/LedgerTvlChart'
+import { buildPerChainStack } from '~/terminal/components/ledgerPerChain'
 import { StatCard } from '~/terminal/components/StatCard'
 import type { VestingSchedule, VestingSnapshot, VestingSort, VestingStatus } from '~/terminal/vesting/analytics/client'
 import { useVesting } from '~/terminal/vesting/analytics/useVesting'
@@ -30,6 +32,17 @@ import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
 const SANS = terminalFonts.sans
+
+/** Small uppercase subhead above each chart within a shared panel. */
+const subheadStyle: React.CSSProperties = {
+  fontFamily: SANS,
+  fontSize: 11,
+  fontWeight: 600,
+  letterSpacing: '0.05em',
+  textTransform: 'uppercase',
+  color: terminalColors.faint,
+  marginBottom: 12,
+}
 
 type SortKey = Extract<VestingSort, 'tvl' | 'ending' | 'pct'>
 
@@ -450,11 +463,52 @@ const SORT_LABEL: Record<SortKey, string> = { tvl: 'Top value', ending: 'Ending 
 export function VestingExplore(): JSX.Element {
   const [sort, setSort] = useState<SortKey>('tvl')
 
+  const isMobile = useIsMobileViewport()
   const statsHook = useVestingStats()
   const tvlHook = useVestingTvlHistory()
   const listHook = useVesting({ sort })
 
   const stats = statsHook.stats
+
+  // Status donut — counts the LOADED schedules by lifecycle phase (cliff/vesting/complete).
+  // Honest: reflects the schedules currently returned; a hint flags when more exist.
+  const statusDonut = useMemo<DonutSlice[] | undefined>(() => {
+    const list = listHook.schedules
+    if (!list) {
+      return undefined
+    }
+    let cliff = 0
+    let vesting = 0
+    let complete = 0
+    for (const s of list) {
+      if (s.status === 'cliff') {
+        cliff++
+      } else if (s.status === 'complete') {
+        complete++
+      } else {
+        vesting++
+      }
+    }
+    return [
+      { label: 'Vesting', value: vesting, color: terminalColors.greenUp },
+      { label: 'Cliff', value: cliff, color: terminalColors.warn },
+      { label: 'Complete', value: complete, color: terminalColors.ink3 },
+    ]
+  }, [listHook.schedules])
+
+  // Per-chain TVL stacked area from /vesting/tvl-history (USD when priced, else the
+  // always-real per-chain schedule count — never a fabricated $0).
+  const perChainStack = useMemo(
+    () =>
+      buildPerChainStack(tvlHook.points, (pc) => pc.totalSchedules, {
+        usd: 'Per-chain TVL (USD)',
+        count: 'Per-chain schedules',
+      }),
+    [tvlHook.points],
+  )
+
+  const loadedCount = listHook.schedules?.length ?? 0
+  const totalCount = listHook.total ?? loadedCount
 
   // Only snapshots that carry a real USD value can be charted — the rest are unpriced
   // (honest gap, never a fabricated point). With < 2 the chart shows its empty state.
@@ -566,6 +620,49 @@ export function VestingExplore(): JSX.Element {
           comingSoon={Boolean(stats) && stats!.totalTvlUsd === undefined}
         />
       </div>
+
+      {/* Composition — per-chain TVL + schedule status */}
+      <InstrumentPanel title="COMPOSITION" style={{ marginBottom: 14 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.5fr) minmax(240px, 1fr)',
+            gap: isMobile ? 20 : 26,
+            alignItems: 'start',
+          }}
+        >
+          <div>
+            <div style={subheadStyle}>TVL by chain</div>
+            {tvlHook.isLoading ? (
+              <div style={{ height: 200, borderRadius: 10, background: terminalColors.panel }} aria-busy="true" />
+            ) : (
+              <LedgerTvlChart
+                points={[]}
+                stack={perChainStack}
+                height={200}
+                emptyText="Per-chain history builds as daily snapshots accrue."
+              />
+            )}
+          </div>
+          <div>
+            <div style={subheadStyle}>
+              Schedule status
+              {totalCount > loadedCount ? (
+                <span style={{ fontFamily: MONO, fontWeight: 400, letterSpacing: 0, textTransform: 'none', marginLeft: 6 }}>
+                  ({fmtInt(loadedCount)} of {fmtInt(totalCount)})
+                </span>
+              ) : null}
+            </div>
+            <LedgerDonut
+              slices={statusDonut}
+              loading={listHook.isLoading}
+              centerValue={listHook.schedules ? fmtInt(loadedCount) : undefined}
+              centerLabel="Schedules"
+              emptyText="No schedules yet."
+            />
+          </div>
+        </div>
+      </InstrumentPanel>
 
       {/* Ledger — schedules explore */}
       <InstrumentPanel

@@ -39,6 +39,7 @@ const TerminalVestingPage = lazy(() => import('~/terminal/TerminalVestingPage'))
 const TerminalFarmsPage = lazy(() => import('~/terminal/TerminalFarmsPage'))
 const TerminalAirdropPage = lazy(() => import('~/terminal/TerminalAirdropPage'))
 const TerminalLaunchPage = lazy(() => import('~/terminal/TerminalLaunchPage'))
+const TerminalLaunchCreatePage = lazy(() => import('~/terminal/TerminalLaunchCreatePage'))
 const TerminalLaunchDetailPage = lazy(() => import('~/terminal/TerminalLaunchDetailPage'))
 const TerminalPortfolioPage = lazy(() => import('~/terminal/TerminalPortfolioPage'))
 const TerminalActivityPage = lazy(() => import('~/terminal/TerminalActivityPage'))
@@ -454,6 +455,18 @@ export const routes: RouteDefinition[] = [
     getElement: () => (
       <Suspense fallback={null}>
         <TerminalLaunchPage />
+      </Suspense>
+    ),
+  }),
+  createRouteDefinition({
+    // Create wizard — single `/launch/create` segment, so it never collides with the
+    // two-segment shareable launch page below.
+    path: '/launch/create',
+    getTitle: () => 'HookSwap · Launch a token',
+    getDescription: () => StaticTitlesAndDescriptions.SwapDescription,
+    getElement: () => (
+      <Suspense fallback={null}>
+        <TerminalLaunchCreatePage />
       </Suspense>
     ),
   }),

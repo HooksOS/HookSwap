@@ -19,6 +19,7 @@
 import { useMemo, useState } from 'react'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
+import { LedgerDonut, type DonutSlice } from '~/terminal/components/LedgerDonut'
 import { LedgerTvlChart, type TvlPoint } from '~/terminal/components/LedgerTvlChart'
 import { StatCard } from '~/terminal/components/StatCard'
 import type { Farm, FarmsSnapshot } from '~/terminal/farms/analytics/client'
@@ -31,7 +32,89 @@ import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 const MONO = terminalFonts.mono
 const SANS = terminalFonts.sans
 
+/** Small uppercase subhead above each chart within a shared panel. */
+const subheadStyle: React.CSSProperties = {
+  fontFamily: SANS,
+  fontSize: 11,
+  fontWeight: 600,
+  letterSpacing: '0.05em',
+  textTransform: 'uppercase',
+  color: terminalColors.faint,
+  marginBottom: 12,
+}
+
 type SortKey = 'tvl' | 'apr'
+
+/* ------------------------------------------------------------------ APR distribution */
+
+/** APR histogram buckets (percent units). Upper-open on the last bucket. */
+const APR_BUCKETS: { label: string; lo: number; hi: number }[] = [
+  { label: '0–10%', lo: 0, hi: 10 },
+  { label: '10–25%', lo: 10, hi: 25 },
+  { label: '25–50%', lo: 25, hi: 50 },
+  { label: '50–100%', lo: 50, hi: 100 },
+  { label: '100%+', lo: 100, hi: Infinity },
+]
+
+/**
+ * APR distribution — a horizontal bar per bucket, counting farms whose `aprPct` is a real
+ * priced value (unpriced farms are excluded, never bucketed as 0%). Honest empty state
+ * when no farm has a priced APR yet.
+ */
+function AprHistogram({ farms, loading }: { farms?: Farm[]; loading: boolean }): JSX.Element {
+  const { counts, priced, maxCount } = useMemo(() => {
+    const c = new Array<number>(APR_BUCKETS.length).fill(0)
+    let n = 0
+    for (const f of farms ?? []) {
+      const apr = f.aprPct
+      if (apr === undefined || !Number.isFinite(apr)) {
+        continue
+      }
+      n++
+      const idx = APR_BUCKETS.findIndex((b) => apr >= b.lo && apr < b.hi)
+      c[idx >= 0 ? idx : APR_BUCKETS.length - 1] += 1
+    }
+    return { counts: c, priced: n, maxCount: Math.max(1, ...c) }
+  }, [farms])
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {APR_BUCKETS.map((b) => (
+          <div key={b.label} style={{ height: 12, width: '80%', borderRadius: 4, background: terminalColors.line2 }} />
+        ))}
+      </div>
+    )
+  }
+
+  if (priced === 0) {
+    return (
+      <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, lineHeight: 1.5, padding: '8px 0' }}>
+        APR distribution appears once farms report a priced yield.
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {APR_BUCKETS.map((b, i) => {
+        const count = counts[i]
+        const w = (count / maxCount) * 100
+        return (
+          <div key={b.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.ink3, width: 62, flexShrink: 0 }}>{b.label}</span>
+            <div style={{ flex: 1, height: 8, borderRadius: 999, background: terminalColors.panel2, overflow: 'hidden', minWidth: 0 }}>
+              <div style={{ width: `${w}%`, height: '100%', background: terminalColors.brandGreen, borderRadius: 999 }} />
+            </div>
+            <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: terminalColors.ink, width: 28, textAlign: 'right', flexShrink: 0 }}>
+              {count}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 /* ------------------------------------------------------------------ formatting */
 
@@ -433,11 +516,24 @@ function OfflineNote({ onRetry }: { onRetry: () => void }): JSX.Element {
 export function FarmsExplore(): JSX.Element {
   const [sort, setSort] = useState<SortKey>('tvl')
 
+  const isMobile = useIsMobileViewport()
   const statsHook = useFarmsStats()
   const tvlHook = useFarmsTvlHistory()
   const farmsHook = useFarms({ sort })
 
   const stats = statsHook.stats
+
+  // Active-vs-ended donut — both counts derive from /farms/stats (always present).
+  const statusDonut = useMemo<DonutSlice[] | undefined>(() => {
+    if (!stats) {
+      return undefined
+    }
+    const ended = Math.max(0, stats.totalFarms - stats.activeFarms)
+    return [
+      { label: 'Active', value: stats.activeFarms, color: terminalColors.greenUp },
+      { label: 'Ended', value: ended, color: terminalColors.warn },
+    ]
+  }, [stats])
 
   // Only snapshots that carry a real USD value can be charted — the rest are unpriced
   // (honest gap, never a fabricated point). With < 2 the chart shows its empty state.
@@ -575,6 +671,33 @@ export function FarmsExplore(): JSX.Element {
           comingSoon={Boolean(stats) && stats!.totalTvlUsd === undefined}
         />
       </div>
+
+      {/* Composition — farm status + APR distribution */}
+      <InstrumentPanel title="COMPOSITION" style={{ marginBottom: 14 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'minmax(240px, 1fr) minmax(0, 1.4fr)',
+            gap: isMobile ? 20 : 26,
+            alignItems: 'start',
+          }}
+        >
+          <div>
+            <div style={subheadStyle}>Farm status</div>
+            <LedgerDonut
+              slices={statusDonut}
+              loading={statsHook.isLoading}
+              centerValue={stats ? fmtInt(stats.totalFarms) : undefined}
+              centerLabel="Farms"
+              emptyText="No farms yet."
+            />
+          </div>
+          <div>
+            <div style={subheadStyle}>APR distribution</div>
+            <AprHistogram farms={farmsHook.farms} loading={farmsHook.isLoading && !farmsHook.farms} />
+          </div>
+        </div>
+      </InstrumentPanel>
 
       {/* Ledger — farms explore */}
       <InstrumentPanel

@@ -25,13 +25,15 @@
  * Disconnected → an honest "Connect wallet" empty state (B9 style). All loading / empty
  * states are real over the live hooks.
  */
+import { ChartPeriod } from '@uniswap/client-data-api/dist/data/v1/api_pb'
 import { PositionStatus, ProtocolVersion } from '@uniswap/client-data-api/dist/data/v1/poolTypes_pb'
 import type { Currency } from '@uniswap/sdk-core'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { getTransactionSummaryTitle } from 'uniswap/src/features/activity/utils/getTransactionSummaryTitle'
 import { getChainLabel } from 'uniswap/src/features/chains/utils'
+import { useGetPortfolioHistoricalValueChartQuery } from 'uniswap/src/data/rest/getPortfolioChart'
 import { useActivityData } from 'uniswap/src/features/activity/hooks/useActivityData'
 import {
   usePortfolioData,
@@ -51,6 +53,7 @@ import { DoubleCurrencyLogo } from '~/components/Logo/DoubleLogo'
 import { useAccount } from '~/hooks/useAccount'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
+import { LedgerTvlChart, type TvlPoint } from '~/terminal/components/LedgerTvlChart'
 import '~/terminal/theme/terminal.css'
 import {
   terminalColors,
@@ -319,6 +322,72 @@ function AllocationDonut({
   )
 }
 
+/* ------------------------------------------------------------------ value-over-time chart */
+
+/** Period toggle options for the value-over-time chart (maps to the real GetPortfolioChart period). */
+const CHART_PERIODS: ReadonlyArray<{ id: ChartPeriod; label: string }> = [
+  { id: ChartPeriod.WEEK, label: '1W' },
+  { id: ChartPeriod.MONTH, label: '1M' },
+  { id: ChartPeriod.YEAR, label: '1Y' },
+  { id: ChartPeriod.MAX, label: 'All' },
+]
+
+/**
+ * Net-worth value-over-time area chart. Reuses the shared terminal `LedgerTvlChart`
+ * (glowing green canvas area chart + honest empty state) fed by the REAL portfolio
+ * historical-value series (`GetPortfolioChart` points). Never fabricates history: an
+ * empty/single-point/all-zero series falls through to the primitive's empty state.
+ */
+function PortfolioValueChart({
+  points,
+  loading,
+  period,
+  onPeriod,
+}: {
+  points: TvlPoint[]
+  loading: boolean
+  period: ChartPeriod
+  onPeriod: (period: ChartPeriod) => void
+}): JSX.Element {
+  const toggle = (
+    <span style={{ display: 'inline-flex', gap: 2 }}>
+      {CHART_PERIODS.map((p) => {
+        const active = p.id === period
+        return (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => onPeriod(p.id)}
+            style={{
+              fontFamily: MONO,
+              fontSize: 10.5,
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              padding: '3px 8px',
+              borderRadius: 6,
+              cursor: 'pointer',
+              border: active ? `1px solid ${terminalColors.line}` : '1px solid transparent',
+              background: active ? terminalColors.bg : 'transparent',
+              color: active ? terminalColors.ink : terminalColors.ink3,
+            }}
+          >
+            {p.label}
+          </button>
+        )
+      })}
+    </span>
+  )
+  return (
+    <Card title="Portfolio value" corners live meta={[toggle]}>
+      {loading ? (
+        <div style={{ height: 240, borderRadius: 8, background: terminalColors.line2 }} aria-busy="true" />
+      ) : (
+        <LedgerTvlChart points={points} height={240} emptyText="History builds as balances are tracked." />
+      )}
+    </Card>
+  )
+}
+
 /* ------------------------------------------------------------------ activity feed */
 
 interface FeedItem {
@@ -507,6 +576,14 @@ export function PortfolioScreen(): JSX.Element {
   // Live net worth + 24h change (real REST wallet-balances).
   const totalValue = usePortfolioTotalValue({ evmAddress: address })
 
+  // Live historical net-worth series (real) — feeds the value-over-time area chart.
+  // Same data source as the legacy `/portfolio` Overview chart (GetPortfolioChart).
+  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>(ChartPeriod.MONTH)
+  const chartQuery = useGetPortfolioHistoricalValueChartQuery({
+    input: { evmAddress: address, chartPeriod },
+    enabled: !!address,
+  })
+
   // Live token balances (real) — feeds the allocation donut.
   const balancesResult = usePortfolioData({ evmAddress: address })
 
@@ -535,6 +612,23 @@ export function PortfolioScreen(): JSX.Element {
   const poolCount = useMemo(() => new Set(positions.map((p) => p.poolId)).size, [positions])
 
   const allocation = useMemo(() => buildAllocation(balancesResult.data), [balancesResult.data])
+
+  // Map the REAL historical-value points → the terminal area-chart shape. An empty,
+  // single-point, or all-zero series is treated as "no history" (honest empty state,
+  // never a fabricated flat line).
+  const valuePoints = useMemo<TvlPoint[]>(() => {
+    const pts = chartQuery.data?.points
+    if (!pts || pts.length < 2) {
+      return []
+    }
+    const mapped = pts
+      .map((p) => ({
+        label: new Date(Number(p.timestamp) * 1000).toISOString().slice(0, 10),
+        value: p.value,
+      }))
+      .filter((p) => Number.isFinite(p.value))
+    return mapped.every((p) => p.value === 0) ? [] : mapped
+  }, [chartQuery.data])
 
   const feedItems: FeedItem[] | undefined = useMemo(() => {
     if (!activity.sectionData) {
@@ -695,6 +789,16 @@ export function PortfolioScreen(): JSX.Element {
           value={String(positions.length)}
           sub={`across ${poolCount} ${poolCount === 1 ? 'pool' : 'pools'}`}
           loading={positionsResult.isLoading && !positionsResult.hasData}
+        />
+      </div>
+
+      {/* Value-over-time — real net-worth history (GetPortfolioChart), full width. */}
+      <div style={{ marginBottom: 12 }}>
+        <PortfolioValueChart
+          points={valuePoints}
+          loading={chartQuery.isPending && valuePoints.length === 0}
+          period={chartPeriod}
+          onPeriod={setChartPeriod}
         />
       </div>
 

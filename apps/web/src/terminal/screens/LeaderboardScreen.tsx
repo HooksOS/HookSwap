@@ -112,6 +112,83 @@ function formatUsd(value: number): string {
   return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+/* ------------------------------------------------------- volume bar chart */
+
+/** How many wallets the horizontal volume bar chart shows. */
+const VOLUME_BARS_TOP_N = 10
+
+/**
+ * Horizontal volume bar chart — the top-N wallets by native swap volume, drawn
+ * from the SAME `rows` the table renders (no extra fetch; the window/metric toggle
+ * already drives `rows`). Green bars scaled to the leader, labeled with the short
+ * wallet + native volume (mono). Honest loading skeleton + empty state — never a
+ * fabricated bar.
+ */
+function VolumeBars({ rows, loading }: { rows?: LeaderboardRow[]; loading: boolean }): JSX.Element {
+  const top = useMemo(() => {
+    if (!rows) {
+      return undefined
+    }
+    return [...rows]
+      .filter((r) => Number.isFinite(r.nativeVolume) && r.nativeVolume > 0)
+      .sort((a, b) => b.nativeVolume - a.nativeVolume)
+      .slice(0, VOLUME_BARS_TOP_N)
+  }, [rows])
+
+  if (loading || top === undefined) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {Array.from({ length: 6 }, (_, i) => (
+          <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ height: 11, width: '38%', borderRadius: 4, background: terminalColors.line2 }} />
+            <div style={{ height: 8, width: `${80 - i * 11}%`, borderRadius: 999, background: terminalColors.line2 }} />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (top.length === 0) {
+    return (
+      <div style={{ padding: '22px 4px', fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, lineHeight: 1.5 }}>
+        No swap volume in this window yet — bars fill as trades happen.
+      </div>
+    )
+  }
+
+  const max = top[0].nativeVolume
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {top.map((r, i) => {
+        const pct = max > 0 ? Math.max(2, (r.nativeVolume / max) * 100) : 0
+        return (
+          <div key={r.wallet} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.ink }}>
+                <span style={{ color: terminalColors.faint }}>{i + 1}.</span> {shortenWallet(r.wallet)}
+              </span>
+              <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: terminalColors.ink, whiteSpace: 'nowrap' }}>
+                {formatNative(r.nativeVolume)} {NATIVE_SYMBOL}
+              </span>
+            </div>
+            <div style={{ height: 8, borderRadius: 999, background: terminalColors.panel2, overflow: 'hidden' }}>
+              <div
+                style={{
+                  height: '100%',
+                  width: `${pct}%`,
+                  borderRadius: 999,
+                  background: terminalColors.brandGreen,
+                }}
+              />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 /* ------------------------------------------------------------------ screen */
 
 export function LeaderboardScreen(): JSX.Element {
@@ -265,6 +342,16 @@ export function LeaderboardScreen(): JSX.Element {
           loading={isLoading}
         />
       </div>
+
+      {/* Top-N volume bar chart (same rows the table shows; no extra fetch) */}
+      <InstrumentPanel
+        title="Volume by trader"
+        corners
+        meta={[`Top ${VOLUME_BARS_TOP_N}`, window.toUpperCase()]}
+        style={{ marginBottom: 18, minWidth: 0 }}
+      >
+        <VolumeBars rows={rows} loading={isLoading} />
+      </InstrumentPanel>
 
       {/* Table */}
       <InstrumentPanel
