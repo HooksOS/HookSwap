@@ -28,7 +28,7 @@ import { Protocol } from '@uniswap/router-sdk'
 import { Actions, URVersion, V4Planner } from '@uniswap/v4-sdk'
 import { ethers } from 'ethers'
 import type { ChainConfig } from './chains'
-import { resolveRpcUrl } from './chains'
+import { HOOKSWAP_FEE_BIPS, HOOKSWAP_FEE_RECIPIENT, resolveRpcUrl } from './chains'
 import { patchMinHopPriceCalldata } from './urCalldata'
 import type {
   QuoteExactRouteParams,
@@ -243,6 +243,11 @@ export class EmbedRoutingProvider implements RoutingProvider {
         recipient: params.recipient,
         slippageTolerance: new Percent(Math.round((params.slippageTolerancePct ?? 0.5) * 100), 10_000),
         deadlineOrPreviousBlockhash: Math.floor(Date.now() / 1000) + (params.deadlineSeconds ?? 1800),
+        // LIVE HookSwap swap fee: skims HOOKSWAP_FEE_BIPS/10000 of the OUTPUT token to the treasury.
+        // The SOR passes this to SwapRouter.swapCallParameters → an appended PAY_PORTION command
+        // (0x06) in the UR calldata. PAY_PORTION's input layout (token, recipient, bips) differs from
+        // the V2/V3 swap commands, so patchMinHopPriceCalldata leaves it untouched (see urCalldata.ts).
+        fee: { fee: new Percent(HOOKSWAP_FEE_BIPS, 10_000), recipient: HOOKSWAP_FEE_RECIPIENT },
       }
     }
 
@@ -257,7 +262,9 @@ export class EmbedRoutingProvider implements RoutingProvider {
       return undefined
     }
 
-    return mapSwapRouteToResponse(route, tradeType)
+    // The fee is in the calldata only when swapConfig was built (recipient known) → gate the
+    // displayed portion fields on the same condition so we never advertise an unapplied fee.
+    return mapSwapRouteToResponse(route, tradeType, Boolean(swapConfig))
   }
 
   /**
@@ -269,6 +276,13 @@ export class EmbedRoutingProvider implements RoutingProvider {
    *
    * When `params.recipient` is set (same gate as the v2/v3 path) AND the chain's v4 UR is standard,
    * assembles executable UR `V4_SWAP` calldata (`@uniswap/v4-sdk` `V4Planner`) into `methodParameters`.
+   *
+   * TODO(HookSwap fee, v4): the LIVE 0.2% output fee is NOT applied on this v4 path. Applying it
+   * requires appending a v4 `Actions.TAKE_PORTION` to the V4Planner action list (v4's PAY_PORTION
+   * analogue) and a corresponding `TAKE` remainder — NOT the v2/v3 UR-level PAY_PORTION command.
+   * v4 is quote-only in practice today (near-zero v4 liquidity; RH v4 gated) so no fee is emitted
+   * here and portionBips is deliberately left UNSET — display never claims a fee the v4 calldata
+   * won't take. Wire TAKE_PORTION when a v4 swap is proven on-chain.
    * Robinhood's v4 UR is an unverified min-hop fork → gated to quote-only (see
    * `V4_SWAP_CALLDATA_UNVERIFIED_CHAINS`). If calldata assembly throws, we still return the quote
    * WITHOUT `methodParameters` — never a fabricated/guessed calldata.
@@ -524,8 +538,14 @@ export class EmbedRoutingProvider implements RoutingProvider {
   }
 }
 
-/** Map an SOR `SwapRoute` into the classic routing-api response `translate.ts` already consumes. */
-function mapSwapRouteToResponse(route: SwapRoute, tradeType: TradeType): RoutingApiQuoteResponse {
+/**
+ * Map an SOR `SwapRoute` into the classic routing-api response `translate.ts` already consumes.
+ * When `feeApplied` is true (swapConfig carried the HookSwap `fee`), the OUTPUT-token PAY_PORTION
+ * fee is surfaced as portionBips/portionAmount/portionRecipient. portionAmount is computed from the
+ * GROSS output (`route.trade.outputAmount`, always the output side for BOTH trade types) as
+ * output·bips/10000 (floor) — the same base the on-chain PAY_PORTION skims.
+ */
+function mapSwapRouteToResponse(route: SwapRoute, tradeType: TradeType, feeApplied: boolean): RoutingApiQuoteResponse {
   const routes: RoutingApiPoolInRoute[][] = route.route.map((r) => {
     // Each `r` is a RouteWithValidQuote whose `.route.pools` (v3) or `.route.pairs` (v2) are the hops.
     const pools = (r.route as { pools?: unknown[]; pairs?: unknown[] }).pools ?? (r.route as { pairs?: unknown[] }).pairs ?? []
@@ -534,6 +554,18 @@ function mapSwapRouteToResponse(route: SwapRoute, tradeType: TradeType): Routing
 
   const quote = route.quote.quotient.toString()
   const quoteGasAdjusted = route.quoteGasAdjusted.quotient.toString()
+
+  // Output-token fee: only when it's actually in the calldata. `route.trade.outputAmount` is the
+  // output currency amount regardless of exactIn/exactOut, matching what PAY_PORTION skims on-chain.
+  let portionBips: number | undefined
+  let portionAmount: string | undefined
+  let portionRecipient: string | undefined
+  if (feeApplied && route.methodParameters) {
+    const grossOutput = ethers.BigNumber.from(route.trade.outputAmount.quotient.toString())
+    portionBips = HOOKSWAP_FEE_BIPS
+    portionAmount = grossOutput.mul(HOOKSWAP_FEE_BIPS).div(10_000).toString()
+    portionRecipient = HOOKSWAP_FEE_RECIPIENT
+  }
 
   return {
     quoteId: undefined,
@@ -550,11 +582,16 @@ function mapSwapRouteToResponse(route: SwapRoute, tradeType: TradeType): Routing
       ? {
           // The SDK emits canonical 5-field UR swap inputs; the deployed HookSwap UR fork decodes
           // 6 (trailing minHopPriceX36[]). Re-encode to match, else every swap reverts at decode.
+          // The appended PAY_PORTION command (from the `fee` option) is NOT a swap command, so the
+          // shim passes it through byte-for-byte (guarded in urCalldata.ts).
           calldata: patchMinHopPriceCalldata(route.methodParameters.calldata),
           value: route.methodParameters.value,
           to: route.methodParameters.to,
         }
       : undefined,
+    portionBips,
+    portionAmount,
+    portionRecipient,
   }
   // tradeType retained for callers/telemetry; response shape is symmetric for exactIn/exactOut.
   void tradeType

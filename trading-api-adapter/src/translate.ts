@@ -108,6 +108,12 @@ export function toTradingApiQuoteResponse(params: {
     gasFeeUSD: routing.gasUseEstimateUSD,
     gasPrice: routing.gasPriceWei,
     blockNumber: routing.blockNumber,
+    // LIVE HookSwap output-token fee (PAY_PORTION). Copied straight from routing — never invented.
+    // Present only when the built calldata actually skims the fee (embedRouter gates it), so the
+    // interface's fee display + client-side FeeOptions match the on-chain behavior exactly.
+    portionBips: routing.portionBips,
+    portionAmount: routing.portionAmount,
+    portionRecipient: routing.portionRecipient,
   }
 
   return {

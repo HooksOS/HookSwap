@@ -24,8 +24,8 @@
  * config bar. The order ticket is Market / Send only — Limit orders are excluded
  * (UniswapX-only, and unsupported on Robinhood, the launch chain).
  */
-import { Percent, Token } from '@uniswap/sdk-core'
-import type { Currency, CurrencyAmount } from '@uniswap/sdk-core'
+import { CurrencyAmount, Percent, Token } from '@uniswap/sdk-core'
+import type { Currency } from '@uniswap/sdk-core'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { COMMON_BASES } from 'uniswap/src/constants/routing'
@@ -486,6 +486,27 @@ export function SwapTicket(): JSX.Element {
       ? `${inSym} → ${outSym}`
       : '—'
 
+  // --- HookSwap fee (LIVE 0.2% output-token PAY_PORTION) --------------------
+  // Bound to the REAL swapFee the trade carries (derived from the quote's portionBips/
+  // portionAmount/portionRecipient by getTradingApiSwapFee). Never a hardcoded string: the
+  // percent and amount come straight from the executable trade, so the row matches what the
+  // transaction actually skims. Wraps have no swap and no fee.
+  const swapFee = activeTrade?.swapFee
+  const swapFeeAmount =
+    swapFee && activeTrade
+      ? fmtAmount(CurrencyAmount.fromRawAmount(activeTrade.outputAmount.currency, swapFee.amount))
+      : undefined
+  const hookFeeLabel = swapFee ? `HookSwap fee · ${swapFee.percent.toFixed(2)}%` : 'HookSwap fee · 0.2%'
+  const hookFeeValue = isWrap
+    ? '—'
+    : swapFee
+      ? swapFeeAmount
+        ? `${swapFeeAmount} ${outSym}`
+        : `${swapFee.percent.toFixed(2)}%`
+      : trade.isLoading && hasAmount
+        ? 'Fetching…'
+        : '—'
+
   // --- Insufficient-balance guard -------------------------------------------
   // Compare the REAL amount the user must pay — `currencyAmounts[INPUT]` (the parsed
   // exact-in amount, or the quote-derived input for an exact-out ticket) — against the
@@ -771,6 +792,8 @@ export function SwapTicket(): JSX.Element {
         <BreakdownRow label="Price impact" value={impactValue} valueColor={impactColor} />
         <BreakdownRow label="Min received" value={minRecvValue} />
         <BreakdownRow label="Route" value={routeValue} />
+        {/* LIVE HookSwap fee: 0.2% of the output token, bound to the trade's real swapFee. */}
+        <BreakdownRow label={hookFeeLabel} value={hookFeeValue} />
         {/* Network fee: no verifiable per-quote gas estimate is surfaced here → honest "—". */}
         <BreakdownRow label="Network fee" value="—" last />
       </div>

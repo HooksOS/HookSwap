@@ -65,6 +65,19 @@ export interface ChainConfig {
 
 const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
 
+/**
+ * HookSwap protocol swap fee — a LIVE fee taken as a portion of the OUTPUT token on every
+ * v2/v3 swap, on ALL chains, via the Universal Router `PAY_PORTION` command (0x06). No contract
+ * deploy: the SOR's `SwapOptions.fee` (percent `FeeOptions`) makes `SwapRouter.swapCallParameters`
+ * emit PAY_PORTION, skimming `HOOKSWAP_FEE_BIPS`/10000 of the output to `HOOKSWAP_FEE_RECIPIENT`.
+ * The same bips is surfaced on the quote (`portionBips`/`portionAmount`/`portionRecipient`) so the
+ * interface displays the fee honestly AND — for client-built calldata (e.g. limit orders / v4) —
+ * re-derives the identical `FeeOptions` from `trade.swapFee` (getTradingApiSwapFee → this bips).
+ */
+export const HOOKSWAP_FEE_RECIPIENT = '0x011d438E3eb3fce848950859591ec037C6529E13'
+/** 0.2% = 20 bps of the OUTPUT token. */
+export const HOOKSWAP_FEE_BIPS = 20
+
 export const CHAINS: Record<number, ChainConfig> = {
   // ---- MegaETH (4326) — DEPLOYED ----
   4326: {

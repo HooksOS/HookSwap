@@ -28,6 +28,11 @@ const EXECUTE_NO_DEADLINE = '0x24856bc3' //   execute(bytes,bytes[])
 const COMMAND_TYPE_MASK = 0x3f
 
 // Only these swap commands carry the trailing `minHopPriceX36` in the deployed fork.
+// NOTE (PAY_PORTION): the HookSwap output fee appends a PAY_PORTION command (0x06) whose input is
+// `abi.encode(address token, address recipient, uint256 bips)` — a DIFFERENT layout from the V2/V3
+// swap inputs. It is intentionally absent from `baseTypesForCommand` below, so this shim returns its
+// input BYTE-FOR-BYTE unchanged (no trailing uint256[] appended). Re-encoding it would corrupt the
+// fee command. Verified: only 0x00/0x01/0x08/0x09 are rewritten; 0x06 (and 0x10 V4_SWAP) pass through.
 // NOTE (v4): V4_SWAP (command 0x10) is NOT patched here and passes through unchanged. embedRouter.ts
 // quoteV4Single now DOES assemble UR-v4 swap calldata (V4Planner), but ONLY for chains whose v4 UR is
 // standard — Sepolia's canonical v4 UR needs no shim. Robinhood's v4 UR (0x8876…C0904) is itself a

@@ -61,6 +61,14 @@ export interface RoutingApiQuoteResponse {
   routeString?: string
   /** present when the request asked routing-api to build calldata */
   methodParameters?: { calldata: string; value: string; to: string }
+  // ---- HookSwap output-fee (PAY_PORTION) — present ONLY when the built calldata actually skims
+  // the fee, so display never claims a fee the transaction won't take. See chains.ts HOOKSWAP_FEE_*.
+  /** fee in basis points taken from the OUTPUT token (e.g. 20 = 0.2%). */
+  portionBips?: number
+  /** raw base-unit amount of the OUTPUT token skimmed as the fee (portionBips/10000 of gross output). */
+  portionAmount?: string
+  /** address the PAY_PORTION output is sent to (the HookSwap treasury). */
+  portionRecipient?: string
 }
 
 export interface QuoteExactRouteParams {

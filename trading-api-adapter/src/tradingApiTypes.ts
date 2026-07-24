@@ -153,8 +153,14 @@ export interface ClassicQuote {
   maxFeePerGas?: string
   maxPriorityFeePerGas?: string
   priceImpact?: number
+  // ---- Output-token fee (PAY_PORTION). The interface's getTradingApiSwapFee reads all three off
+  // the classic quote to build trade.swapFee → the "fee" display AND client-built calldata's
+  // FeeOptions (limit orders / v4). portionRecipient must be on the wire or swapFee.recipient is
+  // undefined; the generated @universe/api ClassicQuote carries it even though this mirror lists
+  // only the subset the adapter reads.
   portionBips?: number
   portionAmount?: string
+  portionRecipient?: string
 }
 
 export interface QuoteResponse {
