@@ -178,11 +178,11 @@ export class MarkStore {
   }
 
   /** Open interest with a short TTL cache (bounds RPC). Null when unreadable. */
-  async openInterest(market: `0x${string}`): Promise<bigint | null> {
+  async openInterest(chainId: number, market: `0x${string}`): Promise<bigint | null> {
     const k = key(market);
     const cached = this.oiCache.get(k);
     if (cached && Date.now() - cached.at < ENV.oiRefreshMs) return cached.value;
-    const value = await fetchOpenInterest(market);
+    const value = await fetchOpenInterest(chainId, market);
     this.oiCache.set(k, { at: Date.now(), value });
     return value;
   }

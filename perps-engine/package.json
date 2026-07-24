@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit",
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
+    "dryrun:multichain": "tsx scripts/dryRunMultichain.ts",
     "oracle:demo": "node --loader ts-node/esm oracle/demo.ts"
   },
   "dependencies": {

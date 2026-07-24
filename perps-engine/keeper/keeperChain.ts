@@ -1,10 +1,16 @@
-// Keeper runtime config + viem clients + a serialized, nonce-safe on-chain sender.
+// Keeper runtime config + PER-CHAIN viem clients + a serialized, nonce-safe sender.
 //
-// The keeper uses a DEDICATED key (KEEPER_PRIVATE_KEY) — separate from the engine
-// matcher / counterparty bot — so keeper txs (updatePrice / settleFundingBatch /
-// liquidate) never collide with the engine's settleBatch nonce. Reads never throw
-// out of the loops: an RPC failure falls back to a secondary RPC, then surfaces as
-// a logged skip.
+// MULTI-CHAIN: the keeper sweeps liquidation + funding across EVERY configured
+// chain. Each chain gets a KeeperChainCtx (primary+fallback client, wallet, keeper
+// account, registry, oracleGuard, gasMode). Source order matches the engine:
+//   1. PERPS_CHAINS_CONFIG=<path> or config/chains.json (with a `keeperKeyEnv` per
+//      entry naming the env var that holds THAT chain's keeper key).
+//   2. BACKWARD-COMPAT — synthesize ONE chain from the legacy keeper env vars.
+//
+// The keeper uses a DEDICATED key per chain (separate from the engine matcher / bot)
+// so keeper txs (updatePrice / settleFundingBatch / liquidate) never collide with the
+// engine's settleBatch nonce. Sends are serialized PER CHAIN (independent chains run
+// in parallel; a chain's own nonces never collide). Reads fall back to a secondary RPC.
 
 import { existsSync, readFileSync } from "fs";
 import { dirname, join } from "path";
@@ -20,13 +26,14 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
+const HERE = dirname(fileURLToPath(import.meta.url));
+
 // --- Minimal .env loader (systemd env wins; no dotenv dep) ---
 (function loadDotEnv() {
-  const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [
     process.env.KEEPER_ENV_FILE,
-    join(here, ".env"),
-    join(here, "..", ".env"),
+    join(HERE, ".env"),
+    join(HERE, "..", ".env"),
   ].filter(Boolean) as string[];
   for (const p of candidates) {
     if (!existsSync(p)) continue;
@@ -47,17 +54,8 @@ function num(v: string | undefined, dflt: number): number {
   return Number.isFinite(n) && n > 0 ? n : dflt;
 }
 
+/** GLOBAL policy knobs (cadences, thresholds) — NOT per-chain connection details. */
 export const CFG = {
-  chainId: num(process.env.PERPS_CHAIN_ID, 11155111),
-  rpcUrl: (process.env.SEPOLIA_RPC_URL || "https://sepolia.drpc.org").trim(),
-  // Sparingly-used fallback RPC (task guidance: drpc primary, 1rpc fallback).
-  rpcFallback: (process.env.SEPOLIA_RPC_FALLBACK || "https://1rpc.io/sepolia").trim(),
-  marketRegistry: (process.env.MARKET_REGISTRY ||
-    "0xEDE278469694e951676973B7b9e193a98463DAC2").trim() as `0x${string}`,
-  oracleGuard: (process.env.ORACLE_GUARD ||
-    "0x3D2ee857AE129688fA43E378dAE85b60803bfFD1").trim() as `0x${string}`,
-  /** NEVER logged. */
-  keeperKey: (process.env.KEEPER_PRIVATE_KEY || "").trim(),
   // Loop cadences.
   liquidationLoopMs: num(process.env.KEEPER_LIQ_LOOP_MS, 25_000),
   fundingLoopMs: num(process.env.KEEPER_FUNDING_LOOP_MS, 60_000),
@@ -68,12 +66,9 @@ export const CFG = {
   markRefreshBps: BigInt(num(process.env.KEEPER_MARK_REFRESH_BPS, 250)),
   // Max chainlink round age (s) before the keeper treats the feed as unusable.
   maxFeedStaleSecs: BigInt(num(process.env.KEEPER_MAX_FEED_STALE, 86_400)),
-  // Legacy gas price for Sepolia (predictable + cheap).
+  // Default LEGACY gas price (wei) — used only on chains whose gasMode is 'legacy'.
   gasPrice: BigInt(num(process.env.KEEPER_GAS_PRICE_WEI, 2_000_000_000)),
-  // Max ms to wait for a tx receipt before treating the wait as failed (default
-  // 120s ≈ 10 Sepolia blocks). Prevents a stuck/dropped tx from hanging the
-  // serialized keeper send chain head-of-line; the tx may still mine later and
-  // on-chain state stays authoritative.
+  // Max ms to wait for a tx receipt before treating the wait as failed.
   receiptTimeoutMs: num(process.env.KEEPER_RECEIPT_TIMEOUT_MS, 120_000),
   // How many pair ids to settle funding for per settleFundingBatch tx.
   fundingBatchSize: num(process.env.KEEPER_FUNDING_BATCH, 50),
@@ -84,42 +79,164 @@ export const CFG = {
   resultsFile: (process.env.KEEPER_RESULTS_FILE || "").trim(),
 } as const;
 
-export function normalizedKeeperKey(): `0x${string}` | "" {
-  const k = CFG.keeperKey.replace(/^0x/i, "");
+export type GasMode = "eip1559" | "legacy";
+
+export interface KeeperChainCtx {
+  chainId: number;
+  network?: string;
+  marketRegistry: `0x${string}`;
+  oracleGuard: `0x${string}`;
+  gasMode: GasMode;
+  primaryClient: PublicClient;
+  fallbackClient: PublicClient;
+  keeperAccount: Account | null;
+  walletClient: WalletClient | null;
+}
+
+// Public fallback RPCs (kept in sync with oracle/rpc.ts DEFAULT_RPCS).
+const DEFAULT_RPCS: Record<number, string> = {
+  11155111: "https://ethereum-sepolia-rpc.publicnode.com",
+  4663: "https://rpc.mainnet.chain.robinhood.com",
+  999: "https://rpc.hyperliquid.xyz/evm",
+  57073: "https://rpc-gel.inkonchain.com",
+  196: "https://rpc.xlayer.tech",
+};
+
+function normalizeKey(raw: string | undefined): `0x${string}` | "" {
+  const k = (raw || "").trim().replace(/^0x/i, "");
   if (!/^[0-9a-fA-F]{64}$/.test(k)) return "";
   return `0x${k}` as `0x${string}`;
 }
 
-const key = normalizedKeeperKey();
-export const keeperAccount: Account | null = key ? privateKeyToAccount(key) : null;
+function normalizeGasMode(v: unknown, dflt: GasMode): GasMode {
+  const s = String(v ?? "").toLowerCase();
+  if (s === "legacy") return "legacy";
+  if (s === "eip1559") return "eip1559";
+  return dflt;
+}
 
-export const primaryClient: PublicClient = createPublicClient({ transport: http(CFG.rpcUrl) });
-const fallbackClient: PublicClient = createPublicClient({ transport: http(CFG.rpcFallback) });
+function buildCtx(e: {
+  chainId: number;
+  network?: string;
+  rpcUrl: string;
+  rpcFallback?: string;
+  marketRegistry: `0x${string}`;
+  oracleGuard: `0x${string}`;
+  gasMode: GasMode;
+  keeperKey: `0x${string}` | "";
+}): KeeperChainCtx {
+  const primaryClient: PublicClient = createPublicClient({ transport: http(e.rpcUrl) });
+  const fallbackClient: PublicClient = createPublicClient({
+    transport: http(e.rpcFallback || e.rpcUrl),
+  });
+  const keeperAccount: Account | null = e.keeperKey ? privateKeyToAccount(e.keeperKey) : null;
+  const walletClient: WalletClient | null = keeperAccount
+    ? createWalletClient({ account: keeperAccount, transport: http(e.rpcUrl) })
+    : null;
+  return {
+    chainId: e.chainId,
+    network: e.network,
+    marketRegistry: e.marketRegistry,
+    oracleGuard: e.oracleGuard,
+    gasMode: e.gasMode,
+    primaryClient,
+    fallbackClient,
+    keeperAccount,
+    walletClient,
+  };
+}
 
-export const walletClient: WalletClient | null = keeperAccount
-  ? createWalletClient({ account: keeperAccount, transport: http(CFG.rpcUrl) })
-  : null;
+function resolveRpc(chainId: number, rpcUrlEnv: string | undefined, rpcUrl: string | undefined): string {
+  const fromEnv = rpcUrlEnv ? (process.env[rpcUrlEnv] || "").trim() : "";
+  const url = fromEnv || (rpcUrl || "").trim() || DEFAULT_RPCS[chainId] || "";
+  if (!url) throw new Error(`keeper: no RPC for chainId ${chainId}`);
+  return url;
+}
+
+function loadChainsFromConfig(): KeeperChainCtx[] | null {
+  const explicit = (process.env.PERPS_CHAINS_CONFIG || "").trim();
+  const candidates = [explicit, join(HERE, "..", "config", "chains.json")].filter(Boolean) as string[];
+  for (const path of candidates) {
+    if (!existsSync(path)) continue;
+    const raw = JSON.parse(readFileSync(path, "utf8"));
+    const arr = Array.isArray(raw) ? raw : raw?.chains;
+    if (!Array.isArray(arr) || arr.length === 0) throw new Error(`keeper chains config ${path} empty/invalid`);
+    return arr.map((e: any, i: number) => {
+      const chainId = Number(e?.chainId);
+      if (!Number.isInteger(chainId) || chainId <= 0) throw new Error(`chains[${i}].chainId invalid`);
+      // keeperKeyEnv names the env var holding this chain's keeper key; fall back to
+      // the global KEEPER_PRIVATE_KEY when an entry omits it.
+      const keeperKeyEnv = String(e?.keeperKeyEnv || "KEEPER_PRIVATE_KEY").trim();
+      return buildCtx({
+        chainId,
+        network: e?.network ? String(e.network) : undefined,
+        rpcUrl: resolveRpc(chainId, e?.rpcUrlEnv, e?.rpcUrl),
+        rpcFallback: e?.rpcFallbackEnv
+          ? (process.env[String(e.rpcFallbackEnv)] || "").trim() || String(e?.rpcFallback || "").trim()
+          : String(e?.rpcFallback || "").trim(),
+        marketRegistry: String(e?.marketRegistry).trim() as `0x${string}`,
+        oracleGuard: String(e?.oracleGuard).trim() as `0x${string}`,
+        gasMode: normalizeGasMode(e?.gasMode, "eip1559"),
+        keeperKey: normalizeKey(process.env[keeperKeyEnv]),
+      });
+    });
+  }
+  return null;
+}
+
+/** BACKWARD-COMPAT single chain from the legacy keeper env vars (default Sepolia, legacy gas). */
+function synthesizeSingleChain(): KeeperChainCtx[] {
+  const chainId = num(process.env.PERPS_CHAIN_ID, 11155111);
+  return [
+    buildCtx({
+      chainId,
+      network: process.env.PERPS_NETWORK || undefined,
+      rpcUrl: (process.env.SEPOLIA_RPC_URL || DEFAULT_RPCS[chainId] || "https://sepolia.drpc.org").trim(),
+      rpcFallback: (process.env.SEPOLIA_RPC_FALLBACK || "https://1rpc.io/sepolia").trim(),
+      marketRegistry: (process.env.MARKET_REGISTRY ||
+        "0xEDE278469694e951676973B7b9e193a98463DAC2").trim() as `0x${string}`,
+      oracleGuard: (process.env.ORACLE_GUARD ||
+        "0x3D2ee857AE129688fA43E378dAE85b60803bfFD1").trim() as `0x${string}`,
+      // Preserve the legacy keeper's Sepolia behavior (legacy gasPrice) unless overridden.
+      gasMode: normalizeGasMode(process.env.KEEPER_GAS_MODE, "legacy"),
+      keeperKey: normalizeKey(process.env.KEEPER_PRIVATE_KEY),
+    }),
+  ];
+}
+
+const CHAINS: KeeperChainCtx[] = loadChainsFromConfig() ?? synthesizeSingleChain();
+const REGISTRY = new Map<number, KeeperChainCtx>(CHAINS.map((c) => [c.chainId, c]));
+
+export function allKeeperChains(): KeeperChainCtx[] {
+  return [...REGISTRY.values()];
+}
+export function getKeeperCtx(chainId: number): KeeperChainCtx {
+  const ctx = REGISTRY.get(chainId);
+  if (!ctx) throw new Error(`keeper: chainId ${chainId} not configured`);
+  return ctx;
+}
 
 export function log(...args: unknown[]): void {
   console.log(new Date().toISOString(), ...args);
 }
 
-/** Read with a single fallback-RPC retry on transient/rate-limit failures. */
-export async function read<T>(fn: (c: PublicClient) => Promise<T>): Promise<T> {
+/** Read on a chain with a single fallback-RPC retry on transient/rate-limit failures. */
+export async function read<T>(chainId: number, fn: (c: PublicClient) => Promise<T>): Promise<T> {
+  const ctx = getKeeperCtx(chainId);
   try {
-    return await fn(primaryClient);
+    return await fn(ctx.primaryClient);
   } catch (e) {
-    // One sparing retry on the fallback RPC.
     try {
-      return await fn(fallbackClient);
+      return await fn(ctx.fallbackClient);
     } catch {
       throw e;
     }
   }
 }
 
-// Serialize ALL keeper sends so nonces never collide within the process.
-let sendChain: Promise<unknown> = Promise.resolve();
+// Serialize keeper sends PER CHAIN so a chain's nonces never collide, while different
+// chains send independently.
+const sendChains = new Map<number, Promise<unknown>>();
 
 export interface SendResult {
   txHash: Hash | null;
@@ -134,35 +251,47 @@ export function shortReason(e: any): string {
   return String(s).replace(/\s+/g, " ").trim().slice(0, 200);
 }
 
+/** Per-chain gas fields: legacy → gasPrice; eip1559 → maxFeePerGas/maxPriorityFeePerGas. */
+async function gasOverrides(ctx: KeeperChainCtx): Promise<Record<string, bigint>> {
+  if (ctx.gasMode === "legacy") return { gasPrice: CFG.gasPrice };
+  try {
+    const fees = await ctx.primaryClient.estimateFeesPerGas();
+    const out: Record<string, bigint> = {};
+    if (fees.maxFeePerGas != null) out.maxFeePerGas = fees.maxFeePerGas;
+    if (fees.maxPriorityFeePerGas != null) out.maxPriorityFeePerGas = fees.maxPriorityFeePerGas;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 /**
- * Simulate-then-send a write, serialized against every other keeper send, with
- * legacy gas. Returns a structured result; NEVER throws (callers stay loop-safe).
+ * Simulate-then-send a write on `chainId`, serialized against every other send on THAT
+ * chain, with per-chain gas. Returns a structured result; NEVER throws (loop-safe).
  */
 export function send(
+  chainId: number,
   address: `0x${string}`,
   abi: any,
   functionName: string,
   args: readonly unknown[],
 ): Promise<SendResult> {
   const run = async (): Promise<SendResult> => {
-    const wallet = walletClient;
-    const account = keeperAccount;
+    const ctx = getKeeperCtx(chainId);
+    const wallet = ctx.walletClient;
+    const account = ctx.keeperAccount;
     if (!wallet || !account) return { txHash: null, mined: false, reason: "NO_KEEPER_KEY" };
     try {
-      const { request } = await primaryClient.simulateContract({
+      const { request } = await ctx.primaryClient.simulateContract({
         account,
         address,
         abi,
         functionName,
         args: args as any,
       });
-      const hash = await wallet.writeContract({
-        ...(request as any),
-        gasPrice: CFG.gasPrice,
-      });
-      // Bounded wait: a stuck/dropped tx throws on timeout (caught below as a
-      // failure) rather than hanging the serialized keeper send chain.
-      const receipt = await primaryClient.waitForTransactionReceipt({
+      const gas = await gasOverrides(ctx);
+      const hash = await wallet.writeContract({ ...(request as any), ...gas });
+      const receipt = await ctx.primaryClient.waitForTransactionReceipt({
         hash,
         timeout: CFG.receiptTimeoutMs,
       });
@@ -175,7 +304,8 @@ export function send(
       return { txHash: null, mined: false, reason: shortReason(e) };
     }
   };
-  const next = sendChain.then(run, run);
-  sendChain = next.catch(() => {});
+  const prev = sendChains.get(chainId) ?? Promise.resolve();
+  const next = prev.then(run, run);
+  sendChains.set(chainId, next.catch(() => {}));
   return next;
 }

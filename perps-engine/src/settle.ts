@@ -1,16 +1,22 @@
-// settleBatch assembly + broadcast, gated by LIVE_SETTLE.
+// settleBatch assembly + broadcast, gated by LIVE_SETTLE. PER-CHAIN.
 //
 // LIVE_SETTLE=false (default): assemble calldata + viem simulateContract (no
 //   broadcast). Proves the matcher is authorized and the pair decodes/validates
 //   up to the point a real settle would (balance/nonce). NEVER sends.
-// LIVE_SETTLE=true: simulate, then writeContract (legacy gas), wait for receipt.
+// LIVE_SETTLE=true: simulate, then writeContract with PER-CHAIN gas, wait for receipt.
+//
+// GAS (per chain, from ChainCtx.gasMode):
+//   - eip1559 (RH + default): maxFeePerGas / maxPriorityFeePerGas from
+//     estimateFeesPerGas(). Robinhood is EIP-1559 (~0.12 gwei) — a legacy gasPrice
+//     below block base fee reverts "max fee per gas less than block base fee".
+//   - legacy: gasPrice from getGasPrice() (only for chains that require it).
 //
 // One-liner to go live: set LIVE_SETTLE=true in the env and restart. See README.
 
 import { encodeFunctionData, type Hash } from "viem";
 import { PERP_MARKET_ABI } from "./abis.js";
 import { ENV } from "./env.js";
-import { matcherAccount, publicClient, walletClient } from "./chain.js";
+import type { ChainCtx } from "./chain.js";
 import type { MatchedPair } from "./types.js";
 
 export interface SettleResult {
@@ -43,16 +49,39 @@ function shortReason(e: any): string {
   return String(s).replace(/\s+/g, " ").trim().slice(0, 240);
 }
 
-// Serialize live broadcasts so nonces don't collide within the process.
-let sendChain: Promise<unknown> = Promise.resolve();
-function serialize<T>(fn: () => Promise<T>): Promise<T> {
-  const next = sendChain.then(fn, fn);
-  sendChain = next.catch(() => {});
+/**
+ * Per-chain gas fields for a write. eip1559 → maxFeePerGas/maxPriorityFeePerGas;
+ * legacy → gasPrice. Estimation failures return {} (viem's own defaults apply).
+ */
+async function gasOverrides(ctx: ChainCtx): Promise<Record<string, bigint>> {
+  try {
+    if (ctx.gasMode === "legacy") {
+      const gasPrice = await ctx.publicClient.getGasPrice();
+      return { gasPrice };
+    }
+    const fees = await ctx.publicClient.estimateFeesPerGas();
+    const out: Record<string, bigint> = {};
+    if (fees.maxFeePerGas != null) out.maxFeePerGas = fees.maxFeePerGas;
+    if (fees.maxPriorityFeePerGas != null) out.maxPriorityFeePerGas = fees.maxPriorityFeePerGas;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+// Serialize live broadcasts PER CHAIN so nonces don't collide within a chain, while
+// different chains settle independently (their nonces are separate).
+const sendChains = new Map<number, Promise<unknown>>();
+function serialize<T>(chainId: number, fn: () => Promise<T>): Promise<T> {
+  const prev = sendChains.get(chainId) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  sendChains.set(chainId, next.catch(() => {}));
   return next;
 }
 
-/** Assemble settleBatch([pair]) calldata and either simulate (default) or send. */
+/** Assemble settleBatch([pair]) calldata and either simulate (default) or send, on ctx's chain. */
 export async function settlePair(
+  ctx: ChainCtx,
   market: `0x${string}`,
   pair: MatchedPair,
 ): Promise<SettleResult> {
@@ -66,8 +95,8 @@ export async function settlePair(
   if (!ENV.liveSettle) {
     // Dry run: simulate against the real deployed market (no broadcast).
     try {
-      await publicClient.simulateContract({
-        account: matcherAccount ?? undefined,
+      await ctx.publicClient.simulateContract({
+        account: ctx.matcherAccount ?? undefined,
         address: market,
         abi: PERP_MARKET_ABI,
         functionName: "settleBatch",
@@ -81,25 +110,26 @@ export async function settlePair(
   }
 
   // LIVE path.
-  const wallet = walletClient;
-  const account = matcherAccount;
+  const wallet = ctx.walletClient;
+  const account = ctx.matcherAccount;
   if (!wallet || !account) {
     return { calldata, txHash: null, settled: false, reason: "NO_MATCHER_KEY" };
   }
 
-  return serialize(async () => {
+  return serialize(ctx.chainId, async () => {
     try {
-      const { request } = await publicClient.simulateContract({
+      const { request } = await ctx.publicClient.simulateContract({
         account,
         address: market,
         abi: PERP_MARKET_ABI,
         functionName: "settleBatch",
         args: args as any,
       });
-      const hash = await wallet.writeContract(request as any);
+      const gas = await gasOverrides(ctx);
+      const hash = await wallet.writeContract({ ...(request as any), ...gas });
       // Bounded wait: a stuck/dropped tx throws on timeout (caught below as a
       // failure) rather than hanging the serialized settle queue head-of-line.
-      const receipt = await publicClient.waitForTransactionReceipt({
+      const receipt = await ctx.publicClient.waitForTransactionReceipt({
         hash,
         timeout: ENV.receiptTimeoutMs,
       });

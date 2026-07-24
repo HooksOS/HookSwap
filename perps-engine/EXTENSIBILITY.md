@@ -164,3 +164,81 @@ markets.json entry ──oracle.sourceType──▶ AdapterRegistry ──▶ IS
 
 Every adapter returns `{ price1e18, ok }` — on any failure `{ ok:false, reason }`,
 **never a fabricated price.** The matching engine holds/falls back on `ok:false`.
+
+---
+
+## Multi-chain: match + settle across chains — add a chain by CONFIG, no code change
+
+The engine matches AND settles perp markets on **several chains at once** (Robinhood
+4663 mainnet pilot + Sepolia 11155111 canonical, extensible to the other HookSwap
+chains). The oracle/mark layer was already per-market + multi-chain (`oracle.chainId`
++ `oracle/rpc.ts clientFor(chainId)`); the matching/settlement side is now per-chain too.
+
+### Per-chain registry (`src/chain.ts`)
+Instead of module-level singletons bound to one RPC, every chain in the config gets a
+`ChainCtx { chainId, publicClient, walletClient, matcherAccount, marketRegistry,
+oracleGuard, gasMode }`. `getChainCtx(chainId)` resolves it. **A market's chainId comes
+from which registry it lives in** — `fetchAllMarkets()` enumerates *every* configured
+chain's `MarketRegistry` and tags each `MarketMeta` with its `chainId`. Every read/settle
+helper (`onchainNonce`, `userBalance`, `isAuthorizedMatcher`, `fetchPositions`,
+`fetchMarketRefFeed`, `fetchOpenInterest`, `orderHashOnchain`, `settlePair`) takes a
+`chainId`/`ChainCtx` and uses THAT chain's client.
+
+### `config/chains.json` schema
+```jsonc
+{ "chains": [ {
+  "chainId": 4663,                 // required
+  "network": "robinhood",          // optional label (logs)
+  "rpcUrl": "https://…",           // literal default
+  "rpcUrlEnv": "RH_RPC_URL",       // optional env override (wins over rpcUrl)
+  "rpcFallback": "https://…",      // optional (keeper read fallback)
+  "marketRegistry": "0x…",         // required — the chain's MarketRegistry
+  "oracleGuard": "0x…",            // required — the chain's OracleGuard
+  "matcherKeyEnv": "RH_MATCHER_PRIVATE_KEY", // ENV VAR NAME holding the matcher key
+  "keeperKeyEnv":  "RH_KEEPER_PRIVATE_KEY",  // ENV VAR NAME holding the keeper key
+  "gasMode": "eip1559"             // 'eip1559' (RH + default) | 'legacy'
+} ] }
+```
+Loaded from `PERPS_CHAINS_CONFIG=<path>` or `config/chains.json`. `config/markets.json`
+(mark sources, keyed by on-chain market **address** with `oracle.chainId`) is optional —
+each market's mark also auto-resolves from its on-chain `OracleGuard.refFeed`.
+
+### Secret handling (unchanged pattern)
+Keys are **never** in `chains.json` — only the env-var NAME (`matcherKeyEnv`/`keeperKeyEnv`).
+The engine/keeper read the key **once** from that env var, normalize it, and never log it
+(`/health` and boot logs print only the public matcher address). On Robinhood the pilot
+matcher is the deployer `0xc14C`, whose key lives in `contracts/.env DEPLOYER_PRIVATE_KEY`
+— set `RH_MATCHER_PRIVATE_KEY` to that value in the engine env; do **not** hardcode it.
+
+### Per-chain gas (the RH bug fix)
+`settlePair` (and the keeper's `send`) pick fee fields from `gasMode`:
+- **eip1559** (RH + default) → `maxFeePerGas`/`maxPriorityFeePerGas` from
+  `estimateFeesPerGas()`. Robinhood is EIP-1559 (~0.12 gwei); a legacy `gasPrice` below
+  block base fee reverts *"max fee per gas less than block base fee"* — so RH MUST be eip1559.
+- **legacy** → `gasPrice` (only for chains that require it).
+
+Nonces: live settle broadcasts are serialized **per chain** (independent chains send in
+parallel; a chain's own nonces never collide).
+
+### EIP-712 per chain
+`domainFor(market, chainId)` sets `verifyingContract = market` **and** `chainId = the
+market's own chain`, so an order signed for a market on chain A can never be replayed
+against chain B (the domain differs). `/orders`, `/positions`, cancel-auth, and the ticker
+all thread the market's `chainId`; `/markets` and `/health` aggregate across all chains.
+
+### Backward compatibility
+If **no** chains config is present, the engine synthesizes ONE chain from the legacy
+single-chain env vars (`PERPS_CHAIN_ID` / `SEPOLIA_RPC_URL` / `MARKET_REGISTRY` /
+`ORACLE_GUARD` / `MATCHER_PRIVATE_KEY`, `gasMode` from `PERPS_GAS_MODE` default `eip1559`).
+Existing single-chain deploys keep working unchanged. The keeper mirrors this (legacy
+fallback defaults `gasMode` to `legacy`, preserving its historical Sepolia behavior).
+
+### Add a chain
+1. Add a `config/chains.json` entry (registry, oracleGuard, RPC, gasMode).
+2. Set the two key env vars it names (`matcherKeyEnv`, `keeperKeyEnv`).
+That's it — **no code change.** (A market on the new chain is then just a
+`markets.json` entry / auto-resolves via its `OracleGuard.refFeed`.)
+
+Validate locally with `bun scripts/dryRunMultichain.ts` (LIVE_SETTLE forced false):
+it loads every registry, enumerates markets per chain, and simulates a `settleBatch`
+on one market per chain (no broadcast).

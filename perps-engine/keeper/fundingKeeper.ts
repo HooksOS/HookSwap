@@ -15,6 +15,7 @@ import { fetchAllPositions, lastPairId, type KeeperMarket } from "./keeperMarket
 const FUNDING_INTERVAL = 300n; // 5 minutes (PerpMarket.FUNDING_INTERVAL constant)
 
 export interface FundingRecord {
+  chainId: number;
   market: `0x${string}`;
   pairIds: string[];
   txHash: string | null;
@@ -23,26 +24,35 @@ export interface FundingRecord {
   ts: string;
 }
 
-async function latestBlockTs(): Promise<bigint> {
-  const b = await read((c) => c.getBlock({ blockTag: "latest" }));
+async function latestBlockTs(chainId: number): Promise<bigint> {
+  const b = await read(chainId, (c) => c.getBlock({ blockTag: "latest" }));
   return b.timestamp;
 }
 
-/** One funding sweep across the given markets. Returns any settleFundingBatch txs. */
+/** One funding sweep across the given markets (across chains). Returns any settleFundingBatch txs. */
 export async function runFundingSweep(markets: KeeperMarket[]): Promise<FundingRecord[]> {
   const records: FundingRecord[] = [];
-  let nowTs: bigint;
-  try {
-    nowTs = await latestBlockTs();
-  } catch {
-    nowTs = BigInt(Math.floor(Date.now() / 1000));
-  }
+  // Per-chain "now" — block timestamps differ across chains; cache one read per chain.
+  const nowByChain = new Map<number, bigint>();
+  const nowFor = async (chainId: number): Promise<bigint> => {
+    const cached = nowByChain.get(chainId);
+    if (cached != null) return cached;
+    let ts: bigint;
+    try {
+      ts = await latestBlockTs(chainId);
+    } catch {
+      ts = BigInt(Math.floor(Date.now() / 1000));
+    }
+    nowByChain.set(chainId, ts);
+    return ts;
+  };
 
   for (const m of markets) {
     try {
-      const last = await lastPairId(m.market);
+      const nowTs = await nowFor(m.chainId);
+      const last = await lastPairId(m.chainId, m.market);
       if (last <= 0n) continue;
-      const positions = await fetchAllPositions(m.market, last);
+      const positions = await fetchAllPositions(m.chainId, m.market, last);
 
       // Due = ACTIVE and at least one whole funding period has elapsed since the
       // last settlement (so the tx actually advances accrual — not a no-op).
@@ -54,8 +64,9 @@ export async function runFundingSweep(markets: KeeperMarket[]): Promise<FundingR
       // Batch to keep each tx's gas bounded.
       for (let i = 0; i < due.length; i += CFG.fundingBatchSize) {
         const batch = due.slice(i, i + CFG.fundingBatchSize);
-        const r = await send(m.market, PERP_MARKET_ABI, "settleFundingBatch", [batch]);
+        const r = await send(m.chainId, m.market, PERP_MARKET_ABI, "settleFundingBatch", [batch]);
         records.push({
+          chainId: m.chainId,
           market: m.market,
           pairIds: batch.map((x) => x.toString()),
           txHash: r.txHash,
@@ -64,12 +75,12 @@ export async function runFundingSweep(markets: KeeperMarket[]): Promise<FundingR
           ts: new Date().toISOString(),
         });
         log(
-          `[funding] ${m.market} settleFundingBatch([${batch.length} pairs]) -> ${r.reason}` +
+          `[funding] ${m.chainId}:${m.market} settleFundingBatch([${batch.length} pairs]) -> ${r.reason}` +
             (r.txHash ? ` tx=${r.txHash}` : ""),
         );
       }
     } catch (e: any) {
-      log(`[funding] market ${m.market} sweep error: ${e?.shortMessage || e?.message || e}`);
+      log(`[funding] market ${m.chainId}:${m.market} sweep error: ${e?.shortMessage || e?.message || e}`);
     }
   }
   return records;

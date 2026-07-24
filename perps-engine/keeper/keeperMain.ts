@@ -13,8 +13,8 @@
 
 import { writeFileSync } from "fs";
 import { PERP_MARKET_ABI } from "./keeperAbi.js";
-import { CFG, keeperAccount, log, read } from "./keeperChain.js";
-import { fetchMarkets, type KeeperMarket } from "./keeperMarkets.js";
+import { CFG, allKeeperChains, getKeeperCtx, log, read } from "./keeperChain.js";
+import { fetchAllMarkets, type KeeperMarket } from "./keeperMarkets.js";
 import { runLiquidationSweep, type LiquidationRecord } from "./liquidationKeeper.js";
 import { runFundingSweep, type FundingRecord } from "./fundingKeeper.js";
 
@@ -29,10 +29,14 @@ function persist(): void {
       CFG.resultsFile,
       JSON.stringify(
         {
-          keeper: keeperAccount?.address ?? null,
-          chainId: CFG.chainId,
+          chains: allKeeperChains().map((c) => ({
+            chainId: c.chainId,
+            network: c.network ?? null,
+            keeper: c.keeperAccount?.address ?? null, // public address only
+            gasMode: c.gasMode,
+          })),
           updatedAt: new Date().toISOString(),
-          markets: markets.map((m) => m.market),
+          markets: markets.map((m) => `${m.chainId}:${m.market}`),
           liquidations: liquidations.slice(-50),
           fundings: fundings.slice(-50),
         },
@@ -47,10 +51,10 @@ function persist(): void {
 
 async function refreshMarkets(): Promise<void> {
   try {
-    const next = await fetchMarkets();
+    const next = await fetchAllMarkets();
     if (next.length) {
       markets = next;
-      log(`[markets] tracking ${markets.length}: ${markets.map((m) => m.market).join(", ")}`);
+      log(`[markets] tracking ${markets.length}: ${markets.map((m) => `${m.chainId}:${m.market}`).join(", ")}`);
     }
   } catch (e: any) {
     log(`[markets] refresh error: ${e?.shortMessage || e?.message || e}`);
@@ -59,11 +63,11 @@ async function refreshMarkets(): Promise<void> {
 
 /** Report keeper authorization on each tracked market (matcher-gated calls need it). */
 async function reportAuth(): Promise<void> {
-  if (!keeperAccount) return;
-  const keeperAddr = keeperAccount.address;
   for (const m of markets) {
+    const keeperAddr = getKeeperCtx(m.chainId).keeperAccount?.address;
+    if (!keeperAddr) continue;
     try {
-      const authed = (await read((c) =>
+      const authed = (await read(m.chainId, (c) =>
         c.readContract({
           address: m.market,
           abi: PERP_MARKET_ABI,
@@ -71,7 +75,7 @@ async function reportAuth(): Promise<void> {
           args: [keeperAddr],
         }),
       )) as boolean;
-      log(`[auth] ${m.market} keeper authorizedMatcher=${authed}` + (authed ? "" : " (funding+mark refresh will revert Unauthorized until authorized)"));
+      log(`[auth] ${m.chainId}:${m.market} keeper authorizedMatcher=${authed}` + (authed ? "" : " (funding+mark refresh will revert Unauthorized until authorized)"));
     } catch {
       /* ignore */
     }
@@ -117,15 +121,19 @@ async function marketRefreshLoop(): Promise<void> {
 
 async function main(): Promise<void> {
   log("[boot] HookSwapPerps keeper starting");
-  if (!keeperAccount) {
-    log("[boot] FATAL: KEEPER_PRIVATE_KEY missing/invalid — set it in keeper/.env (mode 600). Exiting.");
+  const chains = allKeeperChains();
+  const withKey = chains.filter((c) => c.keeperAccount);
+  if (withKey.length === 0) {
+    log("[boot] FATAL: no chain has a valid keeper key — set KEEPER_PRIVATE_KEY (or the per-chain keeperKeyEnv) in keeper/.env (mode 600). Exiting.");
     process.exit(1);
   }
-  log(`[boot] keeper=${keeperAccount.address} chainId=${CFG.chainId} rpc=${CFG.rpcUrl}`);
-  log(
-    `[boot] registry=${CFG.marketRegistry} oracleGuard=${CFG.oracleGuard} ` +
-      `liqLoop=${CFG.liquidationLoopMs}ms fundingLoop=${CFG.fundingLoopMs}ms markRefreshBps=${CFG.markRefreshBps}`,
-  );
+  for (const c of chains) {
+    log(
+      `[boot] chain ${c.network ?? ""} ${c.chainId}: keeper=${c.keeperAccount?.address ?? "NONE (skipped)"} ` +
+        `registry=${c.marketRegistry} oracleGuard=${c.oracleGuard} gasMode=${c.gasMode}`,
+    );
+  }
+  log(`[boot] liqLoop=${CFG.liquidationLoopMs}ms fundingLoop=${CFG.fundingLoopMs}ms markRefreshBps=${CFG.markRefreshBps}`);
 
   await refreshMarkets();
   await reportAuth();

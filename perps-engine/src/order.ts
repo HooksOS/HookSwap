@@ -7,7 +7,6 @@ import {
   EIP712_DOMAIN_VERSION,
   EIP712_ORDER_TYPES,
 } from "./abis.js";
-import { ENV } from "./env.js";
 import { OrderType, type Order } from "./types.js";
 
 export class OrderError extends Error {}
@@ -49,12 +48,16 @@ export function parseOrder(raw: any): Order {
   };
 }
 
-/** EIP-712 domain for a given market (verifyingContract = the market address). */
-export function domainFor(market: `0x${string}`) {
+/**
+ * EIP-712 domain for a given market. verifyingContract = the market address AND
+ * chainId = the market's OWN chain — so an order signed for a market on chain A can
+ * never be replayed against a same/different market on chain B (the domain differs).
+ */
+export function domainFor(market: `0x${string}`, chainId: number) {
   return {
     name: EIP712_DOMAIN_NAME,
     version: EIP712_DOMAIN_VERSION,
-    chainId: ENV.chainId,
+    chainId,
     verifyingContract: market,
   } as const;
 }
@@ -65,13 +68,14 @@ export function domainFor(market: `0x${string}`) {
  */
 export async function verifySigner(
   market: `0x${string}`,
+  chainId: number,
   order: Order,
   signature: `0x${string}`,
 ): Promise<void> {
   let recovered: `0x${string}`;
   try {
     recovered = await recoverTypedDataAddress({
-      domain: domainFor(market),
+      domain: domainFor(market, chainId),
       types: EIP712_ORDER_TYPES,
       primaryType: "Order",
       message: {
@@ -128,6 +132,7 @@ export function sanityCheck(
  */
 export async function verifyCancelSigner(
   market: `0x${string}`,
+  chainId: number,
   orderId: string,
   trader: `0x${string}`,
   signature: `0x${string}`,
@@ -135,7 +140,7 @@ export async function verifyCancelSigner(
   let recovered: `0x${string}`;
   try {
     recovered = await recoverTypedDataAddress({
-      domain: domainFor(market),
+      domain: domainFor(market, chainId),
       types: EIP712_CANCEL_TYPES,
       primaryType: "Cancel",
       message: { orderId, trader },

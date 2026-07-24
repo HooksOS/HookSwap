@@ -1,0 +1,31 @@
+{
+  "_note": "HookSwapPerps MATCHING/SETTLEMENT chains — the engine matches + settles perp markets across EVERY chain listed here simultaneously. One entry per chain. A market's chain comes from which registry it lives in (fetchAllMarkets tags each). Adding a chain = a new entry here + the matcher/keeper key env vars it names (NO code change). See EXTENSIBILITY.md > Multi-chain. Keys are NEVER in this file — only the ENV VAR NAME that holds each key (matcherKeyEnv / keeperKeyEnv); the engine/keeper read the key once from that env var and never log it. rpcUrl is the literal default; rpcUrlEnv (optional) overrides it from an env var. gasMode: 'eip1559' (RH + default) sends maxFeePerGas/maxPriorityFeePerGas; 'legacy' sends gasPrice (only for chains that require it — a legacy gasPrice below an EIP-1559 chain's base fee reverts 'max fee per gas less than block base fee', which is why RH MUST be eip1559).",
+  "chains": [
+    {
+      "_comment": "Sepolia (11155111) — canonical HookSwapPerps self-service factory stack (factory v4 0xa1A8C5A2… → impl v5, per contracts/perps/config/factory-sepolia.json). MANDATORY first-validation chain. matcher = the existing engine key (MATCHER_PRIVATE_KEY); keeper = KEEPER_PRIVATE_KEY. gasMode eip1559 (Sepolia supports 1559; keeps parity with RH).",
+      "chainId": 11155111,
+      "network": "sepolia",
+      "rpcUrl": "https://ethereum-sepolia-rpc.publicnode.com",
+      "rpcUrlEnv": "SEPOLIA_RPC_URL",
+      "rpcFallback": "https://1rpc.io/sepolia",
+      "rpcFallbackEnv": "SEPOLIA_RPC_FALLBACK",
+      "marketRegistry": "0xEDE278469694e951676973B7b9e193a98463DAC2",
+      "oracleGuard": "0x3D2ee857AE129688fA43E378dAE85b60803bfFD1",
+      "matcherKeyEnv": "MATCHER_PRIVATE_KEY",
+      "keeperKeyEnv": "KEEPER_PRIVATE_KEY",
+      "gasMode": "eip1559"
+    },
+    {
+      "_comment": "Robinhood Chain (4663) — MAINNET PILOT of the self-service factory stack (factory 0xedD55A2E…, per contracts/perps/config/factory-robinhood.json). matcher = the PILOT deployer 0xc14C (its key lives in contracts/.env DEPLOYER_PRIVATE_KEY; set RH_MATCHER_PRIVATE_KEY to that value in the engine env — NEVER hardcode the key). Replace with the real perps-engine matcher before production (each market's setAuthorizedMatcher / factory.setPlatformWiring). gasMode MUST be eip1559 (RH ~0.12 gwei base fee; legacy reverts).",
+      "chainId": 4663,
+      "network": "robinhood",
+      "rpcUrl": "https://rpc.mainnet.chain.robinhood.com",
+      "rpcUrlEnv": "RH_RPC_URL",
+      "marketRegistry": "0xC19e0ae91f32AaF0bDf4442133DaE82AB8dd183d",
+      "oracleGuard": "0xE43EE7069699398786753B9Bd8a8c03717B8ba8e",
+      "matcherKeyEnv": "RH_MATCHER_PRIVATE_KEY",
+      "keeperKeyEnv": "RH_KEEPER_PRIVATE_KEY",
+      "gasMode": "eip1559"
+    }
+  ]
+}

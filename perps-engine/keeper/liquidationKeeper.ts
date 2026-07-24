@@ -26,6 +26,7 @@ import {
 } from "./keeperMarkets.js";
 
 export interface LiquidationRecord {
+  chainId: number;
   market: `0x${string}`;
   pairId: string;
   side: "long" | "short";
@@ -50,27 +51,27 @@ export async function runLiquidationSweep(markets: KeeperMarket[]): Promise<Liqu
 
   for (const m of markets) {
     try {
-      const last = await lastPairId(m.market);
+      const last = await lastPairId(m.chainId, m.market);
       if (last <= 0n) continue;
-      const positions = await fetchAllPositions(m.market, last);
+      const positions = await fetchAllPositions(m.chainId, m.market, last);
       const active = positions.filter((p) => p.status === 0);
       if (active.length === 0) continue;
 
       // 1) Ensure a valid, in-band mark for each traded token.
-      const feed = await refFeedFor(m.market);
+      const feed = await refFeedFor(m.chainId, m.market);
       if (feed) {
         const tokens = [...new Set(active.map((p) => p.token))];
         for (const token of tokens) {
-          const mark = await chainlinkMark(feed);
+          const mark = await chainlinkMark(m.chainId, feed);
           if (!mark.ok) {
-            log(`[liq] ${m.market} token=${token} feed unusable (${mark.reason}) — skip mark refresh`);
+            log(`[liq] ${m.chainId}:${m.market} token=${token} feed unusable (${mark.reason}) — skip mark refresh`);
             continue;
           }
-          const stored = await storedMark(m.market, token);
+          const stored = await storedMark(m.chainId, m.market, token);
           if (needsMarkRefresh(stored, mark.price1e18)) {
-            const r = await send(m.market, PERP_MARKET_ABI, "updatePrice", [token, mark.price1e18]);
+            const r = await send(m.chainId, m.market, PERP_MARKET_ABI, "updatePrice", [token, mark.price1e18]);
             log(
-              `[liq] ${m.market} updatePrice(${token}, ${mark.price1e18}) stored=${stored} -> ${r.reason}` +
+              `[liq] ${m.chainId}:${m.market} updatePrice(${token}, ${mark.price1e18}) stored=${stored} -> ${r.reason}` +
                 (r.txHash ? ` tx=${r.txHash}` : ""),
             );
           }
@@ -82,14 +83,15 @@ export async function runLiquidationSweep(markets: KeeperMarket[]): Promise<Liqu
         let liqLong = false;
         let liqShort = false;
         try {
-          [liqLong, liqShort] = await liquidateCheck(m.market, p.pairId);
+          [liqLong, liqShort] = await liquidateCheck(m.chainId, m.market, p.pairId);
         } catch {
           continue;
         }
         if (!liqLong && !liqShort) continue;
         const side: "long" | "short" = liqLong ? "long" : "short";
-        const r = await send(m.market, PERP_MARKET_ABI, "liquidate", [p.pairId]);
+        const r = await send(m.chainId, m.market, PERP_MARKET_ABI, "liquidate", [p.pairId]);
         const rec: LiquidationRecord = {
+          chainId: m.chainId,
           market: m.market,
           pairId: p.pairId.toString(),
           side,
@@ -100,20 +102,24 @@ export async function runLiquidationSweep(markets: KeeperMarket[]): Promise<Liqu
         };
         records.push(rec);
         log(
-          `[liq] ${m.market} pair=${p.pairId} ${side} LIQUIDATE -> ${r.reason}` +
+          `[liq] ${m.chainId}:${m.market} pair=${p.pairId} ${side} LIQUIDATE -> ${r.reason}` +
             (r.txHash ? ` tx=${r.txHash}` : ""),
         );
       }
     } catch (e: any) {
-      log(`[liq] market ${m.market} sweep error: ${e?.shortMessage || e?.message || e}`);
+      log(`[liq] market ${m.chainId}:${m.market} sweep error: ${e?.shortMessage || e?.message || e}`);
     }
   }
   return records;
 }
 
-// Read-only canLiquidate via the shared retrying reader.
-async function liquidateCheck(market: `0x${string}`, pairId: bigint): Promise<readonly [boolean, boolean]> {
-  return (await read((c) =>
+// Read-only canLiquidate via the shared per-chain retrying reader.
+async function liquidateCheck(
+  chainId: number,
+  market: `0x${string}`,
+  pairId: bigint,
+): Promise<readonly [boolean, boolean]> {
+  return (await read(chainId, (c) =>
     c.readContract({ address: market, abi: PERP_MARKET_ABI, functionName: "canLiquidate", args: [pairId] }),
   )) as readonly [boolean, boolean];
 }

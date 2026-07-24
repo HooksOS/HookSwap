@@ -1,7 +1,7 @@
 // HookSwapPerps matching-engine entrypoint.
 
 import { ENV } from "./env.js";
-import { matcherAccount, fetchMarketRefFeed } from "./chain.js";
+import { allChainCtx, fetchMarketRefFeed } from "./chain.js";
 import { initMarks, markPrice, registerRefFeedMark, hasMark, marksConfigured } from "./mark.js";
 import { MatchingEngine } from "./engine.js";
 import { MarkStore } from "./marketData.js";
@@ -18,8 +18,8 @@ async function syncMarketMarks(engine: MatchingEngine): Promise<number> {
   let registered = 0;
   for (const m of engine.markets()) {
     try {
-      const refFeed = await fetchMarketRefFeed(m.market);
-      if (refFeed && registerRefFeedMark(m.market, refFeed, ENV.chainId)) registered++;
+      const refFeed = await fetchMarketRefFeed(m.chainId, m.market);
+      if (refFeed && registerRefFeedMark(m.market, refFeed, m.chainId)) registered++;
     } catch (e) {
       console.warn(`[marks] refFeed lookup failed for ${m.market}:`, (e as Error).message);
     }
@@ -45,11 +45,14 @@ async function sampleMarks(engine: MatchingEngine, marks: MarkStore): Promise<vo
 
 async function main(): Promise<void> {
   const marksCfg = initMarks();
-  console.log(
-    `[perps-engine] boot: chainId=${ENV.chainId} registry=${ENV.marketRegistry} ` +
-      `matcher=${matcherAccount?.address ?? "NONE (settle disabled)"} ` +
-      `liveSettle=${ENV.liveSettle} configMarks=${marksCfg.configured} (${marksCfg.path})`,
-  );
+  console.log(`[perps-engine] boot: liveSettle=${ENV.liveSettle} configMarks=${marksCfg.configured} (${marksCfg.path})`);
+  for (const c of allChainCtx()) {
+    console.log(
+      `[perps-engine]   chain ${c.network ?? ""} ${c.chainId}: registry=${c.marketRegistry} ` +
+        `oracleGuard=${c.oracleGuard} gasMode=${c.gasMode} ` +
+        `matcher=${c.matcherAccount?.address ?? "NONE (settle disabled)"}`,
+    );
+  }
 
   const engine = new MatchingEngine();
   await engine.init();

@@ -59,6 +59,8 @@ export interface MatchedPair {
 }
 
 export interface MarketMeta {
+  /** The chain this market lives on (its MarketRegistry's chain). */
+  chainId: number;
   market: `0x${string}`;
   marketId: `0x${string}`;
   collateral: `0x${string}`;

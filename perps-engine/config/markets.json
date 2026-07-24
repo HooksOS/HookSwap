@@ -1,0 +1,89 @@
+{
+  "_note": "HookSwapPerps engine MARK sources — maps an on-chain market ADDRESS to the oracle source the matcher uses for its scalar mark price (1e18). OPTIONAL: the engine ALSO auto-registers each market's mark from its on-chain OracleGuard.refFeed (see index.ts syncMarketMarks), so a market not listed here still gets the exact price the on-chain deviation breaker enforces. Listing a market here pins/overrides its source explicitly. `oracle.chainId` selects the RPC (oracle/rpc.ts). This file is the multi-chain, real-address version of markets.example.json; addresses are verified against contracts/perps/config/factory-{robinhood,sepolia}.json. Set the engine env PERPS_ENGINE_MARKETS to this file's path to load it.",
+  "markets": [
+    {
+      "_comment": "Robinhood (4663) proof market ETH-PERP-A. Mark = RH Chainlink ETH/USD proxy (0x78F3556b…, 8-dec, ON-CHAIN VERIFIED ~1865 USD) = the refFeed OracleGuard enforces. Collateral WETH 0x0Bd7D308…EAcAD73.",
+      "market": "0xac39A24eea115fD278a55AF733BD6120637Ce4F3",
+      "assetClass": "crypto",
+      "oracle": {
+        "sourceType": "chainlink",
+        "chainId": 4663,
+        "feed": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+        "decimals": 8,
+        "maxStaleSecs": 90000
+      },
+      "collateralToken": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "maxLeverage": 10
+    },
+    {
+      "_comment": "Robinhood (4663) proof market ETH-PERP-B.",
+      "market": "0x6871c3Bb19aE035365cc3ADb5833B371995E5dA6",
+      "assetClass": "crypto",
+      "oracle": {
+        "sourceType": "chainlink",
+        "chainId": 4663,
+        "feed": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+        "decimals": 8,
+        "maxStaleSecs": 90000
+      },
+      "collateralToken": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "maxLeverage": 10
+    },
+    {
+      "_comment": "Robinhood (4663) proof market ETH-PERP-LEV (on-chain cap 10x).",
+      "market": "0x0bE273ba565DD9e01814404BbDe6f8382b4f878A",
+      "assetClass": "crypto",
+      "oracle": {
+        "sourceType": "chainlink",
+        "chainId": 4663,
+        "feed": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+        "decimals": 8,
+        "maxStaleSecs": 90000
+      },
+      "collateralToken": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "maxLeverage": 10
+    },
+    {
+      "_comment": "Robinhood (4663) proof market ETH-PERP-FALLBACK (cap unset on-chain -> 100x MAX_LEVERAGE default).",
+      "market": "0x4ef1C53782a24423bc12Dd241C100122cb97333c",
+      "assetClass": "crypto",
+      "oracle": {
+        "sourceType": "chainlink",
+        "chainId": 4663,
+        "feed": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+        "decimals": 8,
+        "maxStaleSecs": 90000
+      },
+      "collateralToken": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "maxLeverage": 25
+    },
+    {
+      "_comment": "Robinhood (4663) proof market ETH-PERP-STALE (deployed with maxStaleness=1 for a staleness-revert proof; listed for completeness — the engine will report ok:false if the feed is older than maxStaleSecs).",
+      "market": "0x6028e80F392F17113926Ea1C4801f29C4E1e81F6",
+      "assetClass": "crypto",
+      "oracle": {
+        "sourceType": "chainlink",
+        "chainId": 4663,
+        "feed": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+        "decimals": 8,
+        "maxStaleSecs": 90000
+      },
+      "collateralToken": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "maxLeverage": 10
+    },
+    {
+      "_comment": "Sepolia (11155111) canonical factory v5 clone market (createMarketV5Clone, factory-sepolia.json). Mark = Sepolia Chainlink ETH/USD (0x694AA176…, 8-dec) — the same refFeed the OracleGuard enforces. Collateral WETH 0xfFf99767…6B14. Other Sepolia registry markets auto-resolve their mark via OracleGuard.refFeed even if not listed here.",
+      "market": "0xeCCc9ec8f2C288f9E8d46048bfEA1bB75FE5b943",
+      "assetClass": "crypto",
+      "oracle": {
+        "sourceType": "chainlink",
+        "chainId": 11155111,
+        "feed": "0x694AA1769357215DE4FAC081bf1f309aDC325306",
+        "decimals": 8,
+        "maxStaleSecs": 90000
+      },
+      "collateralToken": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
+      "maxLeverage": 25
+    }
+  ]
+}

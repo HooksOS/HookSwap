@@ -8,7 +8,7 @@ import { EventEmitter } from "events";
 import { randomUUID } from "crypto";
 import { getAddress } from "viem";
 import { ENV } from "./env.js";
-import { fetchMarkets, onchainNonce, userBalance } from "./chain.js";
+import { fetchAllMarkets, getChainCtx, onchainNonce, userBalance } from "./chain.js";
 import { markPrice } from "./mark.js";
 import { OrderError } from "./order.js";
 import { settlePair } from "./settle.js";
@@ -167,7 +167,7 @@ export class MatchingEngine extends EventEmitter {
   }
 
   async refreshMarkets(): Promise<void> {
-    const metas = await fetchMarkets();
+    const metas = await fetchAllMarkets();
     for (const m of metas) {
       const k = this.key(m.market);
       const existing = this.books.get(k);
@@ -319,6 +319,7 @@ export class MatchingEngine extends EventEmitter {
     signature: `0x${string}`,
   ): Promise<SubmitResult> {
     const b = this.book(k);
+    const chainId = b.meta.chainId;
 
     // Anti-flood gates (HIGH-3) — bound in-memory fake depth / OOM.
     const traderKey = getAddress(order.trader);
@@ -339,7 +340,7 @@ export class MatchingEngine extends EventEmitter {
     // which is a replay guard and fails CLOSED) to preserve liveness — the caps above
     // still bound the blast radius and settlement is authoritative for margin.
     try {
-      const { available } = await userBalance(k as `0x${string}`, order.trader);
+      const { available } = await userBalance(chainId, k as `0x${string}`, order.trader);
       if (available <= 0n) {
         throw new OrderError(`no deposited collateral for ${order.trader} — deposit before ordering`);
       }
@@ -350,7 +351,7 @@ export class MatchingEngine extends EventEmitter {
 
     // On-chain nonce check (a mismatch guarantees a settle revert).
     try {
-      const chainNonce = await onchainNonce(k as `0x${string}`, order.trader);
+      const chainNonce = await onchainNonce(chainId, k as `0x${string}`, order.trader);
       if (order.nonce !== chainNonce) {
         throw new Error(
           `order.nonce ${order.nonce} != on-chain nonce ${chainNonce} for ${order.trader}`,
@@ -469,7 +470,7 @@ export class MatchingEngine extends EventEmitter {
         matchSize,
       };
 
-      const res = await settlePair(b.meta.market, pair);
+      const res = await settlePair(getChainCtx(b.meta.chainId), b.meta.market, pair);
 
       // Consume the book when: live+mined, OR dry-run (simulate mode always consumes
       // logically so matching is observable without real balances).

@@ -5,7 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { getAddress } from "viem";
 import { WebSocketServer, type WebSocket } from "ws";
 import { ENV } from "./env.js";
-import { matcherAccount } from "./chain.js";
+import { allChainCtx } from "./chain.js";
 import { fetchPositions } from "./chain.js";
 import { MatchingEngine } from "./engine.js";
 import { OrderError, parseOrder, parseSignature, sanityCheck, verifyCancelSigner, verifySigner } from "./order.js";
@@ -43,6 +43,7 @@ function readBody(req: IncomingMessage): Promise<any> {
 
 function marketView(m: MarketMeta) {
   return {
+    chainId: m.chainId,
     market: m.market,
     marketId: m.marketId,
     collateral: m.collateral,
@@ -99,11 +100,22 @@ export async function startServer(engine: MatchingEngine, marks: MarkStore): Pro
 
       // GET /health
       if (method === "GET" && path === "/health") {
+        const all = engine.markets();
+        const ctxs = allChainCtx();
         return json(res, 200, {
           ok: engine.isReady(),
-          chainId: ENV.chainId,
-          markets: engine.markets().length,
-          matcher: matcherAccount?.address ?? null,
+          // Backward-compat scalars (first configured chain); prefer `chains` below.
+          chainId: ctxs[0]?.chainId ?? null,
+          matcher: ctxs[0]?.matcherAccount?.address ?? null,
+          chains: ctxs.map((c) => ({
+            chainId: c.chainId,
+            network: c.network ?? null,
+            marketRegistry: c.marketRegistry,
+            matcher: c.matcherAccount?.address ?? null, // public address only, never the key
+            gasMode: c.gasMode,
+            markets: all.filter((m) => m.chainId === c.chainId).length,
+          })),
+          markets: all.length,
           liveSettle: ENV.liveSettle,
           marksConfigured: marksConfigured(),
         });
@@ -139,7 +151,7 @@ export async function startServer(engine: MatchingEngine, marks: MarkStore): Pro
         const order = parseOrder(body.order);
         const signature = parseSignature(body.signature);
         sanityCheck(order, { marketMaxLeverage: meta.marketMaxLeverage, maxLeverageAbs: meta.maxLeverageAbs });
-        await verifySigner(market, order, signature);
+        await verifySigner(market, meta.chainId, order, signature);
 
         const result = await engine.submit(market, order, signature);
         return json(res, 200, {
@@ -158,8 +170,10 @@ export async function startServer(engine: MatchingEngine, marks: MarkStore): Pro
         const orderId = decodeURIComponent(path.slice("/orders/".length));
         const owner = engine.getOrderOwner(orderId);
         if (!owner) return json(res, 404, { ok: false, error: "orderId not found" });
+        const ownerMeta = engine.getMeta(owner.market);
+        if (!ownerMeta) return json(res, 404, { ok: false, error: "market for orderId no longer known" });
         const signature = parseSignature(url.searchParams.get("signature"));
-        await verifyCancelSigner(owner.market, orderId, owner.trader, signature);
+        await verifyCancelSigner(owner.market, ownerMeta.chainId, orderId, owner.trader, signature);
         const r = engine.cancel(orderId);
         if (!r.ok) return json(res, 400, { ok: false, error: r.reason });
         return json(res, 200, { ok: true, orderId });
@@ -184,7 +198,8 @@ export async function startServer(engine: MatchingEngine, marks: MarkStore): Pro
       // GET /positions?trader=&market=
       if (method === "GET" && path === "/positions") {
         const market = reqMarket(url);
-        if (!engine.hasMarket(market)) return json(res, 404, { error: "unknown market" });
+        const meta = engine.getMeta(market);
+        if (!meta) return json(res, 404, { error: "unknown market" });
         const traderRaw = url.searchParams.get("trader");
         if (!traderRaw) throw new OrderError("missing ?trader=<address>");
         let trader: `0x${string}`;
@@ -193,8 +208,8 @@ export async function startServer(engine: MatchingEngine, marks: MarkStore): Pro
         } catch {
           throw new OrderError(`invalid trader address: ${traderRaw}`);
         }
-        const positions = await fetchPositions(market, trader);
-        return json(res, 200, { market, trader, positions });
+        const positions = await fetchPositions(meta.chainId, market, trader);
+        return json(res, 200, { chainId: meta.chainId, market, trader, positions });
       }
 
       // GET /trades?market=&limit=
@@ -211,7 +226,8 @@ export async function startServer(engine: MatchingEngine, marks: MarkStore): Pro
       // GET /ticker?market=  → live mark/index/change/volume/OI/funding (honest nulls)
       if (method === "GET" && path === "/ticker") {
         const market = reqMarket(url);
-        if (!engine.hasMarket(market)) return json(res, 404, { error: "unknown market" });
+        const tickerMeta = engine.getMeta(market);
+        if (!tickerMeta) return json(res, 404, { error: "unknown market" });
 
         const index = marks.indexLatest(market); // Chainlink refFeed (1e18) or null
 
@@ -227,10 +243,11 @@ export async function startServer(engine: MatchingEngine, marks: MarkStore): Pro
           }
         }
 
-        const oi = await marks.openInterest(market);
+        const oi = await marks.openInterest(tickerMeta.chainId, market);
         const vol = volume24h(engine.allTrades(market));
 
         return json(res, 200, {
+          chainId: tickerMeta.chainId,
           market: getAddress(market),
           mark: mark != null ? mark.toString() : null,
           indexPrice: index != null ? index.toString() : null,
@@ -327,5 +344,6 @@ export async function startServer(engine: MatchingEngine, marks: MarkStore): Pro
   }
 
   await new Promise<void>((resolve) => server.listen(ENV.port, resolve));
-  console.log(`[perps-engine] listening on :${ENV.port} (chainId ${ENV.chainId}, liveSettle=${ENV.liveSettle})`);
+  const chainList = allChainCtx().map((c) => `${c.network ?? c.chainId}(${c.chainId})`).join(", ");
+  console.log(`[perps-engine] listening on :${ENV.port} (chains [${chainList}], liveSettle=${ENV.liveSettle})`);
 }
