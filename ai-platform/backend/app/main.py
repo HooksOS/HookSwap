@@ -10,7 +10,7 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
@@ -20,6 +20,8 @@ from app.core.exceptions import install_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.rag.engine import RagEngine
 from app.retrieval.store import resolve_corpus_path
+from app.security.auth import require_api_key
+from app.security.rate_limit import chat_rate_limit, marketing_rate_limit
 
 # The marketing slice needs FastAPI (already a hard dep here) but its leaf modules
 # pull optional providers lazily — importing the router is safe. Kept behind a
@@ -48,6 +50,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.error("rag_engine_init_failed", error=str(exc))
         engine = RagEngine(RetrievalStore(embedder=build_embedder(settings)), settings=settings)
     app.state.rag_engine = engine
+    # Expose settings on app.state so security dependencies (auth / rate limit)
+    # can be overridden per-app in tests; they fall back to the singleton.
+    app.state.settings = settings
     log.info(
         "startup",
         version=__version__,
@@ -55,6 +60,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         corpus_chunks=engine.store.size,
         llm_configured=engine.llm_configured,
         marketing_router=marketing_router is not None,
+        auth_enforced=(settings.is_production or not settings.auth_disabled),
+        api_keys_configured=len(settings.api_keys),
+        rate_limit_enabled=settings.rate_limit_enabled,
+        injection_guard_enabled=settings.injection_guard_enabled,
     )
     if _marketing_import_error:
         log.warning("marketing_router_unavailable", error=_marketing_import_error)
@@ -81,12 +90,21 @@ app.add_middleware(
 install_exception_handlers(app)
 
 # Task-spec routes live under /v1 (POST /v1/chat, POST /v1/chat/stream).
-app.include_router(chat_router, prefix="/v1")
+# Every non-public router carries endpoint auth + per-caller rate limiting as
+# router-level dependencies. /health and / stay open (not on these routers).
+app.include_router(
+    chat_router,
+    prefix="/v1",
+    dependencies=[Depends(require_api_key), Depends(chat_rate_limit)],
+)
 
 # Marketing slice (grounded X-post drafting/publishing). Its router already
 # carries its own /v1/marketing prefix, so it is mounted at the app root.
 if marketing_router is not None:
-    app.include_router(marketing_router)
+    app.include_router(
+        marketing_router,
+        dependencies=[Depends(require_api_key), Depends(marketing_rate_limit)],
+    )
 
 
 @app.get("/health")

@@ -19,6 +19,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.rag.engine import LLMNotConfiguredError, RagEngine
+from app.security.injection import enforce_input
 
 router = APIRouter(tags=["chat"])
 
@@ -51,8 +52,11 @@ def _engine(request: Request) -> RagEngine:
 @router.post("/chat", response_model=ChatAnswer)
 async def chat(payload: ChatQuery, request: Request) -> ChatAnswer:
     engine = _engine(request)
+    # Prompt-injection input guard: raises 400 on a jailbreak/override attempt,
+    # else returns the sanitized message to send downstream.
+    message = enforce_input(payload.message, source="chat")
     try:
-        result = await run_in_threadpool(engine.answer, payload.message, top_k=payload.top_k)
+        result = await run_in_threadpool(engine.answer, message, top_k=payload.top_k)
     except LLMNotConfiguredError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return ChatAnswer(**result.to_dict())
@@ -62,9 +66,12 @@ async def chat(payload: ChatQuery, request: Request) -> ChatAnswer:
 async def chat_stream(payload: ChatQuery, request: Request) -> StreamingResponse:
     engine = _engine(request)
 
+    # Prompt-injection input guard (raises 400 before we open the SSE stream).
+    message = enforce_input(payload.message, source="chat_stream")
+
     # Fail fast with 503 (before opening the stream) when a grounded answer needs the LLM.
     hits = await run_in_threadpool(
-        lambda: engine._relevant(engine.retrieve(payload.message, top_k=payload.top_k))
+        lambda: engine._relevant(engine.retrieve(message, top_k=payload.top_k))
     )
     if hits and not engine.llm_configured:
         raise HTTPException(
@@ -74,7 +81,7 @@ async def chat_stream(payload: ChatQuery, request: Request) -> StreamingResponse
 
     def _sse() -> Any:
         try:
-            for event in engine.stream_answer(payload.message, top_k=payload.top_k):
+            for event in engine.stream_answer(message, top_k=payload.top_k):
                 yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
         except LLMNotConfiguredError as exc:  # defensive; pre-checked above
             yield f"event: error\ndata: {json.dumps({'detail': str(exc)})}\n\n"

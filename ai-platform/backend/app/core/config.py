@@ -37,6 +37,16 @@ class Settings(BaseSettings):
     jwt_ttl_seconds: int = 3600
     api_key_prefix: str = "hsk_"
 
+    # --- endpoint auth (internal static API keys) ---
+    # Comma-separated set of accepted bearer / X-API-Key values. Empty = none
+    # configured. Never hardcode a real key here — inject via
+    # HOOKSWAP_AI_API_KEYS. When auth is enforced but this is empty the app
+    # FAILS CLOSED (deny) — loudly in production.
+    api_keys: list[str] = Field(default_factory=list)
+    # Local-dev escape hatch ONLY. Defaults secure (False). Setting it True
+    # skips endpoint auth — but it is IGNORED in production (auth always on).
+    auth_disabled: bool = False
+
     # --- postgres ---
     database_url: str = "postgresql+asyncpg://hookswap:hookswap@localhost:5432/hookswap_ai"
     db_pool_size: int = 10
@@ -93,9 +103,22 @@ class Settings(BaseSettings):
     trading_api_base_url: str = "https://trading.hookswap.org"
 
     # --- rate limit ---
+    rate_limit_enabled: bool = True
     rate_limit_default_per_min: int = 60
+    # Per-endpoint budgets (requests / minute / caller). Caller = API-key id, or
+    # client IP when auth is disabled. Bucket capacity (burst) == the per-min value.
+    rate_limit_chat_per_min: int = 30
+    rate_limit_marketing_per_min: int = 15
 
-    @field_validator("cors_origins", mode="before")
+    # --- prompt-injection / RAG-poisoning input guard ---
+    injection_guard_enabled: bool = True
+    # Hard input length cap for the chat/RAG + marketing free-text paths.
+    injection_max_input_chars: int = 8000
+    # True => block (400) on a high-severity injection match; False => sanitize
+    # + warn only (still logs). Internal-tools default is to block.
+    injection_block_on_match: bool = True
+
+    @field_validator("cors_origins", "api_keys", mode="before")
     @classmethod
     def _split_csv(cls, v: object) -> object:
         if isinstance(v, str):

@@ -86,7 +86,13 @@ def _error_body(exc: HookSwapAIError) -> dict[str, Any]:
 
 
 async def hookswap_error_handler(_: Request, exc: HookSwapAIError) -> JSONResponse:
-    return JSONResponse(status_code=exc.status_code, content=_error_body(exc))
+    headers: dict[str, str] | None = None
+    # Rate-limit responses advertise a Retry-After (seconds) per HTTP semantics.
+    if isinstance(exc, RateLimitError):
+        retry_after = exc.details.get("retry_after")
+        if retry_after is not None:
+            headers = {"Retry-After": str(int(retry_after))}
+    return JSONResponse(status_code=exc.status_code, content=_error_body(exc), headers=headers)
 
 
 async def unhandled_error_handler(_: Request, exc: Exception) -> JSONResponse:
