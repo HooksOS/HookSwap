@@ -240,12 +240,32 @@ All farms, filterable by `chainId`, sortable, paginated.
 { "total": 2, "offset": 0, "limit": 100, "farms": [ /* Farm[] */ ] }
 ```
 
-### `GET /farm/:chainId/:address`
+### `GET /farm/:chainId/:idOrAddress`
 A single farm's detail (powers the shareable farm page). `:address` = the
 StakingRewards child address. 404 if not found.
 ```jsonc
 { "farm": { /* Farm */ } }
 ```
+
+### `GET /farm/:chainId/:idOrAddress/og.png`
+The per-farm **social preview card** — a 1200×630 PNG rendered server-side from the
+SAME in-memory farm data (no external fetch), reusing the shared card chrome (brand
+spine, logo/wordmark header, chain pill, progress bar, footer) as the lock card.
+Shows the staking→reward pair, total staked, TVL USD (only when the staking token
+prices — an honest "Unpriced" chip otherwise), APR (or "—" when unpriceable), a
+reward-period progress bar with start/end dates + active/ended status + countdown,
+the per-period reward budget, chain, and HookSwap branding. `:idOrAddress` = the
+StakingRewards child address (the staking-token address is accepted as an alias).
+404 (JSON) for an unknown farm. `content-type: image/png`, `cache-control: max-age=300`.
+
+### `GET /farm/:chainId/:idOrAddress/share`
+Minimal **crawler HTML** whose `<head>` carries the OpenGraph + Twitter meta
+(`og:title` / `og:description` / `og:image` → the `og.png` above /
+`twitter:card=summary_large_image`) plus a `<meta http-equiv="refresh">` + JS
+redirect to the human, hash-routed in-app farm page
+`${LOCKER_APP_BASE_URL}/#/farm/:chainId/:address`. `og:image` is built from the
+incoming request's `x-forwarded-proto`/`-host` (absolute behind the reverse proxy).
+404 (JSON) for an unknown farm.
 
 ### `GET /farms/tvl-history`
 The daily farms-TVL snapshot series (oldest → newest). One point per UTC day,
@@ -313,11 +333,30 @@ All schedules, filterable by `chainId`, sortable, paginated.
 { "total": 1, "offset": 0, "limit": 100, "schedules": [ /* VestingSchedule[] */ ] }
 ```
 
-### `GET /vesting/:chainId/:id`
+### `GET /vesting/:chainId/:idOrToken`
 A single schedule's detail (powers the shareable vesting page). 404 if not found.
 ```jsonc
 { "schedule": { /* VestingSchedule */ } }
 ```
+
+### `GET /vesting/:chainId/:idOrToken/og.png`
+The per-schedule **social preview card** — a 1200×630 PNG rendered server-side from
+the SAME in-memory schedule data (no external fetch), reusing the shared card chrome
+as the lock/farm cards. Shows the token, beneficiary (shortened), total granted,
+vested %, claimable, a vested-progress bar with cliff/end dates + status
+(`In cliff` / `Vesting` / `Fully vested`) + countdown, the vested/total ratio, chain,
+and HookSwap branding. `:idOrToken` = the numeric schedule id **or** the vesting
+token address (self-describing shareable URL; first matching schedule). 404 (JSON)
+for an unknown schedule. `content-type: image/png`, `cache-control: max-age=300`.
+
+### `GET /vesting/:chainId/:idOrToken/share`
+Minimal **crawler HTML** whose `<head>` carries the OpenGraph + Twitter meta
+(`og:title` / `og:description` / `og:image` → the `og.png` above /
+`twitter:card=summary_large_image`) plus a `<meta http-equiv="refresh">` + JS
+redirect to the human, hash-routed in-app vesting page
+`${LOCKER_APP_BASE_URL}/#/vesting/:chainId/:scheduleId`. `og:image` is built from
+the incoming request's `x-forwarded-proto`/`-host` (absolute behind the reverse
+proxy). 404 (JSON) for an unknown schedule.
 
 ### `GET /vesting/tvl-history`
 The daily vesting locked-value snapshot series (oldest → newest). One point per UTC

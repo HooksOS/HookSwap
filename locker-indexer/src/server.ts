@@ -6,7 +6,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { ENV } from "./env.js";
 import { chainName } from "./chains.js";
-import { renderLockOgPng, lockShareHtml } from "./og.js";
+import {
+  renderLockOgPng,
+  lockShareHtml,
+  renderFarmOgPng,
+  farmShareHtml,
+  renderVestingOgPng,
+  vestingShareHtml,
+} from "./og.js";
 import type { LockerIndexer, Lock } from "./indexer.js";
 import type { TvlHistory } from "./persist.js";
 import type { FarmsIndexer, Farm } from "./farms/indexer.js";
@@ -348,6 +355,41 @@ export async function startServer(
         });
       }
 
+      // Resolve a farm by (chainId, idOrAddress) — shared by the JSON, OG-image, and
+      // share-HTML routes. The farm's canonical key is its StakingRewards child ADDRESS
+      // (self-describing shareable URL); the staking-token address is accepted as a
+      // convenience alias (first matching farm).
+      const resolveFarm = (cid: number, ref: string): Farm | undefined => {
+        return (
+          farmSnap.farms.find((f) => f.chainId === cid && eqAddr(f.farm, ref)) ??
+          farmSnap.farms.find((f) => f.chainId === cid && eqAddr(f.stakingToken.addr, ref))
+        );
+      };
+
+      // GET /farm/:chainId/:idOrAddress/og.png — the per-farm social card (1200×630 PNG),
+      // rendered server-side from the SAME in-memory farm data. 404 for an unknown farm.
+      m = path.match(/^\/farm\/(\d+)\/([^/]+)\/og\.png$/);
+      if (m) {
+        const cid = Number(m[1]);
+        const ref = m[2];
+        const farm = resolveFarm(cid, ref);
+        if (!farm) return json(res, 404, { error: "farm not found", chainId: cid, ref });
+        return png(res, 200, renderFarmOgPng(farm));
+      }
+
+      // GET /farm/:chainId/:idOrAddress/share — crawler HTML (OG/Twitter meta → the og.png
+      // above) that redirects human visitors to the in-app hash-routed farm page.
+      m = path.match(/^\/farm\/(\d+)\/([^/]+)\/share$/);
+      if (m) {
+        const cid = Number(m[1]);
+        const ref = m[2];
+        const farm = resolveFarm(cid, ref);
+        if (!farm) return json(res, 404, { error: "farm not found", chainId: cid, ref });
+        const imageUrl = `${selfBaseUrl(req)}/farm/${cid}/${ref}/og.png`;
+        const appFarmUrl = `${APP_BASE_URL}/#/farm/${cid}/${farm.farm}`;
+        return html(res, 200, farmShareHtml(farm, imageUrl, appFarmUrl));
+      }
+
       // GET /farm/:chainId/:address — one farm's detail (powers the shareable page). 404 if none.
       m = path.match(/^\/farm\/(\d+)\/(0x[0-9a-fA-F]{40})$/);
       if (m) {
@@ -401,6 +443,40 @@ export async function startServer(
           limit,
           schedules: schedules.slice(offset, offset + limit),
         });
+      }
+
+      // Resolve a vesting schedule by (chainId, idOrToken) — shared by the JSON, OG-image,
+      // and share-HTML routes. idOrToken is a numeric schedule id OR the vesting token
+      // ADDRESS (self-describing shareable URL; first matching schedule for that token).
+      const resolveVesting = (cid: number, ref: string): VestingSchedule | undefined => {
+        const isAddr = /^0x[0-9a-fA-F]{40}$/.test(ref);
+        return isAddr
+          ? vestSnap.schedules.find((s) => s.chainId === cid && eqAddr(s.token.addr, ref))
+          : vestSnap.schedules.find((s) => s.chainId === cid && s.id === Number(ref));
+      };
+
+      // GET /vesting/:chainId/:idOrToken/og.png — the per-schedule social card (1200×630 PNG),
+      // rendered server-side from the SAME in-memory schedule data. 404 for an unknown schedule.
+      m = path.match(/^\/vesting\/(\d+)\/([^/]+)\/og\.png$/);
+      if (m) {
+        const cid = Number(m[1]);
+        const ref = m[2];
+        const schedule = resolveVesting(cid, ref);
+        if (!schedule) return json(res, 404, { error: "vesting schedule not found", chainId: cid, ref });
+        return png(res, 200, renderVestingOgPng(schedule));
+      }
+
+      // GET /vesting/:chainId/:idOrToken/share — crawler HTML (OG/Twitter meta → the og.png
+      // above) that redirects human visitors to the in-app hash-routed vesting page.
+      m = path.match(/^\/vesting\/(\d+)\/([^/]+)\/share$/);
+      if (m) {
+        const cid = Number(m[1]);
+        const ref = m[2];
+        const schedule = resolveVesting(cid, ref);
+        if (!schedule) return json(res, 404, { error: "vesting schedule not found", chainId: cid, ref });
+        const imageUrl = `${selfBaseUrl(req)}/vesting/${cid}/${ref}/og.png`;
+        const appVestingUrl = `${APP_BASE_URL}/#/vesting/${cid}/${schedule.id}`;
+        return html(res, 200, vestingShareHtml(schedule, imageUrl, appVestingUrl));
       }
 
       // GET /vesting/:chainId/:id — one schedule's detail. 404 if none.
