@@ -259,14 +259,15 @@ contract GuardWiringTest is Test {
     }
 
     // --------------------------------------------------------------------
-    // 4. M-1 — winner shortfall is covered from the market's InsuranceHub sub-account
+    // 4. Winner is CAPPED at counterparty collateral — insurance is NEVER drawn by a trade winner.
+    //    (Supersedes the old M-1 "insurance covers the winner deficit", which was harvestable by a
+    //    delta-neutral self/colluding pair. Winner-cap decision, 2026-07-24.)
     // --------------------------------------------------------------------
-    function test_4_M1_InsuranceCoversDeficit() public {
-        // 20x market, wide band so a 10% adverse move (which exceeds the 5% collateral) is in-band.
+    function test_4_WinnerCappedNoInsuranceDraw() public {
         address m = _createMarket(2000 /*20% band*/, 20 * 1e4, "M1");
         _fund(m, 0.001 ether);
 
-        // Seed THIS market's InsuranceHub sub-account with real WETH (as the fee slice would).
+        // Seed THIS market's InsuranceHub sub-account — it must remain UNTOUCHED by the trade winner.
         uint256 seed = 1e15;
         vm.deal(address(this), seed);
         IWETH9(WETH).deposit{value: seed}();
@@ -274,17 +275,17 @@ contract GuardWiringTest is Test {
         insuranceHub.notifyFee(m, WETH, seed);
         assertEq(insuranceHub.balanceOf(m, WETH), seed, "hub sub-account not seeded");
 
-        // Open 0.01 size @20x @ ref (collateral = 5e14 each side).
-        uint256 size = 1e16;
+        uint256 size = 1e16; // @20x → collateral 5e14 each side
         PerpMarket.MatchedPair[] memory pairs =
             _pair(m, size, 20 * 1e4, ref, ref, ref, PerpMarket.OrderType.MARKET, PerpMarket.OrderType.MARKET);
         PerpMarket(payable(m)).settleBatch(pairs);
 
-        // Close at +10% (in the 20% band). long profit = 1e15; short collateral 5e14 fully consumed;
-        // deficit = 5e14 → drawn from the hub to the long winner.
+        // Close at +10% (in-band): long "profit" 1e15 exceeds the short's 5e14 collateral by 5e14.
+        // Old behaviour paid that 5e14 from insurance to the winner; now the winner is CAPPED.
         uint256 exit = (ref * 110) / 100;
         uint256 hubBefore = insuranceHub.balanceOf(m, WETH);
         uint256 winnerWethBefore = IWETH9(WETH).balanceOf(traderA);
+        (uint256 aAvailBefore,) = PerpMarket(payable(m)).getUserBalance(traderA);
 
         uint256[] memory ids = new uint256[](1);
         ids[0] = 1;
@@ -292,14 +293,14 @@ contract GuardWiringTest is Test {
         exits[0] = exit;
         PerpMarket(payable(m)).closePairsBatch(ids, exits);
 
-        uint256 hubAfter = insuranceHub.balanceOf(m, WETH);
-        uint256 winnerWethAfter = IWETH9(WETH).balanceOf(traderA);
+        (uint256 aAvailAfter,) = PerpMarket(payable(m)).getUserBalance(traderA);
 
-        uint256 expectedDeficit = 5e14;
-        assertEq(hubBefore - hubAfter, expectedDeficit, "hub sub-account not drawn by deficit");
-        assertEq(winnerWethAfter - winnerWethBefore, expectedDeficit, "winner not paid the deficit in WETH");
-        assertEq(PerpMarket(payable(m)).insuranceFund(), address(insuranceHub), "insuranceFund != hub");
-        emit log_named_uint("M-1 OK: hub sub-account drawn by", hubBefore - hubAfter);
-        emit log_named_uint("M-1 OK: winner WETH received", winnerWethAfter - winnerWethBefore);
+        // The anti-harvest guarantee: insurance is NOT drawn by a trade winner.
+        assertEq(insuranceHub.balanceOf(m, WETH), hubBefore, "insurance drawn by a trade winner (must be capped)");
+        // No direct wallet payout from insurance to the winner.
+        assertEq(IWETH9(WETH).balanceOf(traderA), winnerWethBefore, "winner wrongly paid from insurance");
+        // Winner capped at counterparty collateral: gets own 5e14 back + loser's 5e14 = 1e15, NOT 1.5e15.
+        assertEq(aAvailAfter - aAvailBefore, 1e15, "winner not capped at own+counterparty collateral");
+        emit log_string("WINNER-CAP OK: insurance untouched by winner; capped at counterparty collateral");
     }
 }

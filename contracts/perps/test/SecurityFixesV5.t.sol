@@ -159,6 +159,50 @@ contract SecurityFixesV5Test is Test {
         emit log_string("REGRESSION OK: settle + close still work in v5");
     }
 
+    // ---------------- F-1 / F-2: both-negative funding close must conserve value (no insurance drain) ----------------
+    function test_F2_BothNegativePnL_FundingBacked_NoDrain() public {
+        address m = _createMarket(500, 10 * 1e4, "F2");
+        uint256 dep = 0.003 ether;
+        vm.deal(traderA, dep); vm.deal(traderB, dep);
+        vm.prank(traderA); PerpMarket(payable(m)).depositETH{value: dep}();
+        vm.prank(traderB); PerpMarket(payable(m)).depositETH{value: dep}();
+
+        uint256 size = 1e16;
+        PerpMarket(payable(m)).settleBatch(_pair(m, size, 10 * 1e4, ref));
+        PerpMarket(payable(m)).updatePrice(WETH, ref); // mark == entry → price PnL is ZERO both sides
+
+        // Accrue funding over 3 intervals with NO price move → BOTH sides' funding-adjusted PnL is
+        // negative. Pre-fix this hit `uint256(negativeShortPnL)` (~2^256) → wrong pay-out + insurance drain.
+        uint256 periods = 3;
+        vm.warp(block.timestamp + periods * 5 minutes);
+
+        address hub = PerpMarket(payable(m)).insuranceFund();
+        (uint256 insBefore,) = PerpMarket(payable(m)).getUserBalance(hub);
+        assertEq(insBefore, 0, "insurance should start empty");
+
+        vm.prank(traderA);
+        PerpMarket(payable(m)).closePair(1); // must NOT revert or drain
+
+        PerpMarket.PairedPosition memory p = PerpMarket(payable(m)).getPairedPosition(1);
+        assertEq(uint256(p.status), uint256(PerpMarket.PositionStatus.CLOSED), "did not close");
+
+        uint256 fundingPerSide = (size * 1 * periods) / 10000; // FIXED_FUNDING_RATE=1 / PRECISION=10000
+        uint256 feePerSide = (size * 10) / 10000;              // feeRate=10 bps charged at settleBatch open
+        (uint256 insAfter,) = PerpMarket(payable(m)).getUserBalance(hub);
+        (uint256 aAvail,) = PerpMarket(payable(m)).getUserBalance(traderA);
+        (uint256 bAvail,) = PerpMarket(payable(m)).getUserBalance(traderB);
+
+        // F-1: insurance receives EXACTLY the backed funding (2× per-side), nothing invented / drained.
+        assertEq(insAfter, fundingPerSide * 2, "insurance must equal the backed funding (F-1)");
+        // F-2: value conserved — traders back + insurance + the open fee == total deposited. No drain, no mint.
+        assertEq(aAvail + bAvail + insAfter + feePerSide * 2, dep * 2, "value not conserved (F-2 drain/mint)");
+        // Symmetric: both sides lost EXACTLY (fee + funding). Pre-fix the negative-cast paid the "short"
+        // both collaterals (asymmetric) and drained insurance via a bogus winner deficit.
+        assertEq(aAvail, bAvail, "asymmetric settlement - F-2 mis-pay");
+        assertEq(aAvail, dep - fundingPerSide - feePerSide, "trader out by != fee+funding");
+        emit log_string("F-1/F-2 OK: both-negative funding close conserves value; insurance backed; no drain");
+    }
+
     // ---------------- 1. M-3 + L-2: partial liquidation reward, penalty routed to insurance ----------------
     function test_1_M3L2_PartialLiquidationRewardAndRouting() public {
         // 20% deviation band so a 5% adverse mark (vs live ref) is in-band; 20x leverage.

@@ -51,6 +51,13 @@ contract FeeRouter is Ownable, ReentrancyGuard {
     // beneficiary => token => claimable amount
     mapping(address => mapping(address => uint256)) public claimable;
 
+    /// token => total unclaimed `claimable` across ALL beneficiaries (creator + treasury).
+    /// Bounds rescueToken to the truly-stranded surplus so a rescue can never sweep an
+    /// unclaimed fee. Incremented wherever `claimable[*][token]` is credited (collect);
+    /// decremented in `claim`. The insurance slice is pushed out synchronously in collect
+    /// (never held as a router liability), so it needs no entry here.
+    mapping(address => uint256) public totalClaimable;
+
     event FactorySet(address indexed factory);
     event SharesSet(uint256 platformBps, uint256 creatorBps, uint256 insuranceBps);
     event SinksSet(address indexed treasury, address indexed insuranceHub);
@@ -64,12 +71,15 @@ contract FeeRouter is Ownable, ReentrancyGuard {
         uint256 insurance
     );
     event Claimed(address indexed beneficiary, address indexed token, uint256 amount);
+    /// Last-resort owner sweep of orphaned / directly-sent token balances.
+    event TokenRescued(address indexed token, address indexed to, uint256 amount);
 
     error NotFactory();
     error UnknownMarket();
     error FloorViolated();
     error BadShares();
     error ZeroAddress();
+    error InsufficientBalance();
 
     constructor(address _treasury, address _insuranceHub) Ownable(msg.sender) {
         if (_treasury == address(0) || _insuranceHub == address(0)) revert ZeroAddress();
@@ -150,6 +160,7 @@ contract FeeRouter is Ownable, ReentrancyGuard {
         address creator = creatorOf[market];
         claimable[treasury][token] += platform;
         claimable[creator][token] += creatorCut;
+        totalClaimable[token] += platform + creatorCut; // credited liability + (insurance is pushed out below)
 
         // Insurance slice → the market's OWN InsuranceHub sub-account (spec §7). Push it in
         // per-market (approve + pull) rather than crediting a single claimable sink, so each
@@ -167,8 +178,30 @@ contract FeeRouter is Ownable, ReentrancyGuard {
         amount = claimable[msg.sender][token];
         if (amount == 0) return 0;
         claimable[msg.sender][token] = 0;
+        totalClaimable[token] -= amount; // claimed liability -
         IERC20(token).safeTransfer(msg.sender, amount);
         emit Claimed(msg.sender, token, amount);
+    }
+
+    // ============================================================
+    // Owner — rescue (no funds ever permanently stuck)
+    // ============================================================
+
+    /**
+     * @notice Last-resort owner sweep of orphaned token balances so nothing is ever permanently
+     *         stuck in the router: tokens sent directly to this contract (never routed through a
+     *         market), or an accounted-but-unclaimable slice (e.g. a dead/unreachable creator whose
+     *         `claimable` can never be pulled). Owner-only; bounded to the TRULY-STRANDED surplus —
+     *         the actual token balance minus the outstanding `claimable` liability for that token —
+     *         so a rescue can NEVER sweep an unclaimed creator/treasury fee.
+     */
+    function rescueToken(address token, address to, uint256 amount) external onlyOwner nonReentrant {
+        if (token == address(0) || to == address(0)) revert ZeroAddress();
+        // stranded = balance - outstanding claimable liability for this token
+        uint256 stranded = IERC20(token).balanceOf(address(this)) - totalClaimable[token];
+        if (amount > stranded) revert InsufficientBalance();
+        IERC20(token).safeTransfer(to, amount);
+        emit TokenRescued(token, to, amount);
     }
 }
 

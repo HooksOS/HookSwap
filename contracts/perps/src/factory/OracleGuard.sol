@@ -130,9 +130,13 @@ contract OracleGuard is Ownable {
         if (cfg.maxDeviationBps < MIN_DEVIATION_BPS || cfg.maxDeviationBps > MAX_DEVIATION_BPS) {
             revert DeviationOutOfBand();
         }
+        // MED-1 (round-4 audit): a reference feed is MANDATORY for EVERY tier — not just
+        // permissionless. Without it `_guardPrice` in the market is a no-op, so a hostile matcher
+        // could settle at an arbitrary price and shuffle a victim's collateral to a colluding
+        // counterparty, unbounded in repetition. Every fund-holding market must be feed-anchored.
+        if (cfg.refFeed == address(0)) revert RefFeedRequired();
         if (tier == PERMISSIONLESS_TIER) {
             if (!cfg.dualSourceRequired) revert DualSourceRequired();
-            if (cfg.refFeed == address(0)) revert RefFeedRequired();
         }
     }
 
@@ -140,11 +144,12 @@ contract OracleGuard is Ownable {
     function registerMarket(address market, OracleConfig calldata cfg) external {
         if (msg.sender != factory) revert NotFactory();
         if (market == address(0)) revert ZeroAddress();
-        // Defensive re-check of the tier-independent invariants (venue + band).
+        // Defensive re-check of the tier-independent invariants (venue + band + reference feed).
         if (!allowedVenue[cfg.sourceType][cfg.venue]) revert VenueNotAllowed();
         if (cfg.maxDeviationBps < MIN_DEVIATION_BPS || cfg.maxDeviationBps > MAX_DEVIATION_BPS) {
             revert DeviationOutOfBand();
         }
+        if (cfg.refFeed == address(0)) revert RefFeedRequired(); // MED-1: no fund-holding market may be feed-less
         marketConfig[market] = cfg;
         emit MarketOracleRegistered(market, cfg.sourceType, cfg.venue, cfg.refFeed);
     }
@@ -160,6 +165,26 @@ contract OracleGuard is Ownable {
      */
     function checkDeviation(address market, uint256 proposedPrice) external view {
         OracleConfig memory cfg = marketConfig[market];
+        uint256 ref = _readRef(cfg); // reverts NoRefFeed / BadRefAnswer / StalePrice
+        uint256 diff = proposedPrice > ref ? proposedPrice - ref : ref - proposedPrice;
+        if ((diff * BPS) / ref > cfg.maxDeviationBps) revert PriceDeviationTooLarge();
+    }
+
+    /**
+     * @notice MED-2 (round-4 audit): the FRESH, normalized (1e18) reference-feed price for a market.
+     *         Uses the EXACT same read + freshness + normalization that `checkDeviation` uses, so a
+     *         price returned here is always trivially in-band. Reverts if the market has no reference
+     *         feed, the feed answer is bad, or the round is stale. The market's USER close path and
+     *         the owner `forceSettle` escape hatch settle at this value so a down matcher (stale mark)
+     *         can never permanently trap a position: settling AT the reference price is always allowed.
+     */
+    function refPrice(address market) external view returns (uint256) {
+        return _readRef(marketConfig[market]);
+    }
+
+    /// @dev Read + freshness-check + normalize the reference feed to 1e18. Shared by
+    ///      checkDeviation (band comparison) and refPrice (fresh settle price).
+    function _readRef(OracleConfig memory cfg) internal view returns (uint256 ref) {
         if (cfg.refFeed == address(0)) revert NoRefFeed();
 
         (, int256 answer,, uint256 updatedAt,) = AggregatorV3Interface(cfg.refFeed).latestRoundData();
@@ -169,11 +194,8 @@ contract OracleGuard is Ownable {
 
         // Normalize the feed answer (feed-decimals) to 1e18.
         uint8 dec = AggregatorV3Interface(cfg.refFeed).decimals();
-        uint256 ref = (uint256(answer) * 1e18) / (10 ** dec);
+        ref = (uint256(answer) * 1e18) / (10 ** dec);
         if (ref == 0) revert BadRefAnswer();
-
-        uint256 diff = proposedPrice > ref ? proposedPrice - ref : ref - proposedPrice;
-        if ((diff * BPS) / ref > cfg.maxDeviationBps) revert PriceDeviationTooLarge();
     }
 
     /// @notice AMM depth guard. For AMM source types, require v2 reserve product >= minLiquidity.

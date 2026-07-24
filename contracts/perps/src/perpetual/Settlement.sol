@@ -30,6 +30,27 @@ interface IWETH {
  *      frontend order-signing util, or every order signature will fail to recover. See README.md
  *      "Rebrand sync points". Rebranded from "MemePerp" (upstream meme-perp-dex).
  */
+/// @dev MED-3 fix: OracleGuard runtime circuit breaker, ported from the factory PerpMarket. Reverts
+///      when a price about to be consumed for value is stale vs / deviates too far from the market's
+///      reference feed. Read only `refFeed` (3rd field) to skip gracefully when unconfigured.
+interface IOracleGuardCheck {
+    function checkDeviation(address market, uint256 proposedPrice) external view;
+    /// @dev MED-2: the fresh, normalized (1e18) reference-feed price. Reverts on no-feed / bad / stale.
+    function refPrice(address market) external view returns (uint256);
+    function marketConfig(address market)
+        external
+        view
+        returns (
+            bytes32 sourceType,
+            address venue,
+            address refFeed,
+            uint256 maxDeviationBps,
+            uint256 maxStaleness,
+            uint256 minLiquidity,
+            bool dualSourceRequired
+        );
+}
+
 contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
     using ECDSA for bytes32;
     using SafeCast for uint256;
@@ -182,6 +203,11 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
     event InsuranceInjected(uint256 amount, uint256 timestamp);
     event EmergencyPaused(address indexed by, string reason);
     event EmergencyUnpaused(address indexed by);
+    event ForeignTokenRescued(address indexed token, address indexed to, uint256 amount);
+    event EmergencyWithdrawn(address indexed user, address indexed token, uint256 amount);
+    /// @notice Winner's profit exceeded the counterparty's collateral and was CAPPED there (insurance
+    ///         never tops up a trade winner — removes the self/collusion harvest vector).
+    event WinnerCapped(uint256 indexed pairId, address indexed winner, uint256 uncoveredExcess);
 
     // ============================================================
     // Errors
@@ -205,6 +231,21 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
     error PositionLimitExceeded();
     error LeverageTooHigh();
     error PriceDeviationTooLarge();
+    error LimitPriceViolated(); // MED-3: matchPrice violates a LIMIT order's signed price
+    error NotStale(); // MED-2: forceSettle called while the mark is still fresh (within grace)
+    error NoReferenceFeed(); // MED-2: forceSettle needs a reference feed to settle against
+
+    /// @notice MED-2: a position was force-settled by the owner at the fresh reference price after
+    ///         the matcher mark went stale beyond PRICE_STALE_GRACE.
+    event ForceSettled(uint256 indexed pairId, uint256 refPrice, uint256 staleSince);
+
+    // MED-2 (round-4 audit): timestamp of the last matcher `updatePrice` per token. Lets the owner
+    // `forceSettle` a position at the fresh reference price if the matcher stops refreshing the mark
+    // for longer than PRICE_STALE_GRACE — so a down matcher can never permanently trap positions.
+    mapping(address => uint256) public lastPriceUpdate;
+
+    // How long the matcher-maintained mark may go unrefreshed before the owner escape hatch unlocks.
+    uint256 public constant PRICE_STALE_GRACE = 1 hours;
 
     // ============================================================
     // Constructor
@@ -219,7 +260,7 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
     // User Functions
     // ============================================================
 
-    function deposit(address token, uint256 amount) external nonReentrant {
+    function deposit(address token, uint256 amount) external nonReentrant whenNotPaused {
         if (amount == 0) revert InvalidAmount();
         if (!supportedTokens[token]) revert TokenNotSupported();
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
@@ -235,7 +276,7 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
      * @param token 代币地址
      * @param amount 充值金额
      */
-    function depositTo(address recipient, address token, uint256 amount) external nonReentrant {
+    function depositTo(address recipient, address token, uint256 amount) external nonReentrant whenNotPaused {
         if (amount == 0) revert InvalidAmount();
         if (recipient == address(0)) revert InvalidAmount();
         if (!supportedTokens[token]) revert TokenNotSupported();
@@ -249,7 +290,7 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
      * @notice 直接存入 ETH (自动包装为 WETH)
      * @dev 用户可以直接发送 ETH，合约自动包装为 WETH 并计入余额
      */
-    function depositETH() external payable nonReentrant {
+    function depositETH() external payable nonReentrant whenNotPaused {
         if (msg.value == 0) revert InvalidAmount();
         if (weth == address(0)) revert TokenNotSupported();
         if (!supportedTokens[weth]) revert TokenNotSupported();
@@ -263,7 +304,7 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
         emit Deposited(msg.sender, standardAmount);
     }
 
-    function depositWithPermit(address token, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external nonReentrant {
+    function depositWithPermit(address token, uint256 amount, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external nonReentrant whenNotPaused {
         if (amount == 0) revert InvalidAmount();
         if (!supportedTokens[token]) revert TokenNotSupported();
         IERC20Permit(token).permit(msg.sender, address(this), amount, deadline, v, r, s);
@@ -303,7 +344,7 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
         uint256 amount,
         uint256 deadline,
         bytes calldata signature
-    ) external nonReentrant {
+    ) external nonReentrant whenNotPaused {
         if (amount == 0) revert InvalidAmount();
         if (!supportedTokens[token]) revert TokenNotSupported();
         if (block.timestamp > deadline) revert OrderExpired();
@@ -341,7 +382,7 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
         address user,
         uint256 deadline,
         bytes calldata signature
-    ) external payable nonReentrant {
+    ) external payable nonReentrant whenNotPaused {
         if (msg.value == 0) revert InvalidAmount();
         if (weth == address(0)) revert TokenNotSupported();
         if (!supportedTokens[weth]) revert TokenNotSupported();
@@ -453,6 +494,27 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
         insuranceFund = _insuranceFund;
     }
 
+    /// @notice OracleGuard for the MED-3 price circuit breaker (see _guardPrice). Unset => no-op.
+    address public oracleGuard;
+    event OracleGuardSet(address indexed oracleGuard);
+
+    function setOracleGuard(address _oracleGuard) external onlyOwner {
+        oracleGuard = _oracleGuard;
+        emit OracleGuardSet(_oracleGuard);
+    }
+
+    /// @dev MED-3: enforce the OracleGuard circuit breaker on any price about to settle value
+    ///      (entry / exit / mark). No-op when unset (backward-compat) or when this market has no
+    ///      reference feed. Reverts on stale / out-of-band prices, stopping a hostile matcher from
+    ///      settling at an arbitrary price.
+    function _guardPrice(uint256 price) internal view {
+        address og = oracleGuard;
+        if (og == address(0)) return;
+        (, , address refFeed, , , , ) = IOracleGuardCheck(og).marketConfig(address(this));
+        if (refFeed == address(0)) return; // no reference feed → nothing to check (trusted/curated)
+        IOracleGuardCheck(og).checkDeviation(address(this), price);
+    }
+
     function setFeeRate(uint256 _feeRate) external onlyOwner {
         require(_feeRate <= 100, "Fee too high");
         feeRate = _feeRate;
@@ -497,8 +559,14 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
      * @dev 暂停后，所有关键操作（提款、结算、清算）都会被阻止
      * @param reason 暂停原因（用于日志记录）
      */
+    /// @notice Timestamp of the most recent emergencyPause (0 when live). Gates emergencyWithdraw.
+    uint256 public pausedAt;
+    /// @notice A pause lasting this long lets users self-rescue their unlocked balance without the owner.
+    uint256 public constant EMERGENCY_WITHDRAW_DELAY = 7 days;
+
     function emergencyPause(string calldata reason) external onlyOwner {
         _pause();
+        pausedAt = block.timestamp;
         emit EmergencyPaused(msg.sender, reason);
     }
 
@@ -508,7 +576,39 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
      */
     function emergencyUnpause() external onlyOwner {
         _unpause();
+        pausedAt = 0;
         emit EmergencyUnpaused(msg.sender);
+    }
+
+    /**
+     * @notice Sweep a NON-collateral token accidentally sent here. Reverts on any supported collateral,
+     *         so it can NEVER move user trading funds — only mistakenly-sent foreign tokens.
+     */
+    function rescueForeignToken(address token, address to, uint256 amount) external onlyOwner {
+        if (supportedTokens[token]) revert TokenNotSupported();
+        if (to == address(0)) revert InvalidAmount();
+        IERC20(token).safeTransfer(to, amount);
+        emit ForeignTokenRescued(token, to, amount);
+    }
+
+    /**
+     * @notice Owner-INDEPENDENT escape hatch. If the contract stays paused past EMERGENCY_WITHDRAW_DELAY
+     *         (operator abandoned / owner key lost), any user may pull their own UNLOCKED (available)
+     *         collateral in `token` directly — no owner action required. Mirrors withdraw()'s decimal +
+     *         liquidity handling. Fixes the "paused + lost owner freezes funds forever" trap. Locked-in-
+     *         position collateral still needs settlement/force-close (a separate, larger mechanism).
+     */
+    function emergencyWithdraw(address token) external nonReentrant {
+        if (!paused()) revert ContractNotActive();
+        if (pausedAt == 0 || block.timestamp < pausedAt + EMERGENCY_WITHDRAW_DELAY) revert Unauthorized();
+        if (!supportedTokens[token]) revert TokenNotSupported();
+        uint256 owed = balances[msg.sender].available;
+        if (owed == 0) revert InsufficientBalance();
+        balances[msg.sender].available = 0;
+        uint256 tokenAmount = _fromStandardDecimals(token, owed);
+        require(IERC20(token).balanceOf(address(this)) >= tokenAmount, "Insufficient liquidity");
+        IERC20(token).safeTransfer(msg.sender, tokenAmount);
+        emit EmergencyWithdrawn(msg.sender, token, tokenAmount);
     }
 
     // ============================================================
@@ -517,7 +617,9 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
 
     function updatePrice(address token, uint256 price) external {
         if (!authorizedMatchers[msg.sender]) revert Unauthorized();
+        _guardPrice(price); // MED-3: reject stale / out-of-band marks at write time
         tokenPrices[token] = price;
+        lastPriceUpdate[token] = block.timestamp; // MED-2: track mark freshness for forceSettle
         emit PriceUpdated(token, price);
     }
 
@@ -541,7 +643,26 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
         if (_hasLegacyPosition(pair.longOrder.trader)) revert HasLegacyPosition();
         if (_hasLegacyPosition(pair.shortOrder.trader)) revert HasLegacyPosition();
         if (pair.longOrder.token != pair.shortOrder.token) revert InvalidMatch();
+        // HIGH-1: forbid self-matching (one wallet on both sides) — a delta-neutral self-pair could
+        // otherwise harvest insurance via the winner-deficit branch at zero market risk.
+        if (pair.longOrder.trader == pair.shortOrder.trader) revert InvalidMatch();
         if (pair.matchSize == 0) revert InvalidMatch();
+
+        // MED-3: the matcher-supplied entry price must pass the OracleGuard deviation/staleness band
+        // BEFORE any collateral is locked (moved up from _createPairedPosition so a bad price reverts
+        // before state changes).
+        _guardPrice(pair.matchPrice);
+
+        // MED-3 (H-2 port): enforce the SIGNED limit price on-chain, matching PerpMarket. A LIMIT long
+        // may only fill at or below its signed price; a LIMIT short only at or above. MARKET orders are
+        // unconstrained here (their price protection is the deviation band above). Without this a matcher
+        // could fill a LIMIT order anywhere inside the band, worse than the user's signed limit.
+        if (pair.longOrder.orderType == OrderType.LIMIT && pair.matchPrice > pair.longOrder.price) {
+            revert LimitPriceViolated();
+        }
+        if (pair.shortOrder.orderType == OrderType.LIMIT && pair.matchPrice < pair.shortOrder.price) {
+            revert LimitPriceViolated();
+        }
 
         _validateContractSpec(pair);
 
@@ -602,6 +723,7 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
         pos.shortTrader = pair.shortOrder.trader;
         pos.token = pair.longOrder.token;
         pos.size = pair.matchSize;
+        // Entry price already guarded in _settlePair (MED-3, before locking collateral).
         pos.entryPrice = pair.matchPrice;
         pos.longCollateral = longCollateral;
         pos.shortCollateral = shortCollateral;
@@ -639,7 +761,40 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
         PairedPosition storage pos = pairedPositions[pairId];
         if (pos.status != PositionStatus.ACTIVE) revert PositionNotActive();
         if (msg.sender != pos.longTrader && msg.sender != pos.shortTrader) revert Unauthorized();
-        _closePair(pairId, tokenPrices[pos.token]);
+        // MED-2: with a reference feed, the USER close settles at the FRESH reference price (trivially
+        // in-band), not the possibly-stale stored mark — so a down matcher / drifted mark can't trap
+        // the user. Falls back to the stored mark when there is no feed (original behavior).
+        uint256 rp = _refPrice();
+        _closePair(pairId, rp != 0 ? rp : tokenPrices[pos.token]);
+    }
+
+    /**
+     * @notice MED-2 escape hatch: the owner closes a position at the FRESH reference price when the
+     *         matcher-maintained mark has gone stale beyond PRICE_STALE_GRACE. Prevents a down/abandoned
+     *         matcher from permanently trapping a position (a drifted stored mark makes both mark-based
+     *         close and liquidate revert the guard). Abuse-safe: onlyOwner, only when genuinely stale,
+     *         and settles at the oracle-fresh price (0 deviation) — never an off-market price.
+     */
+    function forceSettle(uint256 pairId) external nonReentrant whenNotPaused onlyOwner {
+        PairedPosition storage pos = pairedPositions[pairId];
+        if (pos.status != PositionStatus.ACTIVE) revert PositionNotActive();
+        uint256 last = lastPriceUpdate[pos.token];
+        if (block.timestamp - last <= PRICE_STALE_GRACE) revert NotStale();
+        uint256 rp = _refPrice();
+        if (rp == 0) revert NoReferenceFeed();
+        _closePair(pairId, rp);
+        emit ForceSettled(pairId, rp, last);
+    }
+
+    /// @dev MED-2: the FRESH normalized (1e18) reference-feed price, or 0 when no OracleGuard /
+    ///      reference feed is wired (caller falls back to the stored mark). Reverts (via OracleGuard)
+    ///      if the feed is bad or stale — settling against a broken feed is never safe.
+    function _refPrice() internal view returns (uint256) {
+        address og = oracleGuard;
+        if (og == address(0)) return 0;
+        (, , address refFeed, , , , ) = IOracleGuardCheck(og).marketConfig(address(this));
+        if (refFeed == address(0)) return 0;
+        return IOracleGuardCheck(og).refPrice(address(this));
     }
 
     function closePairsBatch(uint256[] calldata pairIds, uint256[] calldata exitPrices) external nonReentrant whenNotPaused {
@@ -661,9 +816,10 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
     function _closePair(uint256 pairId, uint256 exitPrice) internal {
         PairedPosition storage pos = pairedPositions[pairId];
         _settleFunding(pairId);
+        // Pass ZERO-SUM price PnL; funding is settled inside _settleProfit from pos.accFunding*.
+        // Do NOT pre-subtract funding here (that let both PnLs go negative → F-2 negative-cast drain).
+        _guardPrice(exitPrice); // MED-3: guard the exit price before settling value
         (int256 longPnL, int256 shortPnL) = _calculatePnL(pos, exitPrice);
-        longPnL -= pos.accFundingLong;
-        shortPnL -= pos.accFundingShort;
         _settleProfit(pos, longPnL, shortPnL);
         _updatePositionSize(pos);
         pos.status = PositionStatus.CLOSED;
@@ -677,6 +833,13 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
         else userPositionSizes[pos.shortTrader][pos.token] = 0;
     }
 
+    /**
+     * @dev `longPnL`/`shortPnL` MUST be ZERO-SUM price PnL from `_calculatePnL` (shortPnL == -longPnL);
+     *      callers must NOT pre-subtract funding. F-2 fix: zero-sum inputs ⇒ the `else` branch's
+     *      `uint256(shortPnL)` is always a positive cast (the old code pre-subtracted funding, letting
+     *      BOTH sides go negative → a ~2^256 cast → wrong pay-out + insurance drain). F-1 fix: funding
+     *      credited to insurance is capped at each side's realized output, so it is always backed.
+     */
     function _settleProfit(PairedPosition storage pos, int256 longPnL, int256 shortPnL) internal {
         balances[pos.longTrader].locked -= pos.longCollateral;
         balances[pos.shortTrader].locked -= pos.shortCollateral;
@@ -684,31 +847,46 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
         // 更新总锁定保证金
         totalLockedMargin -= (pos.longCollateral + pos.shortCollateral);
 
+        // Step 1 — zero-sum price PnL: loser pays winner up to loser's collateral; excess is a deficit.
+        uint256 longOut;
+        uint256 shortOut;
+        address winner;
+        uint256 winnerDeficit;
         if (longPnL >= 0) {
             uint256 profit = uint256(longPnL);
-            uint256 transfer = profit > pos.shortCollateral ? pos.shortCollateral : profit;
-            balances[pos.longTrader].available += pos.longCollateral + transfer;
-            if (pos.shortCollateral > transfer) balances[pos.shortTrader].available += pos.shortCollateral - transfer;
-            else if (profit > pos.shortCollateral && insuranceFund != address(0)) {
-                uint256 deficit = profit - pos.shortCollateral;
-                uint256 fundBal = balances[insuranceFund].available;
-                if (fundBal >= deficit) { balances[insuranceFund].available -= deficit; balances[pos.longTrader].available += deficit; }
-                else { if (fundBal > 0) { balances[insuranceFund].available = 0; balances[pos.longTrader].available += fundBal; deficit -= fundBal; }
-                    emit ADLTriggered(pos.pairId, 0, pos.longTrader, deficit, deficit); }
-            }
+            uint256 xfer = profit > pos.shortCollateral ? pos.shortCollateral : profit;
+            longOut = pos.longCollateral + xfer;
+            shortOut = pos.shortCollateral - xfer;
+            if (profit > pos.shortCollateral) { winner = pos.longTrader; winnerDeficit = profit - pos.shortCollateral; }
         } else {
-            uint256 profit = uint256(shortPnL);
-            uint256 transfer = profit > pos.longCollateral ? pos.longCollateral : profit;
-            balances[pos.shortTrader].available += pos.shortCollateral + transfer;
-            if (pos.longCollateral > transfer) balances[pos.longTrader].available += pos.longCollateral - transfer;
-            else if (profit > pos.longCollateral && insuranceFund != address(0)) {
-                uint256 deficit = profit - pos.longCollateral;
-                uint256 fundBal = balances[insuranceFund].available;
-                if (fundBal >= deficit) { balances[insuranceFund].available -= deficit; balances[pos.shortTrader].available += deficit; }
-                else { if (fundBal > 0) { balances[insuranceFund].available = 0; balances[pos.shortTrader].available += fundBal; deficit -= fundBal; }
-                    emit ADLTriggered(pos.pairId, 0, pos.shortTrader, deficit, deficit); }
-            }
+            uint256 profit = uint256(shortPnL); // shortPnL == -longPnL > 0 (safe)
+            uint256 xfer = profit > pos.longCollateral ? pos.longCollateral : profit;
+            shortOut = pos.shortCollateral + xfer;
+            longOut = pos.longCollateral - xfer;
+            if (profit > pos.longCollateral) { winner = pos.shortTrader; winnerDeficit = profit - pos.longCollateral; }
         }
+
+        // Step 2 — funding: each side owes accFunding* (>= 0), collected to insurance, capped at that
+        // side's realized output so the credit is always backed by tokens actually withheld (F-1).
+        uint256 fLong = pos.accFundingLong > 0 ? uint256(pos.accFundingLong) : 0;
+        uint256 fShort = pos.accFundingShort > 0 ? uint256(pos.accFundingShort) : 0;
+        if (fLong > longOut) fLong = longOut;
+        if (fShort > shortOut) fShort = shortOut;
+        longOut -= fLong;
+        shortOut -= fShort;
+        uint256 funding = fLong + fShort;
+        if (funding > 0) {
+            if (insuranceFund != address(0)) balances[insuranceFund].available += funding;
+            else insuranceFundFromFunding += funding;
+        }
+
+        balances[pos.longTrader].available += longOut;
+        balances[pos.shortTrader].available += shortOut;
+
+        // Step 3 — CAP the winner at the counterparty's collateral. Insurance NEVER tops up a trade
+        // winner (that was harvestable by a delta-neutral self/colluding pair). The winner's excess
+        // beyond the loser's collateral is simply not paid (isolated-margin guarantee); logged only.
+        if (winnerDeficit > 0) emit WinnerCapped(pos.pairId, winner, winnerDeficit);
     }
 
     // ============================================================
@@ -730,10 +908,10 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
         (bool liqLong, bool liqShort) = canLiquidate(pairId);
         if (!liqLong && !liqShort) revert CannotLiquidate();
 
+        _guardPrice(tokenPrices[pos.token]); // MED-3: guard the liquidation mark before settling
         _settleFunding(pairId);
+        // Zero-sum price PnL; funding settled inside _settleProfit (no pre-subtraction — F-1/F-2 fix).
         (int256 longPnL, int256 shortPnL) = _calculatePnL(pos, tokenPrices[pos.token]);
-        longPnL -= pos.accFundingLong;
-        shortPnL -= pos.accFundingShort;
 
         uint256 penalty;
         address liqTrader;
@@ -798,8 +976,9 @@ contract Settlement is Ownable, ReentrancyGuard, Pausable, EIP712 {
         pos.accFundingLong += int256(fundingPerSide);
         pos.accFundingShort += int256(fundingPerSide);
 
-        // 累计到保险基金（双方各扣一份）
-        insuranceFundFromFunding += fundingPerSide * 2;
+        // F-1 fix: do NOT pre-credit an unbacked amount. Funding is credited to insurance in
+        // _settleProfit from what is ACTUALLY withheld from each trader (capped at their output),
+        // so the insurance balance is always backed. accFunding* above is the amount owed.
 
         emit FundingSettled(pairId, pos.accFundingLong, pos.accFundingShort);
     }

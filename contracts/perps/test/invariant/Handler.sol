@@ -15,10 +15,11 @@ import "./Mocks.sol";
  *         already used) is skipped rather than aborting the run, so the fuzzer explores deep,
  *         realistic states while the invariants are checked after each call.
  *
- *         The market is a CURATED clone with refFeed == 0 → PerpMarket._guardPrice is a no-op,
- *         so the handler may drive any matcher price (mirrors the matcher-trusted production
- *         posture). The OracleGuard deviation breaker is exercised separately in PerpFuzz.t.sol
- *         with a controllable MockAggregator.
+ *         The market is a CURATED clone whose runtime OracleGuard was DISABLED by the owner after
+ *         creation (setOracleGuard(0)) → PerpMarket._guardPrice is a no-op, so the handler may drive
+ *         any matcher price (mirrors the matcher-trusted production posture). MED-1 still requires a
+ *         reference feed at CREATION; the deviation breaker itself is exercised separately in
+ *         PerpFuzz.t.sol with a controllable MockAggregator.
  */
 contract Handler is Test {
     PerpMarket public market;

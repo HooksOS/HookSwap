@@ -51,6 +51,7 @@ contract PerpMarketInvariantTest is Test {
     InsuranceHub insuranceHub;
     MockERC20 col;
     MockERC20 wethLike;
+    MockAggregator agg; // MED-1: markets now require a reference feed at creation
 
     address marketA;
     address marketB;
@@ -65,6 +66,7 @@ contract PerpMarketInvariantTest is Test {
     function setUp() public {
         col = new MockERC20("Collateral", "COL", 18);
         wethLike = new MockERC20("WethLike", "WETH", 18);
+        agg = new MockAggregator(8, 2000e8); // ETH/USD-style @ $2000; matches the 2000e18 marks used below
 
         impl = new PerpMarket();
         registry = new MarketRegistry();
@@ -85,10 +87,13 @@ contract PerpMarketInvariantTest is Test {
         oracleGuard.setVenue(CHAINLINK, VENUE, true);
         factory.setMinBonds(0, 0);
 
-        // Two isolated CURATED clones, same collateral. refFeed==0 → matcher-trusted price path
-        // (the deviation breaker is exercised with a MockAggregator in PerpFuzz.t.sol).
+        // Two isolated CURATED clones, same collateral. MED-1 requires a reference feed at creation,
+        // so both are created with the mock aggregator wired; the fuzzed market A then DISABLES its
+        // runtime guard (owner power) to restore the matcher-trusted price path the handler drives
+        // (the deviation breaker itself is exercised in PerpFuzz.t.sol).
         marketA = factory.createMarket(address(col), 18, address(this), 10, 10 * 1e4, "A-PERP", 0, _cfgCurated());
         marketB = factory.createMarket(address(col), 18, address(this), 10, 10 * 1e4, "B-PERP", 0, _cfgCurated());
+        PerpMarket(payable(marketA)).setOracleGuard(address(0)); // matcher-trusted path for the fuzzer
 
         handler = new Handler(PerpMarket(payable(marketA)), col, address(feeRouter), address(insuranceHub));
 
@@ -126,9 +131,9 @@ contract PerpMarketInvariantTest is Test {
         targetSelector(FuzzSelector({addr: address(handler), selectors: sel}));
     }
 
-    function _cfgCurated() internal pure returns (OracleGuard.OracleConfig memory) {
+    function _cfgCurated() internal view returns (OracleGuard.OracleConfig memory) {
         return OracleGuard.OracleConfig({
-            sourceType: CHAINLINK, venue: VENUE, refFeed: address(0),
+            sourceType: CHAINLINK, venue: VENUE, refFeed: address(agg),
             maxDeviationBps: 500, maxStaleness: 1 days, minLiquidity: 0, dualSourceRequired: false
         });
     }

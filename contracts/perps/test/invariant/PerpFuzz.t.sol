@@ -84,11 +84,24 @@ contract PerpFuzzTest is Test {
     // Helpers
     // ============================================================
 
-    function _cfgCurated() internal pure returns (OracleGuard.OracleConfig memory) {
+    // MED-1 (round-4 audit): every market now requires a reference feed at creation, so the
+    // "curated / matcher-trusted" config points refFeed at the mock aggregator. Tests that need the
+    // matcher-trusted (guard no-op) runtime path disable the runtime guard on the clone after create
+    // (owner power), see _createMatcherTrusted.
+    function _cfgCurated() internal view returns (OracleGuard.OracleConfig memory) {
         return OracleGuard.OracleConfig({
-            sourceType: CHAINLINK, venue: VENUE, refFeed: address(0),
+            sourceType: CHAINLINK, venue: VENUE, refFeed: address(agg),
             maxDeviationBps: 500, maxStaleness: 1 days, minLiquidity: 0, dualSourceRequired: false
         });
+    }
+
+    /// @dev Create a curated market then DISABLE its runtime OracleGuard (owner == this post-handoff),
+    ///      restoring the matcher-trusted price path so a test can drive arbitrary marks/exits. MED-1
+    ///      only constrains market CREATION (a feed must be configured); the owner may still turn the
+    ///      runtime breaker off for these math-focused fuzz tests.
+    function _createMatcherTrusted(bytes32 id, uint256 feeRate_) internal returns (address market) {
+        market = _create(id, feeRate_, _cfgCurated(), 0);
+        PerpMarket(payable(market)).setOracleGuard(address(0));
     }
 
     function _cfgWithFeed(uint256 maxDevBps) internal view returns (OracleGuard.OracleConfig memory) {
@@ -191,7 +204,7 @@ contract PerpFuzzTest is Test {
         uint256 entry = 2000e18;
         exitPrice = bound(exitPrice, 1000e18, 4000e18);
 
-        address m = _create("PNL", 0, _cfgCurated(), 0); // feeRate 0 → clean zero-sum accounting
+        address m = _createMatcherTrusted("PNL", 0); // feeRate 0 → clean zero-sum accounting; guard off for arbitrary exits
 
         uint256 fundA = 1e18;
         uint256 fundB = 1e18;
@@ -223,7 +236,7 @@ contract PerpFuzzTest is Test {
     function testFuzz_winnerGainBoundedByLoserCollateral(uint256 size, uint256 lev) public {
         size = bound(size, 1e15, 1e16);
         lev = bound(lev, 2e4, 10 * 1e4); // >1x so a 2x price move overruns loser collateral
-        address m = _create("BND", 0, _cfgCurated(), 0);
+        address m = _createMatcherTrusted("BND", 0); // guard off: this test drives the mark to 2x
         _fund(m, A, 1e18);
         _fund(m, B, 1e18);
 

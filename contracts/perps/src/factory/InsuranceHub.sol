@@ -55,6 +55,8 @@ contract InsuranceHub is Ownable, ReentrancyGuard {
     event BackstopEnabledSet(address indexed market, bool enabled);
     event BackstopFunded(address indexed token, uint256 amount, address indexed from);
     event BackstopWithdrawn(address indexed token, uint256 amount, address indexed to);
+    /// Owner recovered a (dead-market) sub-account balance directly, bypassing the coverLoss dance.
+    event OwnerSwept(address indexed market, address indexed token, uint256 amount, address indexed to);
 
     error NotAuthorized();
     error ZeroAddress();
@@ -165,5 +167,31 @@ contract InsuranceHub is Ownable, ReentrancyGuard {
         backstop[token] -= amount;
         IERC20(token).safeTransfer(to, amount);
         emit BackstopWithdrawn(token, amount, to);
+    }
+
+    // ============================================================
+    // Owner — rescue (recover a stranded sub-account)
+    // ============================================================
+
+    /**
+     * @notice Recover a market's insurance sub-account balance directly to `to`. Fixes the
+     *         dead-market trap: if a market is delisted/abandoned, its `balanceOf[market][token]`
+     *         is otherwise only reachable via the setAuthorizedCoverer(self) + coverLoss dance.
+     *         This lets the owner recover it in one call. Decrements the sub-account (reverts on
+     *         overdraw) BEFORE transferring, so it can only ever move funds actually credited to
+     *         that market — never another market's balance, the backstop, or more than exists.
+     */
+    function ownerSweep(address market, address token, uint256 amount, address to)
+        external
+        onlyOwner
+        nonReentrant
+    {
+        if (market == address(0) || token == address(0) || to == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
+        uint256 bal = balanceOf[market][token];
+        if (amount > bal) revert InsufficientMarketInsurance();
+        balanceOf[market][token] = bal - amount;
+        IERC20(token).safeTransfer(to, amount);
+        emit OwnerSwept(market, token, amount, to);
     }
 }
