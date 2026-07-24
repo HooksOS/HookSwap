@@ -571,7 +571,7 @@ export function TerminalSwapReviewScreen(): JSX.Element | null {
   const swapFee = trade?.swapFee
   const swapFeeAmount =
     swapFee && trade ? fmtAmount(CurrencyAmount.fromRawAmount(trade.outputAmount.currency, swapFee.amount)) : undefined
-  const hookFeeLabel = swapFee ? `HookSwap fee · ${swapFee.percent.toFixed(2)}%` : 'HookSwap fee · 0.2%'
+  const hookFeeLabel = swapFee ? `HookSwap fee · ${swapFee.percent.toFixed(2)}%` : 'HookSwap fee · 0.3%'
   const hookFeeValue = isWrap ? '—' : swapFee ? (swapFeeAmount ? `${swapFeeAmount} ${outSym}` : `${swapFee.percent.toFixed(2)}%`) : '—'
 
   const networkCostValue = gasFeeFormatted ?? '—'

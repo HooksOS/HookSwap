@@ -75,8 +75,8 @@ const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
  * re-derives the identical `FeeOptions` from `trade.swapFee` (getTradingApiSwapFee → this bips).
  */
 export const HOOKSWAP_FEE_RECIPIENT = '0x011d438E3eb3fce848950859591ec037C6529E13'
-/** 0.2% = 20 bps of the OUTPUT token. */
-export const HOOKSWAP_FEE_BIPS = 20
+/** 0.3% = 30 bps of the OUTPUT token. */
+export const HOOKSWAP_FEE_BIPS = 30
 
 export const CHAINS: Record<number, ChainConfig> = {
   // ---- MegaETH (4326) — DEPLOYED ----

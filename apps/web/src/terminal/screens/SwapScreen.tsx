@@ -486,7 +486,7 @@ export function SwapTicket(): JSX.Element {
       ? `${inSym} → ${outSym}`
       : '—'
 
-  // --- HookSwap fee (LIVE 0.2% output-token PAY_PORTION) --------------------
+  // --- HookSwap fee (LIVE 0.3% output-token PAY_PORTION) --------------------
   // Bound to the REAL swapFee the trade carries (derived from the quote's portionBips/
   // portionAmount/portionRecipient by getTradingApiSwapFee). Never a hardcoded string: the
   // percent and amount come straight from the executable trade, so the row matches what the
@@ -496,7 +496,7 @@ export function SwapTicket(): JSX.Element {
     swapFee && activeTrade
       ? fmtAmount(CurrencyAmount.fromRawAmount(activeTrade.outputAmount.currency, swapFee.amount))
       : undefined
-  const hookFeeLabel = swapFee ? `HookSwap fee · ${swapFee.percent.toFixed(2)}%` : 'HookSwap fee · 0.2%'
+  const hookFeeLabel = swapFee ? `HookSwap fee · ${swapFee.percent.toFixed(2)}%` : 'HookSwap fee · 0.3%'
   const hookFeeValue = isWrap
     ? '—'
     : swapFee
@@ -792,7 +792,7 @@ export function SwapTicket(): JSX.Element {
         <BreakdownRow label="Price impact" value={impactValue} valueColor={impactColor} />
         <BreakdownRow label="Min received" value={minRecvValue} />
         <BreakdownRow label="Route" value={routeValue} />
-        {/* LIVE HookSwap fee: 0.2% of the output token, bound to the trade's real swapFee. */}
+        {/* LIVE HookSwap fee: 0.3% of the output token, bound to the trade's real swapFee. */}
         <BreakdownRow label={hookFeeLabel} value={hookFeeValue} />
         {/* Network fee: no verifiable per-quote gas estimate is surfaced here → honest "—". */}
         <BreakdownRow label="Network fee" value="—" last />
