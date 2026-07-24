@@ -39,6 +39,7 @@ const TerminalMultisenderPage = lazy(() => import('~/terminal/TerminalMultisende
 const TerminalCreateTokenPage = lazy(() => import('~/terminal/TerminalCreateTokenPage'))
 const TerminalVestingPage = lazy(() => import('~/terminal/TerminalVestingPage'))
 const TerminalFarmsPage = lazy(() => import('~/terminal/TerminalFarmsPage'))
+const TerminalFarmDetailPage = lazy(() => import('~/terminal/TerminalFarmDetailPage'))
 const TerminalAirdropPage = lazy(() => import('~/terminal/TerminalAirdropPage'))
 const TerminalLaunchPage = lazy(() => import('~/terminal/TerminalLaunchPage'))
 const TerminalLaunchCreatePage = lazy(() => import('~/terminal/TerminalLaunchCreatePage'))
@@ -457,6 +458,16 @@ export const routes: RouteDefinition[] = [
     getElement: () => (
       <Suspense fallback={null}>
         <TerminalFarmsPage />
+      </Suspense>
+    ),
+  }),
+  createRouteDefinition({
+    path: '/farm/:chainId/:farmId',
+    getTitle: () => 'Farm · HookSwap',
+    getDescription: () => 'View a HookSwap staking farm — live TVL, reward rate, APR, and stake / claim / unstake.',
+    getElement: () => (
+      <Suspense fallback={null}>
+        <TerminalFarmDetailPage />
       </Suspense>
     ),
   }),

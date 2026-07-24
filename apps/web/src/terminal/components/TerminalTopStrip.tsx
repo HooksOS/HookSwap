@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router'
 import { formatUnits } from 'viem'
-import { useBlockNumber, useGasPrice } from 'wagmi'
+import { useBlockNumber, useChainId, useGasPrice } from 'wagmi'
 import { useAccount } from '~/hooks/useAccount'
 import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens'
 import { TickerTape, type TickerItem } from '~/terminal/components/TickerTape'
@@ -66,15 +66,14 @@ export function TerminalTopStrip(): JSX.Element {
   const navigate = useNavigate()
   const { topTokens, isLoading, isError } = useListTokens(undefined)
 
-  // Active chain = the connected wallet's chain (falls back to the app's default via
-  // useAccount → useChainId), so GAS/BLOCK track whatever network the user is on.
-  const { chainId } = useAccount()
-  const { data: gasPrice } = useGasPrice({ chainId, query: { enabled: chainId !== undefined } })
-  const { data: blockNumber } = useBlockNumber({
-    chainId,
-    watch: true,
-    query: { enabled: chainId !== undefined },
-  })
+  // Active chain = the connected wallet's chain; when NO wallet is connected, fall back to wagmi's
+  // config-level chain (`useChainId`, always defined) so GAS/BLOCK show for the default/viewed chain
+  // instead of a permanent "—". They still read "—" only while the RPC query is loading or genuinely fails.
+  const { chainId: walletChainId } = useAccount()
+  const configChainId = useChainId()
+  const chainId = walletChainId ?? configChainId
+  const { data: gasPrice } = useGasPrice({ chainId })
+  const { data: blockNumber } = useBlockNumber({ chainId, watch: true })
 
   const items: TickerItem[] = useMemo(() => {
     // Dedup so the same asset never appears twice on the compact tape (the list can

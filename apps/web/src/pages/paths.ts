@@ -39,6 +39,7 @@ export const paths = [
   '/token/new',
   '/vesting',
   '/farms',
+  '/farm/:chainId/:farmId',
   '/airdrop',
   '/activity',
   '/analytics',

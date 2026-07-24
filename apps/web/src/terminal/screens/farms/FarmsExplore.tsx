@@ -17,6 +17,7 @@
  * an honest empty state. Nothing here invents a farm, price, TVL or yield.
  */
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
 import { LedgerDonut, type DonutSlice } from '~/terminal/components/LedgerDonut'
@@ -288,13 +289,16 @@ const mobileStatGridStyle: React.CSSProperties = {
 function FarmRow({ f }: { f: Farm }): JSX.Element {
   const [hover, setHover] = useState(false)
   const isMobile = useIsMobileViewport()
+  const navigate = useNavigate()
   const pairLabel = `${f.stakingToken.symbol || '?'} → ${f.rewardToken.symbol || '?'}`
+  // Each row deep-links to the shareable per-farm detail page (`/farm/:chainId/:farmId`).
+  const goToFarm = (): void => navigate(`/farm/${f.chainId}/${f.farm}`)
 
   // Mobile: stacked card — identity block full-width on top, stats as a label→value
   // chip grid below (no hover-only affordances).
   if (isMobile) {
     return (
-      <div style={{ ...rowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 12 }}>
+      <div onClick={goToFarm} style={{ ...rowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 12, cursor: 'pointer' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
           <PairAvatar farm={f} />
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -347,10 +351,12 @@ function FarmRow({ f }: { f: Farm }): JSX.Element {
 
   return (
     <div
+      onClick={goToFarm}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
         ...rowStyle,
+        cursor: 'pointer',
         transform: hover ? 'translateY(-2px)' : undefined,
         boxShadow: hover ? '0 8px 22px -14px rgba(11,15,20,.28)' : undefined,
         borderColor: hover ? terminalColors.greenBorder : terminalColors.line,

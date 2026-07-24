@@ -99,6 +99,8 @@ export interface UseFarm {
   rewardRate?: bigint
   /** Unix timestamp the current reward period ends (0 before first funding). */
   periodFinish?: bigint
+  /** Configured reward-period length in seconds (lets the detail page derive the period start). */
+  rewardsDuration?: bigint
 
   isLoadingCore: boolean
   error: boolean
@@ -185,6 +187,7 @@ export function useFarm({
       { address: farmAddress, chainId, abi: stakingRewardsAbi, functionName: 'totalSupply' as const },
       { address: farmAddress, chainId, abi: stakingRewardsAbi, functionName: 'rewardRate' as const },
       { address: farmAddress, chainId, abi: stakingRewardsAbi, functionName: 'periodFinish' as const },
+      { address: farmAddress, chainId, abi: stakingRewardsAbi, functionName: 'rewardsDuration' as const },
     ],
     query: { enabled: validFarm },
   })
@@ -198,6 +201,7 @@ export function useFarm({
   const totalStaked = pick<bigint>(2)
   const rewardRate = pick<bigint>(3)
   const periodFinish = pick<bigint>(4)
+  const rewardsDuration = pick<bigint>(5)
 
   /* --------------------------------------------------------------- user reads (need wallet) */
 
@@ -385,6 +389,7 @@ export function useFarm({
       earned,
       rewardRate,
       periodFinish,
+      rewardsDuration,
       isLoadingCore,
       error: Boolean(coreRead.error),
       refetch,
@@ -420,6 +425,7 @@ export function useFarm({
       earned,
       rewardRate,
       periodFinish,
+      rewardsDuration,
       isLoadingCore,
       coreRead.error,
       stakeRaw,

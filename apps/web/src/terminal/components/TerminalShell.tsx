@@ -72,7 +72,12 @@ export function TerminalShell({ rail, topBar, subBar, children }: TerminalShellP
           style={{
             flex: 1,
             minWidth: 0,
-            overflow: 'auto',
+            // Scroll vertically only. Clip the x-axis so a single over-wide child (e.g. a dense
+            // table/chart) can NEVER widen the page and cause the whole layout to scroll/shift
+            // sideways (that was the "content cut off on the left" bug). Wide tables keep their OWN
+            // internal horizontal scroll (DataTable), so nothing legitimate is clipped.
+            overflowX: 'hidden',
+            overflowY: 'auto',
             // Clear the fixed bottom tab bar + the iPhone home indicator.
             paddingBottom: `calc(${BOTTOM_TAB_BAR_HEIGHT}px + env(safe-area-inset-bottom, 0px))`,
           }}
@@ -169,7 +174,8 @@ export function TerminalShell({ rail, topBar, subBar, children }: TerminalShellP
         actions={topBar.actions}
       />
       {subBar}
-      <div style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>{children}</div>
+      {/* Scroll vertically only; clip x so no over-wide child can shift/scroll the whole page sideways. */}
+      <div style={{ flex: 1, minWidth: 0, overflowX: 'hidden', overflowY: 'auto' }}>{children}</div>
     </div>
   )
 }
