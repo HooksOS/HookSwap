@@ -29,9 +29,15 @@ export interface RelayChain {
   id: number
   name?: string
   displayName?: string
-  /** Native gas currency (zero-address `currency.address`). */
+  /** Native gas currency (zero-address `currency.address`) — note: carries NO `metadata.logoURI`. */
   currency?: RelayCurrencyMeta
-  /** A short list of featured bridgeable ERC-20s on this chain. */
+  /**
+   * A short list of featured bridgeable currencies (native + top ERC-20s), each WITH a
+   * `metadata.logoURI` — verified live. This is the logo-bearing list; `erc20Currencies`
+   * ships the same ERC-20s but WITHOUT logos, so `featuredTokens` is preferred for icons.
+   */
+  featuredTokens?: RelayCurrencyMeta[]
+  /** A short list of featured bridgeable ERC-20s on this chain (logo-less — prefer `featuredTokens`). */
   erc20Currencies?: RelayCurrencyMeta[]
   iconUrl?: string
   logoUrl?: string

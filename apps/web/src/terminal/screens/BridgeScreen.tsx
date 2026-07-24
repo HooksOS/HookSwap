@@ -18,7 +18,7 @@ import { useBalance } from 'wagmi'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
 import { RELAY_NATIVE_ADDRESS } from '~/terminal/bridge/addresses'
-import { chainLabel, isHookSwapChain, useBridgeChains, useChainCurrencies } from '~/terminal/bridge/chains'
+import { CHAIN_ICON_OVERRIDES, chainLabel, isHookSwapChain, useBridgeChains, useChainCurrencies } from '~/terminal/bridge/chains'
 import {
   fetchRelayCurrencies,
   type RelayChain,
@@ -37,10 +37,18 @@ function isNativeCurrency(c?: RelayCurrencyMeta): boolean {
   return !c?.address || c.address.toLowerCase() === RELAY_NATIVE_ADDRESS
 }
 
-/** The native currency descriptor for a chain (from the Relay chain entry). */
+/**
+ * The native currency descriptor for a chain. Relay's `chain.currency` has NO `metadata.logoURI`,
+ * but `chain.featuredTokens` carries the SAME native entry WITH a logo — so we prefer that so the
+ * default-selected token shows its real icon immediately (no wait on /currencies/v2).
+ */
 function nativeCurrencyOf(chain?: RelayChain): RelayCurrencyMeta | undefined {
   if (!chain) {
     return undefined
+  }
+  const featuredNative = (chain.featuredTokens ?? []).find(isNativeCurrency)
+  if (featuredNative?.metadata?.logoURI) {
+    return featuredNative
   }
   return (
     chain.currency ?? {
@@ -52,10 +60,18 @@ function nativeCurrencyOf(chain?: RelayChain): RelayCurrencyMeta | undefined {
   )
 }
 
-/** Base token list for a chain: native first, then its featured ERC-20s. */
+/**
+ * Base token list for a chain. Prefers `featuredTokens` (native + top ERC-20s, each WITH a logo)
+ * over `erc20Currencies` (the same ERC-20s but logo-less), so the fallback list still shows real
+ * icons for chains that /currencies/v2 doesn't serve.
+ */
 function baseTokensOf(chain?: RelayChain): RelayCurrencyMeta[] {
   if (!chain) {
     return []
+  }
+  const featured = chain.featuredTokens ?? []
+  if (featured.length > 0) {
+    return featured
   }
   const native = nativeCurrencyOf(chain)
   const erc20 = chain.erc20Currencies ?? []
@@ -99,15 +115,20 @@ function useIsDarkTerminal(): boolean {
 }
 
 /**
- * Ordered chain-icon URL candidates. Relay serves per-theme variants
- * (`…/icons/<id>/light.png` for light backgrounds, `…/dark.png` for dark — both verified
- * live). On the dark Terminal the "light" variant (a dark glyph) is near-invisible, so we
- * prefer the dark variant, then fall back to the provided icon, then `logoUrl` — the
- * `<img>` onError walks this list, and only a genuinely icon-less chain shows the dot.
+ * Ordered chain-icon URL candidates. First, any curated real-logo override (for chains whose
+ * Relay icon is a plain placeholder tile — e.g. Base 8453; see CHAIN_ICON_OVERRIDES). Then Relay's
+ * own per-theme variants (`…/icons/<id>/light.png` for light backgrounds, `…/dark.png` for dark —
+ * both verified live): on the dark Terminal the "light" variant (a dark glyph) is near-invisible,
+ * so the dark variant is preferred, then the provided icon, then `logoUrl`. The `<img>` onError
+ * walks this list; only a genuinely icon-less chain falls through to the monogram.
  */
 function chainIconCandidates(chain: RelayChain | undefined, isDark: boolean): string[] {
-  const base = chain?.iconUrl ?? chain?.logoUrl
   const out: string[] = []
+  const override = chain ? CHAIN_ICON_OVERRIDES[chain.id] : undefined
+  if (override) {
+    out.push(override)
+  }
+  const base = chain?.iconUrl ?? chain?.logoUrl
   if (base && isDark && /\/light\.(png|svg|webp|jpg|jpeg)(\?|$)/i.test(base)) {
     out.push(base.replace(/\/light\.(png|svg|webp|jpg|jpeg)/i, '/dark.$1'))
   }
@@ -120,13 +141,67 @@ function chainIconCandidates(chain: RelayChain | undefined, isDark: boolean): st
   return out
 }
 
+/* ------------------------------------------------------------- monogram fallback */
+
+/**
+ * Deterministic hue (0–359) from a label, so a given chain/token always renders the same colour.
+ * Simple FNV-ish string hash — stable across renders and reloads.
+ */
+function hueFromLabel(label: string): number {
+  let h = 0
+  for (let i = 0; i < label.length; i++) {
+    h = (h * 31 + label.charCodeAt(i)) >>> 0
+  }
+  return h % 360
+}
+
+/** The first alphanumeric character of a label, uppercased (the monogram glyph). */
+function monogramChar(label?: string): string {
+  const m = (label ?? '').match(/[a-z0-9]/i)
+  return m ? m[0].toUpperCase() : '?'
+}
+
+/**
+ * A clean deterministic gradient monogram circle — the graceful fallback when no real logo
+ * resolves (missing URL or every `<img>` candidate 404s). Never a broken-image icon or a bare
+ * colour square. The gradient hue is derived from the label; the border uses the theme line token.
+ */
+function MonogramCircle({ label, size }: { label?: string; size: number }): JSX.Element {
+  const hue = hueFromLabel(label ?? '')
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: size,
+        height: size,
+        flexShrink: 0,
+        borderRadius: '50%',
+        border: `1px solid ${terminalColors.line}`,
+        background: `linear-gradient(135deg, hsl(${hue} 62% 46%), hsl(${(hue + 42) % 360} 66% 34%))`,
+        color: '#fff',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: MONO,
+        fontWeight: 700,
+        fontSize: Math.max(9, Math.round(size * 0.46)),
+        lineHeight: 1,
+        letterSpacing: 0,
+        userSelect: 'none',
+      }}
+    >
+      {monogramChar(label)}
+    </span>
+  )
+}
+
 /* --------------------------------------------------------------- token logo */
 
 /**
  * A token's icon. Uses the currency's own `metadata.logoURI` when present, else resolves
  * it by address from the chain's currency list (the selected token often originates from
  * GET /chains, which ships no logos — the map is built from /currencies/v2). Falls back to
- * a neutral dot only when no logo exists anywhere.
+ * a deterministic monogram circle only when no logo exists anywhere (or the image 404s).
  */
 function TokenLogo({
   currency,
@@ -155,21 +230,8 @@ function TokenLogo({
       />
     )
   }
-  return (
-    <span
-      style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        flexShrink: 0,
-        // Theme-aware neutral placeholder (matches ChainLogo's fallback) — a frozen
-        // hardcoded gradient would keep one hue in both palettes.
-        background: terminalColors.panel2,
-        border: `1px solid ${terminalColors.line}`,
-        display: 'inline-block',
-      }}
-    />
-  )
+  // No logo anywhere (or the image 404'd) → clean deterministic monogram, never a bare square.
+  return <MonogramCircle label={currency?.symbol ?? currency?.name} size={size} />
 }
 
 function ChainLogo({ chain, size = 18, isDark }: { chain?: RelayChain; size?: number; isDark: boolean }): JSX.Element {
@@ -190,19 +252,8 @@ function ChainLogo({ chain, size = 18, isDark }: { chain?: RelayChain; size?: nu
       />
     )
   }
-  return (
-    <span
-      style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        flexShrink: 0,
-        background: terminalColors.panel2,
-        border: `1px solid ${terminalColors.line}`,
-        display: 'inline-block',
-      }}
-    />
-  )
+  // Every candidate exhausted (or the chain has no icon at all) → deterministic monogram.
+  return <MonogramCircle label={chain ? chainLabel(chain) : undefined} size={size} />
 }
 
 /* ------------------------------------------------------------- chain select */

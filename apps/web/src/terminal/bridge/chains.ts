@@ -49,6 +49,21 @@ export function isHookSwapChain(id: number): boolean {
   return HOOKSWAP_CHAIN_IDS.includes(id)
 }
 
+/**
+ * Real chain-logo overrides for chains whose Relay `/icons/<id>/{light,dark}.png` asset is a
+ * plain brand-colour PLACEHOLDER TILE rather than the actual logo — a Relay data-quality gap,
+ * not a field/wiring bug. Verified live (2026-07-24):
+ *   • Base (8453) — Relay's icon is a bare blue rounded square (~698 B, both light & dark
+ *     variants). The real Base mark is served by CoinGecko's asset-platform image (same host
+ *     Relay already uses for token `logoURI`s), used here so Base shows its true logo.
+ * Every other pinned/common chain (ETH, Robinhood, Ink, MegaETH, HyperEVM, Stable, Tempo,
+ * Arbitrum, Optimism, Linea, …) has a proper Relay icon and needs no override — those keep
+ * using Relay's own `iconUrl` so they stay correct as Relay updates them.
+ */
+export const CHAIN_ICON_OVERRIDES: Readonly<Record<number, string>> = {
+  8453: 'https://coin-images.coingecko.com/asset_platforms/images/131/large/base-network.png',
+}
+
 /** Human-friendly label for a Relay chain entry. */
 export function chainLabel(chain: RelayChain): string {
   return chain.displayName || chain.name || `Chain ${chain.id}`
