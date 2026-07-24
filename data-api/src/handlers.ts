@@ -102,6 +102,7 @@ import {
   ProtocolVersion,
 } from '@uniswap/client-data-api/dist/data/v1/poolTypes_pb'
 import { getChain, isSupportedChain, supportedChainIds } from './chains'
+import { isHookSwapV4Hook } from './v4Hooks'
 import { isHiddenTokenSymbol, pairHasHiddenToken } from './hiddenTokens'
 import { resolveTokenLogo } from './logos'
 import {
@@ -833,7 +834,10 @@ export async function handleListTokens(req: ListTokensRequest): Promise<ListToke
         // DB read failure — non-fatal; static + v2 tokens still returned.
       }
       try {
-        const v4Rows = getV4PoolRows(db, chainId)
+        // Serve-side HookSwap-native gate: exclude any stored v4 pool whose `hooks` isn't an allowlisted
+        // HookSwap hook (v4 is a shared singleton — see v4Hooks.ts). This drops foreign rows left by a
+        // prior unfiltered backfill immediately, without a DB wipe. HookSwap-hook v4 pools still surface.
+        const v4Rows = getV4PoolRows(db, chainId).filter((p) => isHookSwapV4Hook(chainId, p.hooks))
         v4PoolsByChain.set(chainId, v4Rows)
         for (const p of v4Rows) {
           for (const t of [
@@ -994,6 +998,10 @@ export async function handleListTopPools(req: ListTopPoolsRequest): Promise<List
       // v4 (singleton; poolId). Dynamic-fee pools carry the flag 0x800000 in `fee`.
       try {
         for (const p of getV4PoolRows(db, chainId)) {
+          // HookSwap-native gate: skip foreign v4 pools (hook not HookSwap-owned). See v4Hooks.ts.
+          if (!isHookSwapV4Hook(chainId, p.hooks)) {
+            continue
+          }
           if (pairHasHiddenToken(p.symbol0, p.symbol1)) {
             continue
           }

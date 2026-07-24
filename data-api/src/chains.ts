@@ -102,8 +102,16 @@ export const CHAINS: Record<number, ChainConfig> = {
     v2Factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     v3Factory: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
     // Canonical Uniswap v4 PoolManager (V4-ENABLEMENT-PLAN.md §4, getCode-confirmed; == sdk-core). HOOK
-    // (v4-only) liquidity lives here. Singleton — the indexer scans its Initialize/Swap logs for v4 pools.
+    // (v4-only) liquidity lives here. Singleton — the indexer scans its Initialize/Swap logs for v4 pools,
+    // gated to HookSwap-owned hooks (see v4Hooks.ts): the flagship $HOOK/WETH pool (hook 0x0a09eedc…,
+    // Initialized at block 8,751,433) is HookSwap-native; the other ~10.8k pools on this shared singleton
+    // are foreign and skipped.
     v4PoolManager: '0x8366a39cc670b4001a1121b8f6a443a643e40951',
+    // PoolManager deploy block VERIFIED on-chain (eth_getCode binary-search, 2026-07-24). Needed so the v4
+    // scan reaches HookSwap's v4 pools that predate the default backfill window — notably the flagship
+    // $HOOK/WETH pool at block ~8.75M — which the 200k-block default would miss. Full-history scan from
+    // here (foreign pools are cheaply skipped by the hook allowlist); cursor persists + tails.
+    v4DeployBlock: 3967002,
     // Self-service token factory + launchpad launcher — enumerated for pool-less token discovery.
     // tokenFactory from apps/web/src/terminal/tokenfactory/addresses.ts; launcher from @hookos/sdk.
     tokenFactory: '0x13064247c5687a912fb362e2bb28f24e24f3bdca',

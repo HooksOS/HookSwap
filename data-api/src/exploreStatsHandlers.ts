@@ -57,6 +57,7 @@ import {
   VolumeSplit,
 } from '@uniswap/client-explore/dist/uniswap/explore/v1/service_pb'
 import { isSupportedChain, supportedChainIds } from './chains'
+import { isHookSwapV4Hook } from './v4Hooks'
 import { pairHasHiddenToken } from './hiddenTokens'
 import { getV2PairsCached } from './handlers'
 import { collectChainTokens } from './searchHandlers'
@@ -171,6 +172,10 @@ async function aggregateUsdForChain(db: ReturnType<typeof getDb>, chainId: numbe
   // v4 (indexer-discovered singleton pools).
   try {
     for (const p of getV4PoolRows(db, chainId)) {
+      // HookSwap-native gate: skip foreign v4 pools (hook not HookSwap-owned). See v4Hooks.ts.
+      if (!isHookSwapV4Hook(chainId, p.hooks)) {
+        continue
+      }
       if (pairHasHiddenToken(p.symbol0, p.symbol1)) {
         continue
       }

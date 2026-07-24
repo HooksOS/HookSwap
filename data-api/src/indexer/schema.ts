@@ -23,6 +23,7 @@
 
 // eslint-disable-next-line import/no-unresolved
 import DatabaseConstructor from 'better-sqlite3'
+import { isHookSwapV4Hook } from '../v4Hooks'
 
 // ---------- minimal structural typing of the better-sqlite3 API we use ----------
 
@@ -690,6 +691,35 @@ export function getV4PoolRow(db: SqliteDatabase, chainId: number, poolId: string
          FROM v4_pools WHERE chainId=? AND poolId=?`,
     )
     .get(chainId, poolId) as V4PoolRow | undefined
+}
+
+/**
+ * One-time (idempotent) cleanup: DELETE every stored v4 pool whose `hooks` is NOT a HookSwap-owned hook
+ * (see v4Hooks.ts), along with its v4_pool_state + v4_swap_events rows. This removes the FOREIGN v4 rows
+ * left behind by an earlier UNFILTERED backfill of the shared-singleton PoolManager, so Markets/pools/stats
+ * become HookSwap-only without a full DB wipe. STRICTLY v4-only — v2 (pool_meta/swap/sync) and v3
+ * (v3_pools/…) tables are never touched. Safe to run on every boot (a no-op once the DB is clean). Returns
+ * the number of foreign v4 pools purged.
+ */
+export function purgeForeignV4Pools(db: SqliteDatabase): number {
+  const rows = db.prepare(`SELECT DISTINCT chainId, poolId, hooks FROM v4_pools`).all() as Array<{
+    chainId: number
+    poolId: string
+    hooks: string
+  }>
+  const foreign = rows.filter((r) => !isHookSwapV4Hook(r.chainId, r.hooks))
+  if (foreign.length === 0) {
+    return 0
+  }
+  const delPool = db.prepare(`DELETE FROM v4_pools WHERE chainId=? AND poolId=?`)
+  const delState = db.prepare(`DELETE FROM v4_pool_state WHERE chainId=? AND poolId=?`)
+  const delSwaps = db.prepare(`DELETE FROM v4_swap_events WHERE chainId=? AND poolId=?`)
+  for (const r of foreign) {
+    delSwaps.run(r.chainId, r.poolId)
+    delState.run(r.chainId, r.poolId)
+    delPool.run(r.chainId, r.poolId)
+  }
+  return foreign.length
 }
 
 /** Write the v4 pool's latest price + accumulated-TVL snapshot (one row per poolId, REPLACE). */

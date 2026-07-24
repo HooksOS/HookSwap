@@ -25,6 +25,7 @@
 import { ethers } from 'ethers'
 import { getProvider, getTokenMeta, getV2Pairs, readV3LiveState, TokenMeta } from '../onchain'
 import { ChainConfig, getChain, supportedChainIds } from '../chains'
+import { isHookSwapV4Hook } from '../v4Hooks'
 import {
   getCursor,
   getDb,
@@ -35,6 +36,7 @@ import {
   insertSyncEvents,
   insertV3SwapEvents,
   insertV4SwapEvents,
+  purgeForeignV4Pools,
   setCursor,
   SNAPSHOT_LOG_INDEX,
   SwapEventRow,
@@ -601,6 +603,23 @@ async function ingestV4ForChain(
     return st
   }
 
+  // HookSwap-native v4 gate: a v4 pool is only ours if its PoolKey.hooks is an allowlisted HookSwap hook
+  // (v4 is a shared singleton — see v4Hooks.ts). Initialize carries `hooks`; Swap/ModifyLiquidity do NOT,
+  // so for those we look the pool up (persisted or seen-this-pass via Initialize) and re-check its stored
+  // hooks. Memoized per pass. Foreign pools (incl. already-stored ones from the prior unfiltered backfill)
+  // are skipped for ALL three event types → their swaps/state are never (re)persisted.
+  const allowCache = new Map<string, boolean>()
+  const isAllowlistedPool = (poolId: string): boolean => {
+    const cached = allowCache.get(poolId)
+    if (cached !== undefined) {
+      return cached
+    }
+    const row = getV4PoolRow(db, chainId, poolId)
+    const ok = row ? isHookSwapV4Hook(chainId, row.hooks) : false
+    allowCache.set(poolId, ok)
+    return ok
+  }
+
   let poolsCount = 0
   let swaps = 0
   while (start <= latest) {
@@ -633,6 +652,14 @@ async function ingestV4ForChain(
         if (!init) {
           continue
         }
+        // HookSwap-native gate: only persist a v4 pool whose `hooks` is an allowlisted HookSwap hook.
+        // Foreign/zero-hook pools (the ~97% of the shared singleton) are skipped BEFORE the token-meta
+        // RPC reads (cheaper) and never enter the DB → the store stays HookSwap-only + light.
+        if (!isHookSwapV4Hook(chainId, init.hooks)) {
+          allowCache.set(init.poolId, false)
+          continue
+        }
+        allowCache.set(init.poolId, true)
         const [m0, m1] = await Promise.all([
           resolveCurrencyMeta(chainId, chain, init.currency0),
           resolveCurrencyMeta(chainId, chain, init.currency1),
@@ -666,6 +693,10 @@ async function ingestV4ForChain(
         if (!sw || ts === undefined) {
           continue
         }
+        // Only index swaps on HookSwap-native pools (skip foreign singleton pools' swaps).
+        if (!isAllowlistedPool(sw.poolId)) {
+          continue
+        }
         swapRows.push({
           chainId,
           poolId: sw.poolId,
@@ -691,6 +722,10 @@ async function ingestV4ForChain(
       } else if (topic0 === V4_MODIFY_LIQUIDITY_TOPIC) {
         const ml = parseV4ModifyLiquidityLog(log)
         if (!ml) {
+          continue
+        }
+        // Only fold liquidity/TVL for HookSwap-native pools (skip foreign singleton pools).
+        if (!isAllowlistedPool(ml.poolId)) {
           continue
         }
         const st = ensureState(ml.poolId)
@@ -860,6 +895,18 @@ export function startIngestLoop(intervalMs = 60_000): void {
     return
   }
   loopStarted = true
+  // One-time cleanup of FOREIGN v4 rows from any earlier unfiltered backfill of the shared-singleton
+  // PoolManager (see purgeForeignV4Pools / v4Hooks.ts). Idempotent + v4-only (v2/v3 untouched); logged.
+  try {
+    const purged = purgeForeignV4Pools(getDb())
+    if (purged > 0) {
+      // eslint-disable-next-line no-console
+      console.log(`[indexer] purged ${purged} foreign (non-HookSwap-hook) v4 pool(s) from the store`)
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[indexer] foreign-v4 purge skipped (non-fatal)', err)
+  }
   const tick = async (): Promise<void> => {
     try {
       const res = await runIngestOnce()
