@@ -256,11 +256,16 @@ export const CHAINS: Record<number, ChainConfig> = {
     multicall2: '0xa1aa9D69f59b20c0eF2936933D677680D6277351',
     permit2: PERMIT2,
     protocols: ['v2', 'v3'], // no v4 on 988 (stable.ts supportsV4:false)
-    // ready:false until (1) the SOR fork adds 988 to HOOKSWAP_V2_FACTORY_ADDRESSES + static
-    // subgraph providers (same fix pattern as XLayer, SOR commits 5b28db5/3acce5b) AND
-    // (2) on-chain liquidity is seeded (no WgUSDT pool exists yet). Contracts + web SDK are wired;
-    // this entry makes getChain(988) defined so the chain is served instead of crashing.
-    ready: false,
+    // ready:true — both prior gating conditions are now met:
+    //   (1) the SOR fork carries 988 in HOOKSWAP_V2_FACTORY_ADDRESSES + static subgraph providers
+    //       (SOR commits 18f4cb9 / 0b1ca50; 988 WgUSDT→USDT0 routing live-verified on the VPS adapter,
+    //       per the 2026-07-23 session log), AND
+    //   (2) on-chain liquidity is seeded — the WgUSDT/USDT0 v2 pair
+    //       0x7F9023729F92ecb5aCbe9A4d9F9463fCDf5b2B9f has real reserves (verified on-chain 2026-07-24:
+    //       ~5.05 USDT0 / ~5.08 WgUSDT; token0 USDT0 6-dec, token1 WgUSDT 18-dec). Dust/proof depth.
+    // NOTE: `ready` is an informational status field — isSupportedChain()/getChain() do NOT gate on it,
+    // so 988 was already served; this flip just reflects verified reality for readers.
+    ready: true,
   },
 
   // ---- Sepolia (11155111) — canonical Uniswap stack reused (testing) ----
