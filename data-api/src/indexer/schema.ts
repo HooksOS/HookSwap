@@ -708,9 +708,6 @@ export function purgeForeignV4Pools(db: SqliteDatabase): number {
     hooks: string
   }>
   const foreign = rows.filter((r) => !isHookSwapV4Hook(r.chainId, r.hooks))
-  if (foreign.length === 0) {
-    return 0
-  }
   const delPool = db.prepare(`DELETE FROM v4_pools WHERE chainId=? AND poolId=?`)
   const delState = db.prepare(`DELETE FROM v4_pool_state WHERE chainId=? AND poolId=?`)
   const delSwaps = db.prepare(`DELETE FROM v4_swap_events WHERE chainId=? AND poolId=?`)
@@ -718,6 +715,23 @@ export function purgeForeignV4Pools(db: SqliteDatabase): number {
     delSwaps.run(r.chainId, r.poolId)
     delState.run(r.chainId, r.poolId)
     delPool.run(r.chainId, r.poolId)
+  }
+  // Also drop ORPHANED v4 swap/state rows — those whose poolId is NOT a (now-allowlisted-only) v4_pools
+  // row. The pre-filter ingest stored swaps/state for pools first seen via Swap (Initialize outside the
+  // scan window) that never got a v4_pools row, so the per-pool deletes above miss them. After the loop,
+  // every remaining v4_pools row is HookSwap-native, so `poolId NOT IN v4_pools` = every foreign/orphan
+  // row. Harmless if empty. Keeps the store strictly HookSwap-only + light.
+  const orphanState = db
+    .prepare(`DELETE FROM v4_pool_state WHERE poolId NOT IN (SELECT poolId FROM v4_pools)`)
+    .run().changes
+  const orphanSwaps = db
+    .prepare(`DELETE FROM v4_swap_events WHERE poolId NOT IN (SELECT poolId FROM v4_pools)`)
+    .run().changes
+  if (foreign.length > 0 || orphanState > 0 || orphanSwaps > 0) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[indexer] purge detail: ${foreign.length} foreign v4 pool(s), ${orphanSwaps} orphan swap row(s), ${orphanState} orphan state row(s)`,
+    )
   }
   return foreign.length
 }
