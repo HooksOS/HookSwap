@@ -31,17 +31,13 @@
  *     16px input text so iOS Safari doesn't auto-zoom the form on focus.
  *   • No sticky CTA — `TerminalShell` already pins a bottom tab bar on mobile.
  */
-import { PositionStatus, ProtocolVersion } from '@uniswap/client-data-api/dist/data/v1/poolTypes_pb'
-import { CurrencyAmount, Token, type Currency } from '@uniswap/sdk-core'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { useReadContract, useReadContracts } from 'wagmi'
 import { COMMON_BASES } from 'uniswap/src/constants/routing'
 import { WRAPPED_NATIVE_CURRENCY } from 'uniswap/src/constants/tokens'
-import type { EVMUniverseChainId } from 'uniswap/src/features/chains/types'
 import { UniverseChainId } from 'uniswap/src/features/chains/types'
 import { getChainLabel, isUniverseChainId } from 'uniswap/src/features/chains/utils'
-import type { V2PairInfo } from 'uniswap/src/features/positions/types'
 import { useLocalizationContext } from 'uniswap/src/features/language/LocalizationContext'
 import { NumberType } from 'utilities/src/format/types'
 import { erc20Abi, formatUnits, isAddress } from '~/chains'
@@ -54,9 +50,9 @@ import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens
 import { useAccount } from '~/hooks/useAccount'
 import { shortAddr } from '~/terminal/components/ExplorerAddress'
 import { pickSwitchTargetChain, supportedChainIdsFromMap, SwitchChainButton } from '~/terminal/components/SwitchChainButton'
-import { AddLiquidityModal } from '~/terminal/pools/AddLiquidityModal'
 import { getPoolAddresses, POOL_ADDRESSES } from '~/terminal/pools/addresses'
 import { useCreateV2Pool } from '~/terminal/pools/useCreateV2Pool'
+import { DEFAULT_ADD_SLIPPAGE_BIPS, useAddV2Liquidity, type AddLiquiditySide } from '~/terminal/pools/useAddV2Liquidity'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { terminalColors, terminalFonts, terminalType } from '~/terminal/theme/tokens'
@@ -103,6 +99,23 @@ function fmtPrice(value: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: value >= 1 ? 4 : 8,
   })
+}
+
+/**
+ * Format a hook-derived (auto-filled) amount for display inside an input field.
+ * Trims a full-precision `formatUnits` string to a readable length without fabricating
+ * digits, and returns '' (so the field shows its placeholder) when there is nothing to
+ * show yet — never a fake 0.
+ */
+function derivedField(v?: string): string {
+  if (!v) {
+    return ''
+  }
+  const n = Number(v)
+  if (!Number.isFinite(n) || n === 0) {
+    return ''
+  }
+  return n.toLocaleString('en-US', { maximumFractionDigits: n >= 1 ? 6 : 10, useGrouping: false })
 }
 
 
@@ -402,6 +415,7 @@ function DepositField({
   onChange,
   usd,
   balanceLabel,
+  estimated = false,
   mobile = false,
 }: {
   token?: TokenOption
@@ -409,6 +423,8 @@ function DepositField({
   onChange: (v: string) => void
   usd?: string
   balanceLabel?: string
+  /** This side's amount is auto-filled from the pool ratio → show a small "est." tag. */
+  estimated?: boolean
   /** Roomier padding + larger numeral on mobile. */
   mobile?: boolean
 }): JSX.Element {
@@ -428,6 +444,24 @@ function DepositField({
           <span style={{ fontFamily: SANS, fontSize: mobile ? 14.5 : 13, fontWeight: 600, color: terminalColors.ink }}>
             {token?.symbol ?? '—'}
           </span>
+          {estimated ? (
+            <span
+              style={{
+                fontFamily: MONO,
+                fontSize: 9.5,
+                fontWeight: 600,
+                letterSpacing: '0.02em',
+                textTransform: 'uppercase',
+                color: terminalColors.ink3Alt,
+                background: terminalColors.panel,
+                border: `1px solid ${terminalColors.line}`,
+                padding: '1px 5px',
+                borderRadius: 999,
+              }}
+            >
+              est.
+            </span>
+          ) : null}
         </span>
         {balanceLabel ? (
           <span style={{ fontFamily: MONO, fontSize: 10.5, color: terminalColors.faint }}>{balanceLabel}</span>
@@ -648,6 +682,9 @@ function PoolsScreenBody(): JSX.Element {
 
   const [baseAmount, setBaseAmount] = useState('')
   const [projectAmount, setProjectAmount] = useState('')
+  // Which deposit field the user last typed into. Drives the add-to-existing-pool auto-fill:
+  // the OTHER side is derived from live reserves. Either side can be the typed one.
+  const [inputSide, setInputSide] = useState<AddLiquiditySide>('base')
 
   const baseIsNative = resolvedBase?.address === NATIVE_CHAIN_ID
 
@@ -660,15 +697,54 @@ function PoolsScreenBody(): JSX.Element {
     projectAmount,
   })
 
+  // Existing-pool ADD flow (reserve-ratio auto-fill + slippage-protected mins). Shares the exact
+  // base/project inputs as the create hook and resolves the same pair independently, computing the
+  // paired amount from live on-chain reserves. Chain-agnostic — the pair/reserve reads key off the
+  // active chain + factory (no chain hardcoded). The typed side feeds `inputAmount`.
+  const add = useAddV2Liquidity({
+    chainId,
+    owner,
+    base: { address: resolvedBase?.address, decimals: resolvedBase?.decimals, symbol: resolvedBase?.symbol },
+    project: { address: projValid ? projectAddr : undefined, decimals: projectDecimals, symbol: projectSymbol },
+    inputSide,
+    inputAmount: inputSide === 'base' ? baseAmount : projectAmount,
+  })
+
+  // Existing pool (getPair != 0 AND reserves > 0) → ADD at the current ratio via `add`.
+  // Otherwise → first-LP CREATE + seed via `create`. This one flag selects the flow everywhere.
+  const poolExists = create.existingLiquidity
+
+  // Deposit-field wiring. First-LP: both fields are free (bound to base/projectAmount). Existing
+  // pool: the typed side echoes the input; the OTHER side auto-fills from the pool ratio and is
+  // shown from the hook's derived amount (still editable — typing it flips the typed side).
+  // Track the last-typed side unconditionally (only consumed in existing-pool mode) so a value
+  // entered before reserves resolve isn't lost the instant the pool flips to auto-fill mode.
+  const onBaseAmountChange = (v: string): void => {
+    setBaseAmount(v)
+    setInputSide('base')
+  }
+  const onProjectAmountChange = (v: string): void => {
+    setProjectAmount(v)
+    setInputSide('project')
+  }
+  const baseFieldAmount = poolExists && inputSide !== 'base' ? derivedField(add.baseAmountFormatted) : baseAmount
+  const projectFieldAmount =
+    poolExists && inputSide !== 'project' ? derivedField(add.projectAmountFormatted) : projectAmount
+
   // Opening price = deposit ratio (only shown on the first-LP path, where it's meaningful).
   const bAmt = toNum(baseAmount)
   const pAmt = toNum(projectAmount)
   const projPerBase = bAmt > 0 && pAmt > 0 ? pAmt / bAmt : undefined
   const basePerProj = bAmt > 0 && pAmt > 0 ? bAmt / pAmt : undefined
 
+  // Deposit value in USD tracks the ACTUAL base amount going in — the typed base amount on the
+  // first-LP path, or (existing pool) whichever base amount is in play (typed or auto-filled).
+  const effectiveBaseNum = poolExists ? toNum(baseFieldAmount) : bAmt
   const baseUsd =
-    resolvedBase?.price && bAmt > 0 ? convertFiatAmountFormatted(bAmt * resolvedBase.price, NumberType.PortfolioBalance) : undefined
-  const depositUsd = resolvedBase?.price ? bAmt * resolvedBase.price : 0
+    resolvedBase?.price && effectiveBaseNum > 0
+      ? convertFiatAmountFormatted(effectiveBaseNum * resolvedBase.price, NumberType.PortfolioBalance)
+      : undefined
+  const depositUsd = resolvedBase?.price ? effectiveBaseNum * resolvedBase.price : 0
 
   const projectOption: TokenOption | undefined = projValid
     ? { symbol: projectSymbol ?? shortAddr(projectAddr), address: projectAddr, decimals: projectDecimals }
@@ -679,70 +755,36 @@ function PoolsScreenBody(): JSX.Element {
       ? `Bal ${Number(formatUnits(projectBalance, projectDecimals)).toLocaleString('en-US', { maximumFractionDigits: 4 })}`
       : undefined
 
-  /* ------------------------------------------------- add-to-existing-pool bridge */
-
-  // When the chosen pair already has an on-chain pool with reserves, we don't create —
-  // we open the existing `AddLiquidityModal` (client-side add via `useAddV2Liquidity`).
-  // Build the `V2PairInfo` it expects from the selected base/project + the pair address the
-  // create hook already resolved. Native pairs hold WETH on-chain, so the base side is passed
-  // as the wrapped-native token (the modal maps a WETH side back to a native deposit).
-  const [addOpen, setAddOpen] = useState(false)
-
-  const existingPairPosition = useMemo((): V2PairInfo | null => {
-    if (!create.existingLiquidity || !create.pairAddress) {
-      return null
-    }
-    const baseCurrency: Currency | undefined = baseIsNative
-      ? wrappedNative
-      : resolvedBase?.address && resolvedBase.address !== NATIVE_CHAIN_ID && resolvedBase.decimals !== undefined
-        ? new Token(chainId, resolvedBase.address, resolvedBase.decimals, resolvedBase.symbol)
-        : undefined
-    if (!baseCurrency || !projectResolved || projectDecimals === undefined) {
-      return null
-    }
-    const projectCurrency = new Token(chainId, projectAddr, projectDecimals, projectSymbol)
-    const liquidityToken = new Token(chainId, create.pairAddress, 18, 'UNI-V2', 'HookSwap V2')
-    return {
-      status: PositionStatus.IN_RANGE,
-      version: ProtocolVersion.V2,
-      currency0Amount: CurrencyAmount.fromRawAmount(baseCurrency, 0),
-      currency1Amount: CurrencyAmount.fromRawAmount(projectCurrency, 0),
-      chainId: chainId as EVMUniverseChainId,
-      poolId: create.pairAddress,
-      liquidityToken,
-      feeTier: undefined,
-      v4hook: undefined,
-      owner: undefined,
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    create.existingLiquidity,
-    create.pairAddress,
-    baseIsNative,
-    wrappedNative,
-    resolvedBase?.address,
-    resolvedBase?.decimals,
-    resolvedBase?.symbol,
-    projectResolved,
-    projectDecimals,
-    projectSymbol,
-    projectAddr,
-    chainId,
-  ])
-
   /* --------------------------------------------------------------- primary action */
 
-  const busy = create.isWritePending || create.baseApproving || create.projectApproving || create.isConfirming
+  // The active flow's in-flight state (add for an existing pool, else create).
+  const busy = poolExists
+    ? add.isWritePending || add.baseApproving || add.projectApproving || add.isConfirming
+    : create.isWritePending || create.baseApproving || create.projectApproving || create.isConfirming
 
   const onPrimary = (): void => {
     if (!connected) {
       accountDrawer.open()
       return
     }
-    if (create.existingLiquidity) {
-      if (existingPairPosition) {
-        setAddOpen(true)
+    if (poolExists) {
+      // Existing pool → add at the current reserve ratio via `useAddV2Liquidity` (inline).
+      if (add.isDone) {
+        add.reset()
+        setBaseAmount('')
+        setProjectAmount('')
+        setInputSide('base')
+        return
       }
+      if (add.needsProjectApproval) {
+        void add.approveProject()
+        return
+      }
+      if (add.needsBaseApproval) {
+        void add.approveBase()
+        return
+      }
+      void add.add()
       return
     }
     if (create.isDone) {
@@ -769,13 +811,37 @@ function PoolsScreenBody(): JSX.Element {
       return 'Not available on this network'
     }
     if (!connected) {
-      return 'Connect wallet to create a pool'
+      return poolExists ? 'Connect wallet to add liquidity' : 'Connect wallet to create a pool'
+    }
+    if (poolExists) {
+      if (add.isDone) {
+        return 'Added — add more'
+      }
+      if (add.projectApproving || add.baseApproving) {
+        return 'Approving…'
+      }
+      if (add.isWritePending) {
+        return 'Confirm in wallet…'
+      }
+      if (add.isConfirming) {
+        return 'Adding liquidity…'
+      }
+      if (!add.reservesLoaded) {
+        return 'Loading pool…'
+      }
+      if (!add.inputsValid) {
+        return 'Enter an amount'
+      }
+      if (add.needsProjectApproval) {
+        return `Approve ${projectSymbol ?? 'token'}`
+      }
+      if (add.needsBaseApproval) {
+        return `Approve ${resolvedBase?.symbol ?? 'token'}`
+      }
+      return 'Add liquidity'
     }
     if (create.isDone) {
       return 'Create another pool'
-    }
-    if (create.existingLiquidity) {
-      return 'Add liquidity'
     }
     if (!create.inputsValid) {
       return 'Enter token & amounts'
@@ -805,12 +871,20 @@ function PoolsScreenBody(): JSX.Element {
     if (!connected) {
       return false
     }
+    if (poolExists) {
+      if (add.isDone) {
+        return false
+      }
+      if (busy || !add.reservesLoaded || !add.poolHasReserves) {
+        return true
+      }
+      if (add.needsProjectApproval || add.needsBaseApproval) {
+        return false
+      }
+      return !add.canAdd
+    }
     if (create.isDone) {
       return false
-    }
-    if (create.existingLiquidity) {
-      // Enabled → opens the AddLiquidityModal (only once we can build its pair input).
-      return !existingPairPosition
     }
     if (busy) {
       return true
@@ -822,14 +896,10 @@ function PoolsScreenBody(): JSX.Element {
   })()
 
   // Existing-vs-new copy: once the chosen pair resolves to a live on-chain pool (getPair != 0
-  // AND reserves > 0 → `existingLiquidity`), this is ADDING to an existing pool, not creating
-  // one. Only the heading/intro copy changes — the underlying v2 addLiquidity flow is identical
-  // (a v2 addLiquidity to an existing pair just adds; to a non-existent pair it creates + seeds).
-  const poolExists = create.existingLiquidity
+  // AND reserves > 0 → `poolExists`), this is ADDING to an existing pool, not creating one.
   const pairLabel = resolvedBase?.symbol && projectSymbol ? `${resolvedBase.symbol}/${projectSymbol}` : undefined
 
   return (
-    <>
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
       {/* Header */}
       <div style={{ marginBottom: 8 }}>
@@ -1030,16 +1100,18 @@ function PoolsScreenBody(): JSX.Element {
             <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 10 }}>
               <DepositField
                 token={resolvedBase}
-                amount={baseAmount}
-                onChange={setBaseAmount}
+                amount={baseFieldAmount}
+                onChange={onBaseAmountChange}
                 usd={baseUsd}
+                estimated={poolExists && inputSide === 'project'}
                 mobile={isMobile}
               />
               <DepositField
                 token={projectOption}
-                amount={projectAmount}
-                onChange={setProjectAmount}
+                amount={projectFieldAmount}
+                onChange={onProjectAmountChange}
                 balanceLabel={projectBalanceLabel}
+                estimated={poolExists && inputSide === 'base'}
                 mobile={isMobile}
               />
             </div>
@@ -1063,6 +1135,13 @@ function PoolsScreenBody(): JSX.Element {
                   value={chainReady && chainId ? getChainLabel(chainId) : 'Not available'}
                   valueColor={chainReady ? terminalColors.ink2 : terminalColors.faint}
                 />
+                {poolExists ? (
+                  <MobileStat
+                    label="Slippage"
+                    value={`${(DEFAULT_ADD_SLIPPAGE_BIPS / 100).toFixed(2)}%`}
+                    valueColor={terminalColors.ink2}
+                  />
+                ) : null}
               </div>
             ) : (
               <>
@@ -1074,6 +1153,9 @@ function PoolsScreenBody(): JSX.Element {
                 <SummaryRow label="Fee tier" value={`${V2_FEE_LABEL} (v2)`} />
                 <SummaryRow label="Range" value="Full range" />
                 <SummaryRow label="Network" value={chainReady && chainId ? getChainLabel(chainId) : 'Not available'} />
+                {poolExists ? (
+                  <SummaryRow label="Slippage" value={`${(DEFAULT_ADD_SLIPPAGE_BIPS / 100).toFixed(2)}%`} />
+                ) : null}
               </>
             )}
 
@@ -1106,7 +1188,25 @@ function PoolsScreenBody(): JSX.Element {
               />
             ) : null}
 
-            {create.isDone ? (
+            {poolExists ? (
+              add.isDone ? (
+                <div style={{ marginTop: 10 }}>
+                  <Notice tone="green">
+                    Liquidity added at the current pool ratio. Your position updates once the block is indexed.
+                  </Notice>
+                </div>
+              ) : add.error ? (
+                <div style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.redDown, marginTop: 10, lineHeight: 1.5 }}>
+                  {add.error}
+                </div>
+              ) : chainReady ? (
+                <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.faint, marginTop: 10, lineHeight: 1.5 }}>
+                  {baseIsNative
+                    ? 'The paired amount auto-fills from the current pool reserves. Approve your project token once, then add — native is wrapped automatically. No Permit2.'
+                    : 'The paired amount auto-fills from the current pool reserves. Approve each token once, then add. Tokens are pulled by the v2 router (no Permit2).'}
+                </div>
+              ) : null
+            ) : create.isDone ? (
               <div style={{ marginTop: 10 }}>
                 <Notice tone="green">
                   Pool created and seeded. It becomes swappable and appears in Markets once indexed.
@@ -1127,15 +1227,6 @@ function PoolsScreenBody(): JSX.Element {
         </div>
       </div>
     </div>
-
-    {addOpen && existingPairPosition ? (
-      <AddLiquidityModal
-        position={existingPairPosition}
-        open
-        onClose={() => setAddOpen(false)}
-      />
-    ) : null}
-    </>
   )
 }
 
