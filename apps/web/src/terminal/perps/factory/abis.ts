@@ -181,6 +181,19 @@ export const marketRegistryAbi = [
  */
 export const oracleGuardAbi = [
   {
+    // Public mapping getter `allowedVenue[sourceType][venue] -> bool`. The venue-allowlist
+    // gate: `validateConfig` reverts `VenueNotAllowed` unless this is true, so the wizard
+    // reads it to only offer assets whose Chainlink feed is actually allowlisted today.
+    type: 'function',
+    name: 'allowedVenue',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'sourceType', type: 'bytes32' },
+      { name: 'venue', type: 'address' },
+    ],
+    outputs: [{ type: 'bool' }],
+  },
+  {
     type: 'function',
     name: 'getMarketConfig',
     stateMutability: 'view',
@@ -261,6 +274,14 @@ export interface PerpsFactoryDeployment {
   insuranceHub: Address
   /** Default collateral offered in the wizard (WETH on the chain). */
   weth: Address
+  /**
+   * Preferred DEFAULT collateral for new markets — a chain's canonical STABLECOIN
+   * (traders post a $-stable margin, not volatile WETH). When set, the wizard defaults
+   * the collateral to this token (address + decimals) instead of WETH; WETH stays
+   * selectable. Unset on chains whose stablecoin isn't wired yet → the wizard falls back
+   * to WETH there. `decimals` matters (USDG = 6, not 18) and drives `collateralDecimals`.
+   */
+  stablecoin?: { address: Address; symbol: string; decimals: number }
   /** Default Chainlink ETH/USD reference feed used by the default oracle config. */
   ethUsdRefFeed: Address
 }
@@ -298,6 +319,8 @@ export const PERPS_FACTORY_ADDRESSES: Partial<Record<UniverseChainId, PerpsFacto
     bondManager: '0x422350Fa111F1c678B19F33bB5b405752C78205c',
     insuranceHub: '0x3e61CF511E2c4dcfA64d6fd7712417ce66AF36aA',
     weth: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73',
+    // Robinhood Chain canonical USD stablecoin (USDG, 6 decimals) — the default margin token.
+    stablecoin: { address: '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168', symbol: 'USDG', decimals: 6 },
     ethUsdRefFeed: '0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9',
   },
 }

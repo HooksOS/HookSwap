@@ -18,7 +18,8 @@
  *     is validated on Sepolia first per the mandatory-Sepolia rule); the write is disabled.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { getChainLabel } from 'uniswap/src/features/chains/utils'
+import { UniverseChainId } from 'uniswap/src/features/chains/types'
+import { getChainLabel, isTestnetChain } from 'uniswap/src/features/chains/utils'
 import { ExplorerDataType } from 'uniswap/src/utils/linking'
 import { formatUnits } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
@@ -28,16 +29,23 @@ import { ExplorerAddress, shortAddr } from '~/terminal/components/ExplorerAddres
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { PerpsTutorial, type TutorialStep } from '~/terminal/screens/perps/PerpsTutorial'
 import { StatCard } from '~/terminal/components/StatCard'
-import { getPerpsFactoryDeployment, PERPS_FACTORY_HOME_CHAIN } from '~/terminal/perps/factory/abis'
+import {
+  getPerpsFactoryDeployment,
+  PERPS_FACTORY_ADDRESSES,
+  PERPS_FACTORY_HOME_CHAIN,
+} from '~/terminal/perps/factory/abis'
 import {
   CHAINLINK_SOURCE_TYPE,
-  defaultChainlinkOracleConfig,
+  DEFAULT_MAX_DEVIATION_BPS,
+  DEFAULT_MAX_STALENESS,
   FEE_RATE_MAX_BPS,
   FEE_RATE_MIN_BPS,
   MarketTier,
   PLATFORM_MAX_LEVERAGE_X,
+  useAllowlistedAssets,
   useCreateMarket,
   type CreateMarketForm,
+  type OracleAssetCandidate,
 } from '~/terminal/perps/factory/useCreateMarket'
 import { RegistryStatus, RegistryTier, useMarkets, type MarketRow } from '~/terminal/perps/factory/useMarkets'
 import { useMarketNames } from '~/terminal/perps/factory/useMarketNames'
@@ -69,17 +77,17 @@ const LAUNCH_TUTORIAL_STEPS: TutorialStep[] = [
   {
     target: 'launch-market',
     title: '1 · Market',
-    body: 'Name the market (e.g. BTC-PERP) — that derives its on-chain marketId. Collateral is the token traders post as margin; it defaults to WETH and the 0x… is simply that token’s contract address, pre-filled for you. Creator is the wallet that receives your fee share.',
+    body: 'Name the market (e.g. BTC-PERP) — that derives its on-chain marketId. Collateral is the token traders post as margin; it defaults to the chain’s stablecoin (e.g. USDG) so margin is dollar-stable — you can switch to WETH or a custom token. Creator is the wallet that receives your fee share.',
   },
   {
     target: 'launch-params',
     title: '2 · Parameters',
-    body: 'Set the fee you earn per side (2–15 bps), the max leverage (up to the platform cap), and the tier. Curated lists against a single trusted price source; Permissionless requires two independent sources to agree.',
+    body: 'Set the fee you earn per side (2–15 bps) — you keep 40% of every trade’s fee on your market. Then the max leverage (up to the platform cap) and the tier. Curated lists against a single trusted price source; Permissionless requires two independent sources to agree.',
   },
   {
     target: 'launch-oracle',
-    title: '3 · Oracle',
-    body: 'The market’s price source. It’s pre-filled with the platform’s allowlisted Chainlink feed — the 0x… values are that feed’s on-chain address, not something you normally change. Only allowlisted venues will launch.',
+    title: '3 · Price source',
+    body: 'Just pick what you’re listing — e.g. ETH — and the market uses that asset’s allowlisted Chainlink feed automatically. No addresses to paste. Only assets the platform has allowlisted appear; more show up as feeds are added. Power users can open Advanced to set a custom oracle by hand.',
   },
   {
     target: 'launch-review',
@@ -387,6 +395,27 @@ function statusLabel(status: RegistryStatus): string {
 
 /* ------------------------------------------------------------------ directory */
 
+/**
+ * Which chain's markets the "Live markets" directory should list. HookSwapPerps factories
+ * are deployed on Sepolia (11155111, the test chain) AND Robinhood (4663, mainnet). Default
+ * the DIRECTORY to a MAINNET so the live DEX never shows Sepolia's test markets; only list
+ * Sepolia's markets when the wallet is actually connected to Sepolia (the testing path).
+ * Mirrors `resolvePerpsDirectoryChain` in PerpsScreen — the wizard's own create flow still
+ * targets whatever chain the wallet is on (with the existing wrong-chain state).
+ */
+function resolvePerpsDirectoryChain(connectedChainId: number | undefined): UniverseChainId {
+  if (connectedChainId !== undefined && PERPS_FACTORY_ADDRESSES[connectedChainId as UniverseChainId]) {
+    return connectedChainId as UniverseChainId
+  }
+  if (PERPS_FACTORY_ADDRESSES[UniverseChainId.Robinhood]) {
+    return UniverseChainId.Robinhood
+  }
+  const firstMainnet = (Object.keys(PERPS_FACTORY_ADDRESSES).map(Number) as UniverseChainId[]).find(
+    (id) => !isTestnetChain(id),
+  )
+  return firstMainnet ?? PERPS_FACTORY_HOME_CHAIN
+}
+
 function MarketsDirectory({ chainId }: { chainId?: number }): JSX.Element {
   const { ready, markets, count, isLoading, error } = useMarkets({ chainId })
 
@@ -477,6 +506,11 @@ export function CreatePerpMarketScreen(): JSX.Element {
   const connected = Boolean(account.address)
   const owner = assume0xAddress(account.address)
 
+  // The "Live markets" directory lists the connected MAINNET's markets (default Robinhood),
+  // never Sepolia's test markets — unless the wallet is actually connected to Sepolia. The
+  // create flow above still targets the wallet's chain (with the wrong-chain state).
+  const directoryChainId = resolvePerpsDirectoryChain(account.chainId)
+
   // Creator walkthrough — auto-starts once (localStorage), replayable via the header button.
   const [tutorialOpen, setTutorialOpen] = useState(0)
 
@@ -491,14 +525,91 @@ export function CreatePerpMarketScreen(): JSX.Element {
   /* --------------------------------------------------------------- form state */
 
   const [label, setLabel] = useState('')
-  const [collateral, setCollateral] = useState(defaults?.weth ?? '')
-  const [collateralDecimals, setCollateralDecimals] = useState('18')
   const [creator, setCreator] = useState('')
   const [feeRateBps, setFeeRateBps] = useState(5)
   const [maxLeverageX, setMaxLeverageX] = useState(10)
   const [tier, setTier] = useState<MarketTier>(MarketTier.Curated)
-  const [venue, setVenue] = useState(defaults?.ethUsdRefFeed ?? '')
-  const [refFeed, setRefFeed] = useState(defaults?.ethUsdRefFeed ?? '')
+
+  /* --- collateral: DEFAULT to the chain's stablecoin (USDG on RH), else WETH --- */
+  type CollateralPreset = 'stablecoin' | 'weth' | 'custom'
+  const stablecoin = defaults?.stablecoin
+  const [collateralPreset, setCollateralPreset] = useState<CollateralPreset>('stablecoin')
+  const [collateral, setCollateral] = useState('')
+  const [collateralDecimals, setCollateralDecimals] = useState('18')
+  // Once the user picks a preset / edits custom, stop auto-following the chain default.
+  const [collateralTouched, setCollateralTouched] = useState(false)
+
+  // Auto-follow the connected chain's default collateral (stablecoin > WETH) until touched.
+  useEffect(() => {
+    if (collateralTouched) {
+      return
+    }
+    if (stablecoin) {
+      setCollateralPreset('stablecoin')
+      setCollateral(stablecoin.address)
+      setCollateralDecimals(String(stablecoin.decimals))
+    } else if (defaults?.weth) {
+      setCollateralPreset('weth')
+      setCollateral(defaults.weth)
+      setCollateralDecimals('18')
+    }
+  }, [collateralTouched, stablecoin, defaults?.weth])
+
+  const pickCollateralPreset = (p: CollateralPreset): void => {
+    setCollateralTouched(true)
+    setCollateralPreset(p)
+    if (p === 'stablecoin' && stablecoin) {
+      setCollateral(stablecoin.address)
+      setCollateralDecimals(String(stablecoin.decimals))
+    } else if (p === 'weth' && defaults?.weth) {
+      setCollateral(defaults.weth)
+      setCollateralDecimals('18')
+    } else if (p === 'custom') {
+      setCollateral('')
+      setCollateralDecimals('18')
+    }
+  }
+
+  /* --- oracle: friendly ASSET picker (allowlisted Chainlink feeds), advanced override --- */
+  const { assets: allowlistedAssets, isLoading: assetsLoading } = useAllowlistedAssets({ chainId })
+  const [selectedAssetSymbol, setSelectedAssetSymbol] = useState('')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [venue, setVenue] = useState('')
+  const [refFeed, setRefFeed] = useState('')
+  const [maxDeviationInput, setMaxDeviationInput] = useState(String(DEFAULT_MAX_DEVIATION_BPS))
+  const [maxStalenessInput, setMaxStalenessInput] = useState(String(DEFAULT_MAX_STALENESS))
+
+  const selectedAsset = useMemo(
+    () => allowlistedAssets.find((a) => a.symbol === selectedAssetSymbol),
+    [allowlistedAssets, selectedAssetSymbol],
+  )
+
+  // While NOT in advanced mode, the asset picker drives venue + refFeed. Default-select the
+  // first allowlisted asset once the on-chain allowlist resolves.
+  useEffect(() => {
+    if (advancedOpen || allowlistedAssets.length === 0) {
+      return
+    }
+    const pick = allowlistedAssets.find((a) => a.symbol === selectedAssetSymbol) ?? allowlistedAssets[0]
+    if (pick.symbol !== selectedAssetSymbol) {
+      setSelectedAssetSymbol(pick.symbol)
+    }
+    if (venue.toLowerCase() !== pick.feed.toLowerCase()) {
+      setVenue(pick.feed)
+    }
+    if (refFeed.toLowerCase() !== pick.feed.toLowerCase()) {
+      setRefFeed(pick.feed)
+    }
+  }, [advancedOpen, allowlistedAssets, selectedAssetSymbol, venue, refFeed])
+
+  const pickAsset = (symbol: string): void => {
+    setSelectedAssetSymbol(symbol)
+    const a = allowlistedAssets.find((x) => x.symbol === symbol)
+    if (a) {
+      setVenue(a.feed)
+      setRefFeed(a.feed)
+    }
+  }
 
   // Default the creator to the connected wallet once it's known (still editable after).
   useEffect(() => {
@@ -512,6 +623,21 @@ export function CreatePerpMarketScreen(): JSX.Element {
     return Number.isInteger(n) && n >= 0 && n <= 36 ? n : 18
   })()
 
+  const parseBig = (s: string, fallback: bigint): bigint => {
+    try {
+      const n = BigInt(s.trim() || '0')
+      return n > 0n ? n : fallback
+    } catch {
+      return fallback
+    }
+  }
+
+  // Effective oracle inputs: asset-driven by default, hand-set only in Advanced mode.
+  const oracleVenue = advancedOpen ? venue : (selectedAsset?.feed ?? venue)
+  const oracleRefFeed = advancedOpen ? refFeed : (selectedAsset?.feed ?? refFeed)
+  const oracleMaxDeviation = advancedOpen ? parseBig(maxDeviationInput, DEFAULT_MAX_DEVIATION_BPS) : DEFAULT_MAX_DEVIATION_BPS
+  const oracleMaxStaleness = advancedOpen ? parseBig(maxStalenessInput, DEFAULT_MAX_STALENESS) : DEFAULT_MAX_STALENESS
+
   const form: CreateMarketForm = useMemo(
     () => ({
       label,
@@ -522,12 +648,30 @@ export function CreatePerpMarketScreen(): JSX.Element {
       maxLeverageX,
       tier,
       oracle: {
-        ...defaultChainlinkOracleConfig(assume0xAddress(refFeed || defaults?.ethUsdRefFeed) as `0x${string}`, tier),
-        venue: assume0xAddress(venue || defaults?.ethUsdRefFeed) as `0x${string}`,
-        refFeed: assume0xAddress(refFeed || defaults?.ethUsdRefFeed) as `0x${string}`,
+        sourceType: CHAINLINK_SOURCE_TYPE,
+        venue: assume0xAddress(oracleVenue || defaults?.ethUsdRefFeed) as `0x${string}`,
+        refFeed: assume0xAddress(oracleRefFeed || defaults?.ethUsdRefFeed) as `0x${string}`,
+        maxDeviationBps: oracleMaxDeviation,
+        maxStaleness: oracleMaxStaleness,
+        minLiquidity: 0n,
+        dualSourceRequired: tier === MarketTier.Permissionless,
       },
     }),
-    [label, collateral, decimalsNum, creator, owner, feeRateBps, maxLeverageX, tier, venue, refFeed, defaults],
+    [
+      label,
+      collateral,
+      decimalsNum,
+      creator,
+      owner,
+      feeRateBps,
+      maxLeverageX,
+      tier,
+      oracleVenue,
+      oracleRefFeed,
+      oracleMaxDeviation,
+      oracleMaxStaleness,
+      defaults,
+    ],
   )
 
   const state = useCreateMarket({ chainId, owner, form })
@@ -631,10 +775,10 @@ export function CreatePerpMarketScreen(): JSX.Element {
         </span>
       </div>
       <div style={{ fontFamily: SANS, fontSize: 13, color: terminalColors.ink2, marginBottom: 12, maxWidth: 620, lineHeight: 1.5 }}>
-        Permissionlessly list a new isolated perpetual market on HookSwapPerps in a single transaction. Pick the
-        collateral, fee rate, leverage cap, tier, and oracle source — the factory deploys the market and registers it.
-        The collateral and oracle addresses are <strong>pre-filled with sensible defaults</strong>; most creators only
-        set a name and launch.
+        Permissionlessly list a new isolated perpetual market on HookSwapPerps in a single transaction, and{' '}
+        <strong>earn 40% of every trade&apos;s fee</strong> on your market. Just name it and pick what you&apos;re listing —
+        collateral defaults to the chain&apos;s <strong>stablecoin</strong> and the price source is chosen by asset (no
+        addresses to paste). Most creators only set a name and launch.
       </div>
 
       <div style={{ marginBottom: 18 }}>
@@ -693,27 +837,53 @@ export function CreatePerpMarketScreen(): JSX.Element {
                   marketId {state.marketId ?? '—'}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div style={{ flex: '2 1 220px', minWidth: 0 }}>
-                  <FieldLabel>Collateral token</FieldLabel>
-                  <TextField value={collateral} onChange={setCollateral} placeholder="0x…" mono />
-                </div>
-                <div style={{ flex: '1 1 100px', minWidth: 0 }}>
-                  <FieldLabel>Decimals</FieldLabel>
-                  <TextField
-                    value={collateralDecimals}
-                    onChange={(v) => setCollateralDecimals(v.replace(/[^0-9]/g, '').slice(0, 2))}
-                    placeholder="18"
-                    mono
-                    inputMode="numeric"
-                  />
-                </div>
+              <div>
+                <FieldLabel>Collateral — what traders post as margin</FieldLabel>
+                <ToggleRow
+                  options={[
+                    ...(stablecoin ? [{ label: `${stablecoin.symbol} · stablecoin`, value: 'stablecoin' }] : []),
+                    { label: 'WETH', value: 'weth' },
+                    { label: 'Custom', value: 'custom' },
+                  ]}
+                  value={collateralPreset}
+                  onChange={(v) => pickCollateralPreset(v as CollateralPreset)}
+                />
+                {collateralPreset === 'custom' ? (
+                  <div style={{ display: 'flex', gap: 12, marginTop: 10 }}>
+                    <div style={{ flex: '2 1 220px', minWidth: 0 }}>
+                      <FieldLabel>Token address</FieldLabel>
+                      <TextField
+                        value={collateral}
+                        onChange={(v) => {
+                          setCollateralTouched(true)
+                          setCollateral(v)
+                        }}
+                        placeholder="0x…"
+                        mono
+                      />
+                    </div>
+                    <div style={{ flex: '1 1 100px', minWidth: 0 }}>
+                      <FieldLabel>Decimals</FieldLabel>
+                      <TextField
+                        value={collateralDecimals}
+                        onChange={(v) => {
+                          setCollateralTouched(true)
+                          setCollateralDecimals(v.replace(/[^0-9]/g, '').slice(0, 2))
+                        }}
+                        placeholder="18"
+                        mono
+                        inputMode="numeric"
+                      />
+                    </div>
+                  </div>
+                ) : collateral !== '' ? (
+                  <div style={{ fontFamily: SANS, fontSize: 10.5, color: terminalColors.faint, marginTop: 8 }}>
+                    {collateralPreset === 'stablecoin' ? `Default — dollar-stable margin. ` : ''}
+                    <ExplorerAddress address={collateral} chainId={chainId} type={ExplorerDataType.TOKEN} fontSize={10.5} /> ·{' '}
+                    {decimalsNum} decimals.
+                  </div>
+                ) : null}
               </div>
-              {defaults?.weth && collateral.toLowerCase() === defaults.weth.toLowerCase() ? (
-                <div style={{ fontFamily: SANS, fontSize: 10.5, color: terminalColors.faint }}>
-                  Default: WETH (<ExplorerAddress address={defaults.weth} chainId={chainId} type={ExplorerDataType.TOKEN} fontSize={10.5} />).
-                </div>
-              ) : null}
               <div>
                 <FieldLabel>Creator (fee beneficiary)</FieldLabel>
                 <TextField value={creator} onChange={setCreator} placeholder="0x… (defaults to your wallet)" mono />
@@ -730,6 +900,12 @@ export function CreatePerpMarketScreen(): JSX.Element {
                   Fee rate — per side, {FEE_RATE_MIN_BPS}–{FEE_RATE_MAX_BPS} bps
                 </FieldLabel>
                 <Slider value={feeRateBps} min={FEE_RATE_MIN_BPS} max={FEE_RATE_MAX_BPS} onChange={setFeeRateBps} suffix=" bps" />
+                <div style={{ marginTop: 10 }}>
+                  <Notice tone="green">
+                    You earn <strong>40%</strong> of every trade&apos;s fee on your market — the split is platform 50% /
+                    creator 40% / insurance 10%, routed automatically by the FeeRouter.
+                  </Notice>
+                </div>
               </div>
               <div>
                 <FieldLabel>Max leverage — 1–{PLATFORM_MAX_LEVERAGE_X}× (platform cap)</FieldLabel>
@@ -756,47 +932,145 @@ export function CreatePerpMarketScreen(): JSX.Element {
           </div>
 
           <div data-tut="launch-oracle">
-          <Panel title="03 · Oracle">
+          <Panel title="03 · Price source">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
-                <FieldLabel>Source type</FieldLabel>
-                <div
+                <FieldLabel>What are you listing?</FieldLabel>
+                {!deployed ? (
+                  <Notice tone="muted">Connect to a chain where HookSwapPerps is deployed to pick an asset.</Notice>
+                ) : assetsLoading && allowlistedAssets.length === 0 ? (
+                  <Notice tone="muted">Checking allowlisted price feeds…</Notice>
+                ) : allowlistedAssets.length === 0 ? (
+                  <Notice tone="muted">
+                    No assets are allowlisted on this chain yet. Use Advanced below to supply a custom allowlisted oracle.
+                  </Notice>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {allowlistedAssets.map((a: OracleAssetCandidate) => {
+                        const active = !advancedOpen && a.symbol === selectedAssetSymbol
+                        return (
+                          <button
+                            key={a.symbol}
+                            type="button"
+                            onClick={() => {
+                              setAdvancedOpen(false)
+                              pickAsset(a.symbol)
+                            }}
+                            title={`${a.name} · Chainlink ${a.feed}`}
+                            style={{
+                              fontFamily: MONO,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: active ? terminalColors.greenDeep : terminalColors.ink3Alt,
+                              background: active ? terminalColors.greenBg : 'transparent',
+                              border: `1px solid ${active ? terminalColors.greenBorder : terminalColors.line}`,
+                              borderRadius: 9,
+                              padding: '8px 16px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {a.symbol}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {!advancedOpen && selectedAsset ? (
+                      <div style={{ fontFamily: SANS, fontSize: 10.5, color: terminalColors.faint, marginTop: 8 }}>
+                        {selectedAsset.name} — priced by its allowlisted Chainlink feed (
+                        <ExplorerAddress address={selectedAsset.feed} chainId={chainId} fontSize={10.5} />
+                        ). {allowlistedAssets.length === 1 ? 'More assets appear as venues are allowlisted.' : ''}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+
+              {/* Advanced — power users set the raw oracle config by hand. */}
+              <div style={{ borderTop: `1px solid ${terminalColors.line}`, paddingTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setAdvancedOpen((o) => !o)}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    height: 40,
-                    padding: '0 12px',
-                    border: `1px solid ${terminalColors.line}`,
-                    borderRadius: 11,
-                    background: terminalColors.panel2,
-                    fontFamily: SANS,
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: terminalColors.ink,
+                    fontFamily: MONO,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: terminalColors.ink3Alt,
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
                   }}
                 >
-                  <span>Chainlink</span>
-                  <span style={{ fontFamily: MONO, fontSize: 10, color: terminalColors.faint }}>
-                    {shortAddr(CHAINLINK_SOURCE_TYPE)}
-                  </span>
-                </div>
+                  {advancedOpen ? '▾' : '▸'} Advanced (custom oracle)
+                </button>
+                {advancedOpen ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
+                    <div>
+                      <FieldLabel>Source type</FieldLabel>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          height: 40,
+                          padding: '0 12px',
+                          border: `1px solid ${terminalColors.line}`,
+                          borderRadius: 11,
+                          background: terminalColors.panel2,
+                          fontFamily: SANS,
+                          fontSize: 13,
+                          fontWeight: 500,
+                          color: terminalColors.ink,
+                        }}
+                      >
+                        <span>Chainlink</span>
+                        <span style={{ fontFamily: MONO, fontSize: 10, color: terminalColors.faint }}>
+                          {shortAddr(CHAINLINK_SOURCE_TYPE)}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <FieldLabel>Venue (allowlisted feed)</FieldLabel>
+                      <TextField value={venue} onChange={setVenue} placeholder="0x…" mono />
+                    </div>
+                    <div>
+                      <FieldLabel>Reference feed (Chainlink)</FieldLabel>
+                      <TextField value={refFeed} onChange={setRefFeed} placeholder="0x…" mono />
+                    </div>
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <FieldLabel>Max deviation (bps)</FieldLabel>
+                        <TextField
+                          value={maxDeviationInput}
+                          onChange={(v) => setMaxDeviationInput(v.replace(/[^0-9]/g, '').slice(0, 6))}
+                          placeholder="500"
+                          mono
+                          inputMode="numeric"
+                        />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <FieldLabel>Max staleness (s)</FieldLabel>
+                        <TextField
+                          value={maxStalenessInput}
+                          onChange={(v) => setMaxStalenessInput(v.replace(/[^0-9]/g, '').slice(0, 8))}
+                          placeholder="86400"
+                          mono
+                          inputMode="numeric"
+                        />
+                      </div>
+                    </div>
+                    <Notice tone="warn">
+                      Custom oracle — the venue must be allowlisted in OracleGuard for its source type, or the launch
+                      reverts. Only use this if you know the exact allowlisted feed address.
+                    </Notice>
+                  </div>
+                ) : null}
               </div>
-              <div>
-                <FieldLabel>Venue (allowlisted feed)</FieldLabel>
-                <TextField value={venue} onChange={setVenue} placeholder="0x…" mono />
-              </div>
-              <div>
-                <FieldLabel>Reference feed (Chainlink)</FieldLabel>
-                <TextField value={refFeed} onChange={setRefFeed} placeholder="0x…" mono />
-              </div>
-              <SummaryRow label="Max deviation" value="500 bps" />
-              <SummaryRow label="Max staleness" value="86400 s" />
+
+              <SummaryRow label="Max deviation" value={`${oracleMaxDeviation.toString()} bps`} />
+              <SummaryRow label="Max staleness" value={`${oracleMaxStaleness.toString()} s`} />
               <SummaryRow label="Dual-source required" value={tier === MarketTier.Permissionless ? 'Yes' : 'No'} />
-              <Notice tone="muted">
-                Default: this chain's ETH/USD Chainlink feed — the venue allowlisted in OracleGuard today. Other venues
-                must be allowlisted by the platform before a market can list against them, or the launch will revert.
-              </Notice>
             </div>
           </Panel>
           </div>
@@ -814,7 +1088,10 @@ export function CreatePerpMarketScreen(): JSX.Element {
             <SummaryRow label="Fee (per side)" value={feeValue} />
             <SummaryRow label="Max leverage" value={levValue} />
             <SummaryRow label="Tier" value={tierValue} />
-            <SummaryRow label="Oracle" value="Chainlink" />
+            <SummaryRow
+              label="Price source"
+              value={!advancedOpen && selectedAsset ? `${selectedAsset.symbol} · Chainlink` : 'Chainlink (custom)'}
+            />
             <SummaryRow label="Listing fee" value={deployed ? fmtFee(state.listingFee) : '—'} />
             <SummaryRow label="Creation bond" value={deployed ? fmtFee(state.bond) : '—'} />
             <SummaryRow label="Total to pay" value={deployed ? fmtFee(state.totalCost) : '—'} />
@@ -858,7 +1135,7 @@ export function CreatePerpMarketScreen(): JSX.Element {
           </Panel>
           </div>
 
-          <MarketsDirectory chainId={chainId} />
+          <MarketsDirectory chainId={directoryChainId} />
         </div>
       </div>
 

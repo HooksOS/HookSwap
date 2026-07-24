@@ -27,10 +27,21 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { keccak256, parseEventLogs, toBytes, type Hex } from 'viem'
-import { useReadContract, useSimulateContract, useWaitForTransactionReceipt, useWriteContract } from 'wagmi'
+import {
+  useReadContract,
+  useReadContracts,
+  useSimulateContract,
+  useWaitForTransactionReceipt,
+  useWriteContract,
+} from 'wagmi'
 import { UniverseChainId } from 'uniswap/src/features/chains/types'
 import type { Address, Hash } from '~/chains'
-import { getPerpsFactoryDeployment, PERPS_FACTORY_HOME_CHAIN, perpMarketFactoryAbi } from '~/terminal/perps/factory/abis'
+import {
+  getPerpsFactoryDeployment,
+  oracleGuardAbi,
+  PERPS_FACTORY_HOME_CHAIN,
+  perpMarketFactoryAbi,
+} from '~/terminal/perps/factory/abis'
 import { assume0xAddress } from '~/utils/wagmi'
 
 /** MarketRegistry.Tier — must match the on-chain enum ordering. */
@@ -149,6 +160,99 @@ export function defaultChainlinkOracleConfig(refFeed: Address, tier: MarketTier)
     minLiquidity: 0n,
     dualSourceRequired: tier === MarketTier.Permissionless,
   }
+}
+
+/* ------------------------------------------------------------- asset picker (friendly oracle) */
+
+/**
+ * A human-pickable underlying whose Chainlink feed drives the whole oracle config, so a
+ * creator picks "ETH" instead of pasting a `0x…` aggregator. `feed` is BOTH the allowlisted
+ * `venue` AND the `refFeed` for a Chainlink source. Every candidate is verified on-chain
+ * against `OracleGuard.allowedVenue` before it's offered (an un-allowlisted feed would make
+ * `createMarket` revert), so this catalogue can list more than is live and stay honest.
+ */
+export interface OracleAssetCandidate {
+  /** Ticker shown in the picker, e.g. "ETH". */
+  symbol: string
+  /** Longer name, e.g. "Ether". */
+  name: string
+  /** The Chainlink aggregator proxy = the allowlisted venue + reference feed. */
+  feed: Address
+}
+
+/**
+ * Extra Chainlink-priced candidates PER CHAIN, beyond ETH (which is always taken from the
+ * deployment's `ethUsdRefFeed`). Robinhood tokenized-stock feeds (NVDA/USD, etc.) belong
+ * here as governance allowlists each in OracleGuard — until then leaving them out keeps the
+ * picker to only-launchable assets. Do NOT list a feed you can't confirm is allowlisted.
+ */
+const ASSET_CANDIDATES_EXTRA: Partial<Record<UniverseChainId, OracleAssetCandidate[]>> = {}
+
+/**
+ * Candidate underlyings for a chain: ETH (from the deployment's ethUsdRefFeed) + any
+ * per-chain extras. This is the SUPERSET; `useAllowlistedAssets` filters it to what's
+ * actually allowlisted on-chain.
+ */
+export function getAssetCandidates(chainId?: number): OracleAssetCandidate[] {
+  const dep = getPerpsFactoryDeployment(chainId)
+  const list: OracleAssetCandidate[] = []
+  if (dep?.ethUsdRefFeed) {
+    list.push({ symbol: 'ETH', name: 'Ether', feed: assume0xAddress(dep.ethUsdRefFeed) })
+  }
+  const extra = chainId !== undefined ? ASSET_CANDIDATES_EXTRA[chainId as UniverseChainId] : undefined
+  if (extra) {
+    list.push(...extra)
+  }
+  return list
+}
+
+export interface UseAllowlistedAssets {
+  /** Candidate assets CONFIRMED allowlisted in OracleGuard on this chain. */
+  assets: OracleAssetCandidate[]
+  /** True while the on-chain allowlist reads are in flight. */
+  isLoading: boolean
+  /** True when this chain has a perps deployment (so a picker makes sense at all). */
+  hasDeployment: boolean
+}
+
+/**
+ * Reads `OracleGuard.allowedVenue(chainlink, feed)` for every candidate and returns only the
+ * ones that are actually allowlisted — the friendly asset list behind the picker. If the
+ * reads error (RPC hiccup) we fall back to the raw candidates rather than a dead picker; the
+ * create call is simulated anyway, so a non-allowlisted pick still fails honestly pre-broadcast.
+ */
+export function useAllowlistedAssets({ chainId }: { chainId?: number }): UseAllowlistedAssets {
+  const dep = getPerpsFactoryDeployment(chainId)
+  const oracleGuard = dep?.oracleGuard
+  const candidates = useMemo(() => getAssetCandidates(chainId), [chainId])
+
+  const reads = useReadContracts({
+    contracts: candidates.map((c) => ({
+      address: oracleGuard,
+      chainId,
+      abi: oracleGuardAbi,
+      functionName: 'allowedVenue' as const,
+      args: [CHAINLINK_SOURCE_TYPE, c.feed] as const,
+    })),
+    query: { enabled: Boolean(oracleGuard) && candidates.length > 0 },
+  })
+
+  const assets = useMemo(() => {
+    if (!oracleGuard || candidates.length === 0) {
+      return []
+    }
+    if (reads.isError) {
+      // Don't strand the creator on a transient read failure — the simulate gate is the
+      // real guard; a wrong pick reverts before broadcast.
+      return candidates
+    }
+    if (!reads.data) {
+      return []
+    }
+    return candidates.filter((_, i) => reads.data?.[i]?.result === true)
+  }, [oracleGuard, candidates, reads.isError, reads.data])
+
+  return { assets, isLoading: reads.isLoading, hasDeployment: Boolean(oracleGuard) }
 }
 
 /** marketId = keccak256(utf8Bytes(label)); undefined for an empty label. */
