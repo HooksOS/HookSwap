@@ -864,10 +864,6 @@ export function BridgeScreen(): JSX.Element {
           </div>
         )}
 
-        {/* Trust footer */}
-        <div style={{ marginTop: 14, textAlign: 'center', fontFamily: MONO, fontSize: 10.5, color: terminalColors.faint }}>
-          Powered by Relay
-        </div>
       </div>
     </div>
   )
