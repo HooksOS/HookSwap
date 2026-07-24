@@ -37,8 +37,21 @@
  *     • Gas preference — no persisted gas-speed setting and no live gas oracle wired
  *       (the Terminal top bar's gas pill is likewise a data TODO). Disabled row with
  *       an honest "—" base fee; NO fabricated gwei series is drawn.
- *     • Notifications / Security / Connected apps panels — no backing store yet;
- *       honest "coming soon" empty states.
+ *
+ * REAL panels (no placeholders):
+ *   • Notifications — LIVE + PERSISTED. Per-category in-app alert preferences saved
+ *     to localStorage (settings/preferences.ts). The categories map 1:1 to the
+ *     transaction groups the Activity feed actually emits (swaps / liquidity+fees /
+ *     approvals / transfers). HookSwap runs no email/push backend, so only the
+ *     honest in-app channel is offered — never a fake email/push toggle.
+ *   • Connected apps — LIVE. Lists the wallet session(s) connected to HookSwap from
+ *     wagmi's real `useConnections()` (connector name/icon, address, chain), with a
+ *     working per-session Disconnect (wagmi `useDisconnect`). Injected wallets keep
+ *     their own dApp-permission list inside the wallet — stated honestly.
+ *   • Security — LIVE actions only: Revoke token approvals (opens revoke.cash for the
+ *     connected address + chain) and Clear cached preferences (wipes this device's
+ *     saved Terminal UI settings). Slippage/deadline live in Trading (not duplicated);
+ *     unavailable controls (simulation/expert mode) are described honestly, not faked.
  *
  * HookSwap ships v2 + v3 only (no Uniswap v4 / hooks — LOCKED decision). The design's
  * "Default hook" row is REMOVED entirely (not "coming soon" — gone), per hard rule.
@@ -48,13 +61,22 @@ import { CSSProperties, ReactNode, useEffect, useMemo, useRef, useState } from '
 import { AppearanceSettingType } from 'uniswap/src/features/appearance/slice'
 import { useEnabledChains } from 'uniswap/src/features/chains/hooks/useEnabledChains'
 import { getChainLabel } from 'uniswap/src/features/chains/utils'
-import { DEFAULT_DEADLINE_FROM_NOW } from '~/constants/misc'
+// oxlint-disable-next-line no-restricted-imports -- wagmi session hooks needed for the Connected-apps panel
+import { useConnections, useDisconnect } from 'wagmi'
+import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
+import { useAccount } from '~/hooks/useAccount'
 import { useAppDispatch, useAppSelector } from '~/state/hooks'
 import { updateUserDeadline } from '~/state/user/reducer'
 import { useUserSlippageTolerance } from '~/state/user/hooks'
 import { SlippageTolerance } from '~/state/user/types'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
+import {
+  NOTIFICATION_PREF_KEYS,
+  clearTerminalPreferences,
+  useNotificationPrefs,
+  type NotificationPrefKey,
+} from '~/terminal/settings/preferences'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 const MONO = terminalFonts.mono
@@ -571,18 +593,391 @@ function NetworkPanel(): JSX.Element {
   )
 }
 
-function ComingSoonPanel({ kicker, title, subtitle }: { kicker: string; title: string; subtitle: string }): JSX.Element {
+/* ----------------------------------------------------------- notifications */
+
+/**
+ * The alert categories the app GENUINELY emits — each maps 1:1 to a real
+ * transaction group surfaced by the Activity feed (screens/ActivityScreen.tsx
+ * `categorize`). No fabricated categories (e.g. no "price alerts" — HookSwap runs
+ * no alert service). Every event is delivered IN-APP only (the Activity feed +
+ * the app's transaction confirmations); there is no email/push backend, so no such
+ * channel toggle is offered.
+ */
+const NOTIFICATION_ROWS: Record<NotificationPrefKey, { title: string; description: string }> = {
+  swaps: {
+    title: 'Swaps & wraps',
+    description: 'Confirmations when a swap or wrap you submit is mined or fails.',
+  },
+  liquidity: {
+    title: 'Liquidity & fees',
+    description: 'Adds, removals and claimable-fee events on your LP positions.',
+  },
+  approvals: {
+    title: 'Token approvals',
+    description: 'Confirmations when a token spending approval is granted.',
+  },
+  transfers: {
+    title: 'Sends & receives',
+    description: 'Inbound and outbound token transfers on your wallet.',
+  },
+}
+
+function NotificationsPanel(): JSX.Element {
+  const { prefs, setPref } = useNotificationPrefs()
   return (
     <>
-      <PanelHeading kicker={kicker} title={title} subtitle={subtitle} />
-      <InstrumentPanel title={title} bodyStyle={{ padding: '40px 20px', textAlign: 'center' }}>
-        <div style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 15, color: terminalColors.ink2 }}>
-          Coming soon
-        </div>
-        <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, marginTop: 6 }}>
-          No settings are wired here yet.
-        </div>
+      <PanelHeading
+        kicker="Alerts"
+        title="Notifications"
+        subtitle="Choose which activity you want surfaced. Saved to this device."
+      />
+      <InstrumentPanel title="In-app alerts" bodyStyle={{ padding: '2px 18px' }}>
+        {NOTIFICATION_PREF_KEYS.map((key, i) => (
+          <SettingRow
+            key={key}
+            first={i === 0}
+            title={NOTIFICATION_ROWS[key].title}
+            description={NOTIFICATION_ROWS[key].description}
+            disabledNote="In-app"
+            control={
+              <Toggle
+                on={prefs[key]}
+                onToggle={() => setPref(key, !prefs[key])}
+                ariaLabel={`${NOTIFICATION_ROWS[key].title} alerts`}
+              />
+            }
+          />
+        ))}
       </InstrumentPanel>
+      <div
+        style={{
+          fontFamily: SANS,
+          fontSize: 12,
+          color: terminalColors.ink3Alt,
+          marginTop: 14,
+          lineHeight: 1.5,
+        }}
+      >
+        Alerts appear in the Activity feed and as in-app transaction confirmations. Email and push
+        notifications aren&apos;t available — HookSwap runs no notification backend.
+      </div>
+    </>
+  )
+}
+
+/* ---------------------------------------------------------- connected apps */
+
+/** 0x1234…abcd — mono, matches the app's address styling. */
+function shortAddress(addr: string): string {
+  return addr.length >= 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr
+}
+
+/** Safe chain label — connection.chainId is a bare number; guard unsupported ids. */
+function safeChainLabel(chainId: number): string {
+  try {
+    return getChainLabel(chainId as Parameters<typeof getChainLabel>[0])
+  } catch {
+    return `Chain ${chainId}`
+  }
+}
+
+/** Human connector-type note ("Browser extension" / "WalletConnect" / …). */
+function connectorTypeLabel(type: string): string {
+  switch (type) {
+    case 'injected':
+      return 'Browser extension'
+    case 'walletConnect':
+    case 'uniswapWalletConnect':
+      return 'WalletConnect'
+    case 'coinbaseWallet':
+      return 'Coinbase Wallet'
+    default:
+      return type
+  }
+}
+
+function ConnectedAppsPanel(): JSX.Element {
+  const connections = useConnections()
+  const { disconnect } = useDisconnect()
+  const accountDrawer = useAccountDrawer()
+
+  if (connections.length === 0) {
+    return (
+      <>
+        <PanelHeading
+          kicker="Sessions"
+          title="Connected apps"
+          subtitle="Wallet sessions connected to HookSwap."
+        />
+        <InstrumentPanel title="Wallet sessions" bodyStyle={{ padding: '32px 20px', textAlign: 'center' }}>
+          <div style={{ fontFamily: DISPLAY, fontWeight: 600, fontSize: 15, color: terminalColors.ink2 }}>
+            No wallet connected
+          </div>
+          <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, marginTop: 6, maxWidth: 380, marginInline: 'auto', lineHeight: 1.5 }}>
+            Connect a wallet to see and manage the active session here.
+          </div>
+          <button
+            type="button"
+            onClick={() => accountDrawer.open()}
+            style={{
+              marginTop: 16,
+              fontFamily: SANS,
+              fontSize: 13.5,
+              fontWeight: 600,
+              color: terminalColors.btnInk,
+              background: terminalColors.brandGreen,
+              border: 'none',
+              padding: '10px 20px',
+              borderRadius: 11,
+              cursor: 'pointer',
+            }}
+          >
+            Connect wallet
+          </button>
+        </InstrumentPanel>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <PanelHeading
+        kicker="Sessions"
+        title="Connected apps"
+        subtitle="Wallet sessions connected to HookSwap. Disconnect ends the session."
+      />
+      <InstrumentPanel title="Wallet sessions" meta={[String(connections.length)]} flush>
+        {connections.map((conn, i) => {
+          const { connector } = conn
+          const address = conn.accounts[0]
+          return (
+            <div
+              key={`${connector.uid}-${i}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 13,
+                padding: '14px 16px',
+                borderBottom: i === connections.length - 1 ? undefined : `1px solid ${terminalColors.line3}`,
+              }}
+            >
+              {/* Connector icon (real, from the connector) or a lettered fallback tile. */}
+              {connector.icon ? (
+                <img
+                  src={connector.icon}
+                  alt=""
+                  width={34}
+                  height={34}
+                  style={{ borderRadius: 9, flexShrink: 0, objectFit: 'cover' }}
+                />
+              ) : (
+                <span
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 9,
+                    flexShrink: 0,
+                    background: terminalColors.panel2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontFamily: DISPLAY,
+                    fontSize: 15,
+                    fontWeight: 600,
+                    color: terminalColors.ink2,
+                  }}
+                >
+                  {connector.name.charAt(0).toUpperCase()}
+                </span>
+              )}
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontFamily: SANS, fontSize: 14, fontWeight: 600, color: terminalColors.ink }}>
+                    {connector.name}
+                  </span>
+                  <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 600, color: terminalColors.ink3Alt, background: terminalColors.panel2, padding: '2px 6px', borderRadius: 5, whiteSpace: 'nowrap' }}>
+                    {connectorTypeLabel(connector.type)}
+                  </span>
+                </div>
+                <div style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.ink3Alt, marginTop: 3 }}>
+                  {address ? shortAddress(address) : '—'}
+                  <span style={{ color: terminalColors.faint }}> · {safeChainLabel(conn.chainId)}</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => disconnect({ connector })}
+                style={{
+                  fontFamily: SANS,
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  color: terminalColors.redDown,
+                  background: terminalColors.bg,
+                  border: `1px solid ${terminalColors.line}`,
+                  padding: '7px 14px',
+                  borderRadius: 9,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+              >
+                Disconnect
+              </button>
+            </div>
+          )
+        })}
+      </InstrumentPanel>
+      <div style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3Alt, marginTop: 14, lineHeight: 1.5 }}>
+        This lists the wallet session(s) HookSwap holds. The list of other dApps your wallet is
+        connected to is managed inside your wallet app, not here.
+      </div>
+    </>
+  )
+}
+
+/* ---------------------------------------------------------------- security */
+
+/** Small labelled action row: title + description on the left, a control on the right. */
+function ActionRow({
+  title,
+  description,
+  control,
+  first,
+}: {
+  title: string
+  description: string
+  control: ReactNode
+  first?: boolean
+}): JSX.Element {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 20,
+        padding: '18px 0',
+        borderTop: first ? undefined : `1px solid ${terminalColors.line2}`,
+      }}
+    >
+      <div style={{ maxWidth: 380 }}>
+        <div style={{ fontFamily: SANS, fontSize: 14.5, fontWeight: 600, color: terminalColors.ink }}>{title}</div>
+        <div style={{ fontFamily: SANS, fontSize: 12.5, color: terminalColors.ink3Alt, marginTop: 3, lineHeight: 1.45 }}>
+          {description}
+        </div>
+      </div>
+      <div style={{ flexShrink: 0 }}>{control}</div>
+    </div>
+  )
+}
+
+const REVOKE_CASH_BASE = 'https://revoke.cash'
+
+function SecurityPanel({ onGoTrading }: { onGoTrading: () => void }): JSX.Element {
+  const account = useAccount()
+  const address = account.address
+  const chainId = account.chainId
+  // null = idle · 'confirm' = awaiting a second click · number = how many keys were cleared.
+  const [clearState, setClearState] = useState<null | 'confirm' | number>(null)
+
+  const revokeUrl = address
+    ? `${REVOKE_CASH_BASE}/address/${address}${chainId ? `?chainId=${chainId}` : ''}`
+    : REVOKE_CASH_BASE
+
+  const onClearClick = (): void => {
+    if (clearState === 'confirm') {
+      setClearState(clearTerminalPreferences())
+    } else {
+      setClearState('confirm')
+    }
+  }
+
+  const outlineButton: CSSProperties = {
+    fontFamily: SANS,
+    fontSize: 12.5,
+    fontWeight: 600,
+    color: terminalColors.ink,
+    background: terminalColors.bg,
+    border: `1px solid ${terminalColors.line}`,
+    padding: '8px 15px',
+    borderRadius: 9,
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    textDecoration: 'none',
+    display: 'inline-block',
+  }
+
+  return (
+    <>
+      <PanelHeading
+        kicker="Safety"
+        title="Security"
+        subtitle="Client-side safety controls for this device and wallet."
+      />
+
+      <InstrumentPanel title="Wallet safety" bodyStyle={{ padding: '2px 18px' }}>
+        <ActionRow
+          first
+          title="Revoke token approvals"
+          description={
+            address
+              ? 'Review and revoke the token spending allowances granted from this address on Revoke.cash.'
+              : 'Connect a wallet, then review and revoke token spending allowances on Revoke.cash.'
+          }
+          control={
+            <a href={revokeUrl} target="_blank" rel="noopener noreferrer" style={outlineButton}>
+              Open Revoke.cash ↗
+            </a>
+          }
+        />
+        <ActionRow
+          title="Trading limits"
+          description="Slippage tolerance and the transaction deadline that guard every swap are set in the Trading tab."
+          control={
+            <button type="button" onClick={onGoTrading} style={{ ...outlineButton, background: terminalColors.panel2, border: `1px solid ${terminalColors.line2}` }}>
+              Open Trading
+            </button>
+          }
+        />
+      </InstrumentPanel>
+
+      <div style={{ height: 16 }} />
+
+      <InstrumentPanel title="Local data" bodyStyle={{ padding: '2px 18px' }}>
+        <ActionRow
+          first
+          title="Clear cached preferences"
+          description="Remove this device's saved HookSwap settings (theme, notifications, dismissed tutorials). Your wallet stays connected and no on-chain data is touched."
+          control={
+            <button
+              type="button"
+              onClick={onClearClick}
+              style={{
+                ...outlineButton,
+                color: terminalColors.redDown,
+                border: `1px solid ${clearState === 'confirm' ? terminalColors.redDown : terminalColors.line}`,
+              }}
+            >
+              {clearState === 'confirm' ? 'Confirm clear?' : 'Clear data'}
+            </button>
+          }
+        />
+        {typeof clearState === 'number' ? (
+          <div style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.greenDeep, padding: '0 0 14px' }}>
+            {clearState > 0
+              ? `Cleared ${clearState} saved preference${clearState === 1 ? '' : 's'} from this device.`
+              : 'No cached preferences to clear.'}
+          </div>
+        ) : null}
+      </InstrumentPanel>
+
+      <div style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3Alt, marginTop: 16, lineHeight: 1.55 }}>
+        HookSwap is self-custodial — it never holds your funds or keys, and every transaction is
+        signed in your own wallet. Pre-flight transaction simulation isn&apos;t available in this
+        build; always review each request in your wallet before signing.
+      </div>
     </>
   )
 }
@@ -766,15 +1161,9 @@ export function SettingsScreen(): JSX.Element {
           {panel === 'trading' && <TradingPanel draft={draft} setDraft={setDraft} />}
           {panel === 'appearance' && <AppearancePanel />}
           {panel === 'network' && <NetworkPanel />}
-          {panel === 'notifications' && (
-            <ComingSoonPanel kicker="Alerts" title="Notifications" subtitle="Choose which alerts reach you and where." />
-          )}
-          {panel === 'security' && (
-            <ComingSoonPanel kicker="Safety" title="Security" subtitle="Session, spending-limit and confirmation controls." />
-          )}
-          {panel === 'connected' && (
-            <ComingSoonPanel kicker="Sessions" title="Connected apps" subtitle="Review dapps and sessions connected to your wallet." />
-          )}
+          {panel === 'notifications' && <NotificationsPanel />}
+          {panel === 'security' && <SecurityPanel onGoTrading={() => setPanel('trading')} />}
+          {panel === 'connected' && <ConnectedAppsPanel />}
         </div>
       </div>
     </div>
