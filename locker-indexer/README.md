@@ -31,6 +31,7 @@ npm run typecheck  # tsc --noEmit
 | `LOCKER_TVL_HISTORY_FILE` | `./data/tvl-history.json` | daily locker TVL series file |
 | `FARMS_TVL_HISTORY_FILE` | `./data/farms-tvl-history.json` | daily farms TVL series file |
 | `VESTING_TVL_HISTORY_FILE` | `./data/vesting-tvl-history.json` | daily vesting locked-value series file |
+| `LOCKER_APP_BASE_URL` | `https://hookswap.org` | app base the `/lock/.../share` page redirects humans to (`<base>/#/lock/:chainId/:id`) |
 | `LOCKER_RPC_<chainId>` / per-chain alias | public RPC | RPC override (e.g. `SEPOLIA_RPC_URL`, `ROBINHOOD_RPC_URL`, `HYPEREVM_RPC_URL`, `INK_RPC_URL`, `MEGAETH_RPC_URL`, `XLAYER_RPC_URL`, `TEMPO_RPC_URL`) |
 
 Chains indexed: HyperEVM (999), Ink (57073), MegaETH (4326), XLayer (196),
@@ -138,10 +139,31 @@ One pool's aggregate + every LP lock of it (sorted by TVL). `:address` = the LP
 ```
 
 ### `GET /lock/:chainId/:id`
-A single lock (powers shareable lock pages). 404 if not found.
+A single lock (powers shareable lock pages). 404 if not found. `:id` may be the
+numeric lock id **or** the locked token address (self-describing shareable URL).
 ```jsonc
 { "lock": { /* Lock */ } }
 ```
+
+### `GET /lock/:chainId/:idOrToken/og.png`
+The per-lock **social preview card** — a 1200×630 PNG rendered server-side from the
+SAME in-memory lock data (no external fetch). Shows the token/pair, locked amount,
+USD value (only when priced — an honest "Unpriced" chip otherwise), a lock-term
+progress bar, unlock date + countdown, `% of supply`, chain, and HookSwap branding.
+404 (JSON) for an unknown lock. `content-type: image/png`, `cache-control: max-age=300`.
+Rendered with `@resvg/resvg-js` from a hand-authored SVG; fonts are the bundled TTFs
+in `src/assets/fonts/` (Inter + InputMono for numerics — resvg-js doesn't decode woff2).
+
+### `GET /lock/:chainId/:idOrToken/share`
+Minimal **crawler HTML** whose `<head>` carries the OpenGraph + Twitter meta
+(`og:title` / `og:description` / `og:image` → the `og.png` above /
+`twitter:card=summary_large_image`) plus a `<meta http-equiv="refresh">` + JS
+redirect to the human, hash-routed in-app lock page. Exists because the app is a
+hash-routed SPA whose per-route meta can't be crawled. The redirect target is
+`${LOCKER_APP_BASE_URL}/#/lock/:chainId/:idOrToken` (`LOCKER_APP_BASE_URL` defaults
+to `https://hookswap.org`); `og:image` is built from the incoming request's
+`x-forwarded-proto`/`-host` (or `Host`) so it is absolute behind the reverse proxy.
+404 (JSON) for an unknown lock.
 
 ### `GET /tvl-history`
 The daily TVL snapshot series (oldest → newest). One point per UTC day, deduped

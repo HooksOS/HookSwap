@@ -6,6 +6,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { ENV } from "./env.js";
 import { chainName } from "./chains.js";
+import { renderLockOgPng, lockShareHtml } from "./og.js";
 import type { LockerIndexer, Lock } from "./indexer.js";
 import type { TvlHistory } from "./persist.js";
 import type { FarmsIndexer, Farm } from "./farms/indexer.js";
@@ -26,6 +27,38 @@ function json(res: ServerResponse, code: number, body: unknown): void {
 function eqAddr(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
+
+/** Serve a PNG buffer with permissive CORS + a short cache (matches the refresh cadence). */
+function png(res: ServerResponse, code: number, buf: Buffer): void {
+  res.writeHead(code, {
+    "content-type": "image/png",
+    "access-control-allow-origin": "*",
+    "cache-control": "public, max-age=300",
+  });
+  res.end(buf);
+}
+
+/** Serve an HTML document (crawler share page) with permissive CORS. */
+function html(res: ServerResponse, code: number, body: string): void {
+  res.writeHead(code, {
+    "content-type": "text/html; charset=utf-8",
+    "access-control-allow-origin": "*",
+    "cache-control": "public, max-age=300",
+  });
+  res.end(body);
+}
+
+/** Absolute base URL of THIS service, honoring reverse-proxy headers. */
+function selfBaseUrl(req: IncomingMessage): string {
+  const proto = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || `localhost:${ENV.port}`)
+    .split(",")[0]
+    .trim();
+  return `${proto}://${host}`;
+}
+
+/** The public app base for the human, hash-routed lock page. Env-overridable. */
+const APP_BASE_URL = (process.env.LOCKER_APP_BASE_URL || "https://hookswap.org").replace(/\/+$/, "");
 
 function sortLocks(locks: Lock[], sort: string | null): Lock[] {
   const arr = [...locks];
@@ -229,6 +262,40 @@ export async function startServer(
         return json(res, 200, { pool: agg ?? null, locks: sortLocks(locks, "tvl") });
       }
 
+      // Resolve a lock by (chainId, idOrToken) — shared by the JSON, OG-image, and
+      // share-HTML routes. idOrToken is a numeric lock id OR the locked token ADDRESS
+      // (self-describing shareable URL; first matching lock, per the Explore link).
+      const resolveLock = (cid: number, ref: string): Lock | undefined => {
+        const isAddr = /^0x[0-9a-fA-F]{40}$/.test(ref);
+        return isAddr
+          ? snap.locks.find((l) => l.chainId === cid && l.token.toLowerCase() === ref.toLowerCase())
+          : snap.locks.find((l) => l.chainId === cid && l.id === Number(ref));
+      };
+
+      // GET /lock/:chainId/:idOrToken/og.png — the per-lock social card (1200×630 PNG),
+      // rendered server-side from the SAME in-memory lock data. 404 for an unknown lock.
+      m = path.match(/^\/lock\/(\d+)\/([^/]+)\/og\.png$/);
+      if (m) {
+        const cid = Number(m[1]);
+        const ref = m[2];
+        const lock = resolveLock(cid, ref);
+        if (!lock) return json(res, 404, { error: "lock not found", chainId: cid, ref });
+        return png(res, 200, renderLockOgPng(lock));
+      }
+
+      // GET /lock/:chainId/:idOrToken/share — crawler HTML (OG/Twitter meta → the og.png
+      // above) that redirects human visitors to the in-app hash-routed lock page.
+      m = path.match(/^\/lock\/(\d+)\/([^/]+)\/share$/);
+      if (m) {
+        const cid = Number(m[1]);
+        const ref = m[2];
+        const lock = resolveLock(cid, ref);
+        if (!lock) return json(res, 404, { error: "lock not found", chainId: cid, ref });
+        const imageUrl = `${selfBaseUrl(req)}/lock/${cid}/${ref}/og.png`;
+        const appLockUrl = `${APP_BASE_URL}/#/lock/${cid}/${ref}`;
+        return html(res, 200, lockShareHtml(lock, imageUrl, appLockUrl));
+      }
+
       // GET /lock/:chainId/:idOrToken — :idOrToken is a numeric lock id OR the locked
       // token ADDRESS (self-describing shareable URL). Address resolves to that token's
       // lock (first match, matching the Explore link).
@@ -236,10 +303,7 @@ export async function startServer(
       if (m) {
         const cid = Number(m[1]);
         const ref = m[2];
-        const isAddr = /^0x[0-9a-fA-F]{40}$/.test(ref);
-        const lock = isAddr
-          ? snap.locks.find((l) => l.chainId === cid && l.token.toLowerCase() === ref.toLowerCase())
-          : snap.locks.find((l) => l.chainId === cid && l.id === Number(ref));
+        const lock = resolveLock(cid, ref);
         if (!lock) {
           return json(res, 404, { error: "lock not found", chainId: cid, ref });
         }
