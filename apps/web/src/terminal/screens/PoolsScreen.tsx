@@ -539,22 +539,64 @@ function PoolsScreenBody(): JSX.Element {
   // Project token — resolved from a pasted address by REAL on-chain reads.
   const [projectAddr, setProjectAddr] = useState('')
 
-  // Preselect the base from a Market-Detail "Add liquidity" deep-link (?token0=SYM), and
-  // prefill the project token from a Create-Token hand-off (?project=0x…). Runs once after
-  // options load; never clobbers a later manual pick.
+  // Pre-fill from a deep-link. Runs once after options load; never clobbers a later manual pick.
+  //   • Existing-pool "Add liquidity" CTA (Market/Token/pool row):
+  //       ?base=<addrOrNATIVE>&token=<otherAddr>&chainId=<id>
+  //     → base selector picked by ADDRESS (native via the NATIVE sentinel) + the OTHER side's
+  //       address dropped straight into the Project-token field, so the user skips the paste.
+  //   • Legacy symbol deep-link (?token0=SYM / ?token1=SYM) → base preselected by symbol.
+  //   • Create-Token hand-off (?project=0x…) → prefill the project token.
   const [searchParams] = useSearchParams()
   const didSeed = useRef(false)
   useEffect(() => {
     if (didSeed.current || options.length === 0) {
       return
     }
-    const sym = searchParams.get('token0') ?? searchParams.get('token1')
-    if (sym) {
-      const found = options.find((o) => o.symbol.toUpperCase() === sym.toUpperCase())
-      if (found) {
-        setBase(found)
+
+    // Resolve a base-token param (NATIVE sentinel or on-chain address) to a base option.
+    const findBaseOption = (param: string | null): TokenOption | undefined => {
+      if (!param) {
+        return undefined
+      }
+      if (param.toUpperCase() === NATIVE_CHAIN_ID) {
+        return options.find((o) => o.address === NATIVE_CHAIN_ID)
+      }
+      return options.find((o) => o.address && o.address.toLowerCase() === param.toLowerCase())
+    }
+
+    const baseParam = searchParams.get('base')
+    const tokenParam = searchParams.get('token')
+
+    if (baseParam || tokenParam) {
+      // Address-based deep link from an existing pool's "Add liquidity" CTA.
+      let baseOpt = findBaseOption(baseParam)
+      let projectParam = tokenParam
+      // Tolerant: if the base side isn't a known base option but the token side IS, swap them
+      // — put the recognised base in the selector and the other address into the project field.
+      if (!baseOpt) {
+        const tokenAsBase = findBaseOption(tokenParam)
+        if (tokenAsBase) {
+          baseOpt = tokenAsBase
+          projectParam = baseParam
+        }
+      }
+      if (baseOpt) {
+        setBase(baseOpt)
+      }
+      if (projectParam && isAddress(projectParam)) {
+        setProjectAddr(projectParam)
+      }
+    } else {
+      // Legacy symbol deep-link (?token0=SYM / ?token1=SYM).
+      const sym = searchParams.get('token0') ?? searchParams.get('token1')
+      if (sym) {
+        const found = options.find((o) => o.symbol.toUpperCase() === sym.toUpperCase())
+        if (found) {
+          setBase(found)
+        }
       }
     }
+
     // Create-Token → Pools hand-off: prefill the project token from a valid ?project= address.
     const project = searchParams.get('project')
     if (project && isAddress(project)) {
@@ -562,6 +604,20 @@ function PoolsScreenBody(): JSX.Element {
     }
     didSeed.current = true
   }, [options, searchParams])
+
+  // Deep-link chain (from the "Add liquidity" CTA) — when it differs from the active chain,
+  // the pre-filled project address can't resolve on-chain here, so offer a switch to the
+  // pool's chain. Only when that chain actually has a v2 stack wired (else no dead switch).
+  const deepLinkChainId = useMemo((): UniverseChainId | undefined => {
+    const raw = searchParams.get('chainId')
+    if (!raw) {
+      return undefined
+    }
+    const n = Number(raw)
+    return Number.isInteger(n) && isUniverseChainId(n) ? (n as UniverseChainId) : undefined
+  }, [searchParams])
+  const chainMismatch =
+    deepLinkChainId !== undefined && deepLinkChainId !== chainId && getPoolAddresses(deepLinkChainId) !== undefined
 
   const projValid = isAddress(projectAddr)
   const projectAddr0x = assume0xAddress(projValid ? projectAddr : undefined)
@@ -765,12 +821,19 @@ function PoolsScreenBody(): JSX.Element {
     return !create.canCreate
   })()
 
+  // Existing-vs-new copy: once the chosen pair resolves to a live on-chain pool (getPair != 0
+  // AND reserves > 0 → `existingLiquidity`), this is ADDING to an existing pool, not creating
+  // one. Only the heading/intro copy changes — the underlying v2 addLiquidity flow is identical
+  // (a v2 addLiquidity to an existing pair just adds; to a non-existent pair it creates + seeds).
+  const poolExists = create.existingLiquidity
+  const pairLabel = resolvedBase?.symbol && projectSymbol ? `${resolvedBase.symbol}/${projectSymbol}` : undefined
+
   return (
     <>
     <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
       {/* Header */}
       <div style={{ marginBottom: 8 }}>
-        <Eyebrow>Launch · seed liquidity</Eyebrow>
+        <Eyebrow>{poolExists ? 'Liquidity · add to pool' : 'Launch · seed liquidity'}</Eyebrow>
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: isMobile ? 8 : 12, flexWrap: 'wrap', marginBottom: 6 }}>
         <h1
@@ -783,7 +846,7 @@ function PoolsScreenBody(): JSX.Element {
             margin: 0,
           }}
         >
-          New pool
+          {poolExists ? 'Add liquidity' : 'New pool'}
         </h1>
         <span
           style={{
@@ -797,7 +860,7 @@ function PoolsScreenBody(): JSX.Element {
             borderRadius: 999,
           }}
         >
-          v2 · full range · {V2_FEE_LABEL}
+          {poolExists ? `${pairLabel ?? 'existing'} · v2 pool` : `v2 · full range · ${V2_FEE_LABEL}`}
         </span>
       </div>
       <div
@@ -810,9 +873,21 @@ function PoolsScreenBody(): JSX.Element {
           lineHeight: 1.55,
         }}
       >
-        Create a v2 pool for your token and seed it with the first liquidity — right here, no
-        deploy needed. Your deposit ratio sets the opening price.
+        {poolExists
+          ? `This ${pairLabel ? `${pairLabel} ` : ''}pool already exists. Add liquidity at the current pool ratio — your deposit keeps the current price, right here, no deploy needed.`
+          : 'Create a v2 pool for your token and seed it with the first liquidity — right here, no deploy needed. Your deposit ratio sets the opening price.'}
       </div>
+
+      {/* Deep-linked from a pool on another chain → switch networks so the pre-filled pair resolves. */}
+      {chainMismatch && deepLinkChainId !== undefined ? (
+        <div style={{ marginBottom: isMobile ? 16 : 18, maxWidth: 560 }}>
+          <SwitchChainButton
+            target={deepLinkChainId}
+            note={`This pool is on ${getChainLabel(deepLinkChainId)}. Switch networks to add liquidity to it.`}
+            style={{ marginTop: 0 }}
+          />
+        </div>
+      ) : null}
 
       {/* Mobile stacks the two desktop columns into one full-width column (no sideways
           scrolling); desktop keeps the wrapping two-column layout exactly as before. */}

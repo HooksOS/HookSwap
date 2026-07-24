@@ -72,6 +72,7 @@ import { ExploreTablesFilterStoreContextProvider } from '~/features/Explore/stat
 import { useBackendSortedTopPools } from '~/features/Explore/state/topPools/useBackendSortedTopPools'
 import { usePoolPriceChartData } from '~/features/Liquidity/charts/usePoolPriceChartData'
 import { serializeSwapAddressesToURLParameters } from '~/pages/Swap/Swap/state/tradeQueryParams'
+import { NATIVE_CHAIN_ID } from '~/constants/tokens'
 import { useAccount } from '~/hooks/useAccount'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { ComingSoon } from '~/terminal/components/ComingSoon'
@@ -808,20 +809,31 @@ function MarketDetailScreenBody(): JSX.Element {
     }
   }, [chainId, currency0, currency1])
 
-  // Add-liquidity CTA → open the Pools create form on THIS pair. The Pools form
-  // models tokens by symbol (not address), so forward the pair as symbols; it
-  // preselects them when they resolve in its token list (falls back to defaults).
+  // Add-liquidity CTA → open the Pools add-liquidity flow PRE-FILLED with THIS pool's
+  // pair (real addresses + chainId), so the user never re-pastes the token they're
+  // looking at. Deep-link shape: `/pools/new?base=<addrOrNATIVE>&token=<otherAddr>&chainId=<id>`.
+  //   • base   = the native/major side (native preferred) → the Pools "Base token" selector.
+  //             Native is passed as the NATIVE sentinel (the value the selector keys native on).
+  //   • token  = the other side's ERC-20 address → the Pools "Project token" field.
+  //   • chainId = this pool's chain → drives the switch-network CTA when the wallet is elsewhere.
   const poolsPath = useMemo(() => {
+    if (chainId === undefined || !currency0 || !currency1) {
+      return '/pools/new'
+    }
+    const addressOf = (c: Currency): string => (c.isNative ? NATIVE_CHAIN_ID : c.address)
+    // Base = the native side when present (else currency0); token = the other side.
+    let baseCur = currency0
+    let tokenCur = currency1
+    if (!currency0.isNative && currency1.isNative) {
+      baseCur = currency1
+      tokenCur = currency0
+    }
     const params = new URLSearchParams()
-    if (symbol0 && symbol0 !== '—') {
-      params.set('token0', symbol0)
-    }
-    if (symbol1 && symbol1 !== '—') {
-      params.set('token1', symbol1)
-    }
-    const qs = params.toString()
-    return qs ? `/pools/new?${qs}` : '/pools/new'
-  }, [symbol0, symbol1])
+    params.set('base', addressOf(baseCur))
+    params.set('token', addressOf(tokenCur))
+    params.set('chainId', String(chainId))
+    return `/pools/new?${params.toString()}`
+  }, [chainId, currency0, currency1])
 
   // Derived price stats from the real close series.
   const closes = useMemo(() => priceQuery.entries.map((e) => e.close), [priceQuery.entries])
