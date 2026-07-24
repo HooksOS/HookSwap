@@ -108,8 +108,10 @@ export const CHAINS: Record<number, ChainConfig> = {
     // tokenFactory from apps/web/src/terminal/tokenfactory/addresses.ts; launcher from @hookos/sdk.
     tokenFactory: '0x13064247c5687a912fb362e2bb28f24e24f3bdca',
     launcher: '0x9B8d992704ddf38729535A641502bcc55734e0B8',
-    // TODO(v3DeployBlock): v3 factory deploy block not recorded in contracts/deployments/robinhood.json
-    // (no block field) — leave unset so getV3Pools stays honest ([]) rather than guessing a start block.
+    // v3 factory 0xAa1f5Bd… deploy block VERIFIED on-chain (eth_getCode bisection, 2026-07-24) — needed
+    // so v3 PoolCreated discovery reaches launchpad pools (e.g. HSTT/WETH 0xE10f33… at block ~13.77M),
+    // which predate the default 700k backfill window. Full-history scan from here; cursors persist + tail.
+    v3DeployBlock: 3967105,
     // Seeded WETH/tHOOK v2 pool (contracts/seed/broadcast/SeedPools.s.sol/4663/run-latest.json).
     seededTokens: [{ address: '0x3b5a01Efc59f3465b8Eb04697f97CFE0BA700D9D', symbol: 'tHOOK', name: 'Test Hook Token', decimals: 18 }],
     // USD anchor: Robinhood's real stablecoin USDG (6 decimals, verified on-chain). Once a
