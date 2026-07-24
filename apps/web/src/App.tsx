@@ -42,6 +42,7 @@ function isTerminalLayoutPath(pathname: string): boolean {
     pathname.startsWith('/markets/') ||
     pathname === '/pools' ||
     pathname === '/pools/new' ||
+    pathname === '/pools/new-position' ||
     pathname === '/perps' ||
     pathname.startsWith('/perps/') ||
     pathname === '/positions' ||
@@ -63,6 +64,7 @@ function isTerminalLayoutPath(pathname: string): boolean {
     pathname === '/leaderboard' ||
     pathname === '/referrals' ||
     pathname === '/settings' ||
+    pathname === '/admin' ||
     pathname === '/widget'
   )
 }
