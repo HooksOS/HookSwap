@@ -70,7 +70,7 @@ function activeScreenIdFromPath(pathname: string): TerminalNavId | undefined {
   if (pathname === '/perps' || pathname.startsWith('/perps/')) {
     return 'perps'
   }
-  if (pathname === '/pools' || pathname === '/pools/new') {
+  if (pathname === '/pools' || pathname.startsWith('/pools/new')) {
     return 'create-position'
   }
   if (pathname === '/locker') {

@@ -208,7 +208,7 @@ export const terminalTradeNav: TerminalNavItem[] = [
   { id: 'bridge', label: 'Bridge', icon: 'bridge', path: '/bridge' },
   { id: 'markets', label: 'Markets', icon: 'markets', path: '/markets' },
   { id: 'perps', label: 'Perps', icon: 'perps', path: '/perps' },
-  { id: 'create-position', label: 'Pools', icon: 'pools', path: '/pools/new' },
+  { id: 'create-position', label: 'Pools', icon: 'pools', path: '/pools/new-position' },
   { id: 'positions', label: 'Positions', icon: 'positions', path: '/positions' },
   { id: 'analytics', label: 'Analytics', icon: 'analytics', path: '/analytics' },
   { id: 'leaderboard', label: 'Leaderboard', icon: 'leaderboard', path: '/leaderboard' },

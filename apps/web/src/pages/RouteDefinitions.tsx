@@ -31,6 +31,7 @@ const TerminalCreatePerpMarketPage = lazy(() => import('~/terminal/TerminalCreat
 const TerminalAdminPage = lazy(() => import('~/terminal/TerminalAdminPage'))
 const TerminalMarketDetailPage = lazy(() => import('~/terminal/TerminalMarketDetailPage'))
 const TerminalPoolsPage = lazy(() => import('~/terminal/TerminalPoolsPage'))
+const TerminalNewPositionPage = lazy(() => import('~/terminal/TerminalNewPositionPage'))
 const TerminalPositionsPage = lazy(() => import('~/terminal/TerminalPositionsPage'))
 const TerminalLockerPage = lazy(() => import('~/terminal/TerminalLockerPage'))
 const TerminalLockDetailPage = lazy(() => import('~/terminal/TerminalLockDetailPage'))
@@ -695,6 +696,17 @@ export const routes: RouteDefinition[] = [
   createRouteDefinition({
     path: '/pools/v2/find',
     getElement: () => <PoolFinderRedirects />,
+    getTitle: getPositionPageTitle,
+    getDescription: getPositionPageDescription,
+  }),
+  createRouteDefinition({
+    // Uniswap-parity CREATE flow: v2 + v3 (fee tiers · concentrated ranges · NPM mint).
+    path: '/pools/new-position',
+    getElement: () => (
+      <Suspense fallback={null}>
+        <TerminalNewPositionPage />
+      </Suspense>
+    ),
     getTitle: getPositionPageTitle,
     getDescription: getPositionPageDescription,
   }),
