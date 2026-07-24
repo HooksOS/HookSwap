@@ -43,7 +43,9 @@ import { PerpsWatchlist } from '~/terminal/screens/perps/PerpsWatchlist'
 import { PositionsTable } from '~/terminal/screens/perps/PositionsTable'
 import { PerpsTutorial, PERPS_TUTORIAL_STEPS } from '~/terminal/screens/perps/PerpsTutorial'
 import { TradesFeed } from '~/terminal/screens/perps/TradesFeed'
-import { PERPS_FACTORY_HOME_CHAIN } from '~/terminal/perps/factory/abis'
+import { PERPS_FACTORY_ADDRESSES, PERPS_FACTORY_HOME_CHAIN } from '~/terminal/perps/factory/abis'
+import { UniverseChainId } from 'uniswap/src/features/chains/types'
+import { isTestnetChain } from 'uniswap/src/features/chains/utils'
 import { useMarketNames } from '~/terminal/perps/factory/useMarketNames'
 import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
 import { useCandles } from '~/terminal/perps/engine/useCandles'
@@ -56,8 +58,28 @@ import { useTicker } from '~/terminal/perps/engine/useTicker'
 import { useTrades } from '~/terminal/perps/engine/useTrades'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
-/** HookSwapPerps is deployed + validated on Sepolia (the domain chainId is 11155111). */
-const PERPS_CHAIN = PERPS_FACTORY_HOME_CHAIN
+/**
+ * Which chain's perps directory to show. HookSwapPerps factories are deployed on Sepolia
+ * (11155111, the canonical test chain) AND Robinhood (4663, mainnet pilot). Default the
+ * DATA to a MAINNET (Robinhood) so the live desk never surfaces the Sepolia test markets;
+ * only show Sepolia's markets when the wallet is actually connected to Sepolia (the testing
+ * path). Generic: any deployed chain the wallet is on wins; otherwise fall back to the first
+ * deployed MAINNET (never a testnet). See visibleChains.ts for the same data-gate idea.
+ */
+function resolvePerpsDirectoryChain(connectedChainId: UniverseChainId | undefined): UniverseChainId {
+  // Wallet is on a chain that has perps deployed → show that chain (incl. the Sepolia test path).
+  if (connectedChainId !== undefined && PERPS_FACTORY_ADDRESSES[connectedChainId]) {
+    return connectedChainId
+  }
+  // Otherwise default to the primary mainnet perps chain — never the Sepolia test markets.
+  if (PERPS_FACTORY_ADDRESSES[UniverseChainId.Robinhood]) {
+    return UniverseChainId.Robinhood
+  }
+  const firstMainnet = (Object.keys(PERPS_FACTORY_ADDRESSES).map(Number) as UniverseChainId[]).find(
+    (id) => !isTestnetChain(id),
+  )
+  return firstMainnet ?? PERPS_FACTORY_HOME_CHAIN
+}
 
 export function PerpsScreen(): JSX.Element {
   const account = useAccount()
@@ -68,6 +90,8 @@ export function PerpsScreen(): JSX.Element {
 
   const connected = Boolean(account.address)
   const trader = account.address as Address | undefined
+  // Directory chain: the connected mainnet (default Robinhood); Sepolia only when connected to it.
+  const PERPS_CHAIN = resolvePerpsDirectoryChain(account.chainId)
   const wrongChain = connected && account.chainId !== PERPS_CHAIN
 
   // Interactive first-visit walkthrough. `tutorialOpen` is bumped to force-open it

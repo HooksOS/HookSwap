@@ -28,6 +28,7 @@ import { NumberType } from 'utilities/src/format/types'
 import { ExploreContextProvider } from '~/features/Explore/state'
 import { ExploreTablesFilterStoreContextProvider } from '~/features/Explore/state/exploreTablesFilterStore'
 import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens'
+import { useVisibleChains } from '~/terminal/utils/visibleChains'
 import { serializeSwapAddressesToURLParameters } from '~/pages/Swap/Swap/state/tradeQueryParams'
 import {
   CommandPalette,
@@ -136,6 +137,9 @@ function PaletteBody({ onClose }: { onClose: () => void }): JSX.Element {
   // Real token list — same source as the B3 Markets screen (volume-ranked).
   const { topTokens, isLoading: tokensLoading } = useListTokens(undefined)
 
+  // Hide testnet (Sepolia) token hits from search on a mainnet unless the wallet is on Sepolia.
+  const { isTokenVisible } = useVisibleChains()
+
   // Route a token selection to the TOKEN TRADE TERMINAL (/token/:chainId/:address) — the page
   // where the user can Buy/Sell inline — instead of the plain /swap deep-link. Falls back to a
   // /swap prefill only when the token has no ERC-20 address on its primary chain (native-only).
@@ -168,6 +172,9 @@ function PaletteBody({ onClose }: { onClose: () => void }): JSX.Element {
   // --- Trending tokens (live) ------------------------------------------------
   const tokenItems = useMemo<CommandPaletteTokenItem[]>(() => {
     const matched = topTokens.filter((token) => {
+      if (!isTokenVisible(token)) {
+        return false
+      }
       if (!q) {
         return true
       }
@@ -204,7 +211,7 @@ function PaletteBody({ onClose }: { onClose: () => void }): JSX.Element {
         onSelect: () => goToToken(token),
       }
     })
-  }, [topTokens, q, convertFiatAmountFormatted, goToToken])
+  }, [topTokens, q, convertFiatAmountFormatted, goToToken, isTokenVisible])
 
   // --- Quick actions ---------------------------------------------------------
   const actionItems = useMemo<CommandPaletteActionItem[]>(() => {

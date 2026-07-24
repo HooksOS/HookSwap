@@ -49,6 +49,7 @@ import { ComingSoon } from '~/terminal/components/ComingSoon'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { isHiddenTokenSymbol, pairHasHiddenToken } from '~/terminal/utils/hiddenTokens'
+import { useVisibleChains } from '~/terminal/utils/visibleChains'
 import { useSeededOnchainPools } from '~/terminal/screens/useSeededOnchainPools'
 import { SparklineCell } from '~/terminal/components/SparklineCell'
 import { terminalColors, terminalFonts, terminalShadows, terminalType } from '~/terminal/theme/tokens'
@@ -83,6 +84,8 @@ interface MarketRow {
   currency1?: Currency
   symbol0: string
   symbol1: string
+  /** Resolved chain id (for the testnet data-visibility gate). */
+  chainId?: UniverseChainId
   /** Human-readable network name (e.g. "Robinhood") for the pair cell secondary line. */
   chainLabel?: string
   price?: number
@@ -224,6 +227,7 @@ function buildRows(
       // mislabels the wrapped-native side as "USDT0" on UnknownChain-backed chains.
       symbol0: pool.token0?.symbol || currency0?.symbol || '—',
       symbol1: pool.token1?.symbol || currency1?.symbol || '—',
+      chainId,
       chainLabel: chainId !== undefined ? getChainLabel(chainId) : undefined,
       price: metric?.price,
       change1d: metric?.change1d,
@@ -271,6 +275,32 @@ function applySearch(rows: MarketRow[] | undefined, query: string): MarketRow[] 
     const s1 = row.symbol1.toLowerCase()
     return s0.includes(q) || s1.includes(q) || `${s0}/${s1}`.includes(q)
   })
+}
+
+/* ---------------------------------------------- ranking + low-activity gate */
+
+/** A 24h volume this small (USD) counts as "no real trading activity". */
+const ACTIVE_VOLUME_FLOOR = 1
+/** Pools below this TVL (USD) AND with ~zero volume are treated as low-activity / dust. */
+const LOW_ACTIVITY_TVL_CEILING = 25_000
+
+/**
+ * True when a pool has effectively no 24h volume AND only a small amount of TVL — the wall
+ * of zero-volume LaunchPad test-token pools the v3 indexer backfilled ($14–18K TVL, $0
+ * volume). These get grouped out of the main list (NEVER deleted — it's real on-chain
+ * liquidity), so active markets aren't buried under noise.
+ */
+function isLowActivityRow(row: MarketRow): boolean {
+  return (row.volume24h ?? 0) < ACTIVE_VOLUME_FLOOR && (row.tvl ?? 0) < LOW_ACTIVITY_TVL_CEILING
+}
+
+/**
+ * Default ranking — real trading activity first: 24h volume desc, TVL as the tiebreaker.
+ * Array sort is stable, so under the DataTable's volume-desc initial sort the equal-volume
+ * rows keep this TVL order (never fabricates a value; a zero-volume pool simply sorts last).
+ */
+function rankByActivity(rows: MarketRow[]): MarketRow[] {
+  return [...rows].sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0) || (b.tvl ?? 0) - (a.tvl ?? 0))
 }
 
 /* -------------------------------------------------------------- top movers */
@@ -568,17 +598,41 @@ function MarketsScreenBody(): JSX.Element {
     }
     return merged.filter((p) => !pairHasHiddenToken(p.token0?.symbol, p.token1?.symbol))
   }, [rawPools, seededPools, seededTvl])
-  const topTokens = useMemo(() => (rawTokens ?? []).filter((t) => !isHiddenTokenSymbol(t.symbol)), [rawTokens])
+  // Hide testnet (Sepolia) data from the mainnet Markets screen unless the wallet is on Sepolia.
+  const { isChainVisible, isTokenVisible } = useVisibleChains()
+  const topTokens = useMemo(
+    () => (rawTokens ?? []).filter((t) => !isHiddenTokenSymbol(t.symbol) && isTokenVisible(t)),
+    [rawTokens, isTokenVisible],
+  )
 
   const metricMaps = useMemo(() => buildTokenMetrics(topTokens), [topTokens])
   const rows = useMemo(
-    () => buildRows(topPools, metricMaps, seededChainById),
-    [topPools, metricMaps, seededChainById],
+    () => buildRows(topPools, metricMaps, seededChainById)?.filter((r) => isChainVisible(r.chainId)),
+    [topPools, metricMaps, seededChainById, isChainVisible],
   )
   const filteredRows = useMemo(() => applyFilter(rows, filter), [rows, filter])
   const searchedRows = useMemo(() => applySearch(filteredRows, query), [filteredRows, query])
 
   const trimmedQuery = query.trim()
+
+  // Rank by real activity (volume desc, TVL tiebreak) and group the zero-volume dust pools
+  // into a collapsible "Low activity" section so they never bury the active markets. When a
+  // search query is present we DON'T collapse (a matched pool must never hide behind a toggle).
+  const { activeRows, lowActivityRows } = useMemo(() => {
+    if (!searchedRows) {
+      return { activeRows: undefined as MarketRow[] | undefined, lowActivityRows: [] as MarketRow[] }
+    }
+    if (trimmedQuery !== '') {
+      return { activeRows: rankByActivity(searchedRows), lowActivityRows: [] as MarketRow[] }
+    }
+    const active: MarketRow[] = []
+    const low: MarketRow[] = []
+    for (const r of searchedRows) {
+      ;(isLowActivityRow(r) ? low : active).push(r)
+    }
+    return { activeRows: rankByActivity(active), lowActivityRows: rankByActivity(low) }
+  }, [searchedRows, trimmedQuery])
+  const [showLowActivity, setShowLowActivity] = useState(false)
   const emptyMessage =
     trimmedQuery !== ''
       ? `No markets match "${trimmedQuery}"`
@@ -586,7 +640,9 @@ function MarketsScreenBody(): JSX.Element {
         ? 'New-pool sorting by creation time is not available yet.'
         : filter === 'stable'
           ? 'No stablecoin pools in the current data set.'
-          : 'No pools with liquidity yet — appears once pools have liquidity.'
+          : lowActivityRows.length > 0
+            ? 'No pools with active trading yet — see low-activity pools below.'
+            : 'No pools with liquidity yet — appears once pools have liquidity.'
 
   const fiatStats = (value: number | undefined): string =>
     value !== undefined && value > 0 ? convertFiatAmountFormatted(value, NumberType.FiatTokenStats) : '—'
@@ -792,17 +848,65 @@ function MarketsScreenBody(): JSX.Element {
       <InstrumentPanel flush live title="Pools" meta={[`All networks · ${chains.length}`]} style={{ overflow: 'hidden' }}>
         <DataTable<MarketRow>
           columns={columns}
-          rows={searchedRows}
+          rows={activeRows}
           rowKey={(row) => row.key}
           onRowClick={(row) => (row.detailPath ? navigate(row.detailPath) : undefined)}
           loading={poolsLoading}
           comingSoon={poolsError}
           comingSoonSubtext="Markets appear once pools have liquidity."
           emptyMessage={emptyMessage}
-          initialSort={{ columnId: 'tvl', direction: 'desc' }}
+          // Rank by real trading activity: 24h volume desc (TVL tiebreak is pre-applied to the row order).
+          initialSort={{ columnId: 'volume', direction: 'desc' }}
           skeletonRows={8}
         />
       </InstrumentPanel>
+
+      {/* Low activity / new pools — real on-chain liquidity with ~zero 24h volume, collapsed
+          by default so it never buries the active markets. Nothing is deleted; expand to view. */}
+      {lowActivityRows.length > 0 ? (
+        <div style={{ marginTop: 16 }}>
+          <button
+            type="button"
+            onClick={() => setShowLowActivity((prev) => !prev)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              width: '100%',
+              background: terminalColors.panel,
+              border: `1px solid ${terminalColors.line}`,
+              borderRadius: 10,
+              padding: '10px 14px',
+              cursor: 'pointer',
+              fontFamily: MONO,
+              fontSize: 11.5,
+              fontWeight: 600,
+              letterSpacing: '0.03em',
+              color: terminalColors.ink3,
+              textAlign: 'left',
+            }}
+          >
+            <span style={{ color: terminalColors.ink3Alt }}>{showLowActivity ? '▾' : '▸'}</span>
+            Low activity / new pools · {lowActivityRows.length}
+            <span style={{ marginLeft: 'auto', fontWeight: 500, color: terminalColors.faint }}>
+              zero 24h volume · &lt; {fiatStats(LOW_ACTIVITY_TVL_CEILING)} TVL
+            </span>
+          </button>
+          {showLowActivity ? (
+            <InstrumentPanel flush style={{ overflow: 'hidden', marginTop: 10 }}>
+              <DataTable<MarketRow>
+                columns={columns}
+                rows={lowActivityRows}
+                rowKey={(row) => row.key}
+                onRowClick={(row) => (row.detailPath ? navigate(row.detailPath) : undefined)}
+                emptyMessage="No low-activity pools."
+                initialSort={{ columnId: 'tvl', direction: 'desc' }}
+                skeletonRows={4}
+              />
+            </InstrumentPanel>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Honest data-provenance note (visible-but-muted; no fabricated values). */}
       <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.faint, marginTop: 14, lineHeight: 1.5 }}>

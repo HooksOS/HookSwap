@@ -7,6 +7,7 @@ import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens
 import { TickerTape, type TickerItem } from '~/terminal/components/TickerTape'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { isHiddenTokenSymbol } from '~/terminal/utils/hiddenTokens'
+import { useVisibleChains } from '~/terminal/utils/visibleChains'
 
 /**
  * The Terminal "top": a live token ticker tape + a status strip (TOKEN FEED / GAS /
@@ -75,6 +76,9 @@ export function TerminalTopStrip(): JSX.Element {
   const { data: gasPrice } = useGasPrice({ chainId })
   const { data: blockNumber } = useBlockNumber({ chainId, watch: true })
 
+  // Hide testnet (Sepolia) tokens from the mainnet ticker unless the wallet is on Sepolia.
+  const { isTokenVisible } = useVisibleChains()
+
   const items: TickerItem[] = useMemo(() => {
     // Dedup so the same asset never appears twice on the compact tape (the list can
     // surface the same symbol more than once — e.g. across chains — rendering
@@ -82,7 +86,7 @@ export function TerminalTopStrip(): JSX.Element {
     const seen = new Set<string>()
     const out: TickerItem[] = []
     for (const t of topTokens ?? []) {
-      if (isHiddenTokenSymbol(t.symbol) || typeof t.stats?.price !== 'number') {
+      if (isHiddenTokenSymbol(t.symbol) || !isTokenVisible(t) || typeof t.stats?.price !== 'number') {
         continue
       }
       const key = t.symbol.toUpperCase()
@@ -101,7 +105,7 @@ export function TerminalTopStrip(): JSX.Element {
       }
     }
     return out
-  }, [topTokens])
+  }, [topTokens, isTokenVisible])
 
   const feed = isError ? 'OFFLINE' : items.length ? 'LIVE' : isLoading ? 'SETTLING' : 'SETTLING'
   const emptyLabel = isError

@@ -61,6 +61,7 @@ import { useProtocolStats } from '~/features/Explore/state'
 import { ExploreTablesFilterStoreContextProvider } from '~/features/Explore/state/exploreTablesFilterStore'
 import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens'
 import { useTopPools } from '~/features/Explore/state/topPools/useTopPools'
+import { useVisibleChains } from '~/terminal/utils/visibleChains'
 import { ComingSoon } from '~/terminal/components/ComingSoon'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
@@ -759,11 +760,20 @@ function AnalyticsScreenBody(): JSX.Element {
   const volumeStats = use24hProtocolVolume()
 
   // Real top-pools feed — feeds the donut + both bottom tables/lists + 24h fees.
-  const { topPools, isLoading: poolsLoading, isError: poolsError } = useTopPools({
+  const { topPools: rawPools, isLoading: poolsLoading, isError: poolsError } = useTopPools({
     sortState: { sortBy: PoolSortFields.TVL, sortDirection: OrderDirection.Desc },
   })
   // Real token list — sparkline join for the Top-pools table.
-  const { topTokens } = useListTokens(undefined)
+  const { topTokens: rawTokens } = useListTokens(undefined)
+
+  // Hide testnet (Sepolia) data from the mainnet Analytics surfaces — the "TVL by network"
+  // donut, pool tables, and sparkline join — unless the wallet is connected to Sepolia.
+  const { isChainVisible, isTokenVisible } = useVisibleChains()
+  const topPools = useMemo(
+    () => rawPools?.filter((p) => isChainVisible(supportedChainIdFromGQLChain(p.token0?.chain as GraphQLApi.Chain))),
+    [rawPools, isChainVisible],
+  )
+  const topTokens = useMemo(() => (rawTokens ?? []).filter((t) => isTokenVisible(t)), [rawTokens, isTokenVisible])
 
   const protocolLoading = protocol.isLoading
   const protocolError = protocol.isError

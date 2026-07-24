@@ -85,6 +85,7 @@ import { TickerTape, type TickerItem } from '~/terminal/components/TickerTape'
 import { HOOKSWAP_LINKS } from '~/terminal/config/screens'
 import { useCaptureRef } from '~/terminal/referral/useCaptureRef'
 import { isHiddenTokenSymbol, pairHasHiddenToken } from '~/terminal/utils/hiddenTokens'
+import { useVisibleChains } from '~/terminal/utils/visibleChains'
 import '~/terminal/theme/terminal.css'
 import '~/terminal/theme/theme' // boot: apply stored/default (dark) theme pre-paint
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
@@ -1163,12 +1164,23 @@ function LandingScreenBody(): JSX.Element {
     isLoading: poolsLoading,
     isError: poolsError,
   } = useTopPools({ sortState: { sortBy: PoolSortFields.Volume24h, sortDirection: OrderDirection.Desc } })
+  // Hide testnet (Sepolia) data from the mainnet landing unless the wallet is on Sepolia.
+  const { isChainVisible, isTokenVisible } = useVisibleChains()
   // Hide test/seed tokens (tHOOK etc.) from every downstream surface — ticker, featured
-  // card, market rows, pool count — so only real assets (ETH, USDG, …) ever show.
-  const topTokens = useMemo(() => (rawTokens ?? []).filter((t) => !isHiddenTokenSymbol(t.symbol)), [rawTokens])
+  // card, market rows, pool count — so only real assets (ETH, USDG, …) ever show. Also drop
+  // any token/pool that lives only on a hidden testnet (Sepolia) on a mainnet.
+  const topTokens = useMemo(
+    () => (rawTokens ?? []).filter((t) => !isHiddenTokenSymbol(t.symbol) && isTokenVisible(t)),
+    [rawTokens, isTokenVisible],
+  )
   const topPools = useMemo(
-    () => rawPools?.filter((p) => !pairHasHiddenToken(p.token0?.symbol, p.token1?.symbol)),
-    [rawPools],
+    () =>
+      rawPools?.filter(
+        (p) =>
+          !pairHasHiddenToken(p.token0?.symbol, p.token1?.symbol) &&
+          isChainVisible(supportedChainIdFromGQLChain(p.token0?.chain as GraphQLApi.Chain)),
+      ),
+    [rawPools, isChainVisible],
   )
   const tvlStats = useDailyTVLWithChange()
   const volumeStats = use24hProtocolVolume()
