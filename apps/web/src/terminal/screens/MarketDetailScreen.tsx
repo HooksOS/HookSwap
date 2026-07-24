@@ -40,9 +40,14 @@
  *   • Pool composition — LIVE from the pool's real token reserves (`tvlToken0/1`) and
  *     token prices; the bar splits by USD value, the legend shows token amounts.
  *
- * The route param `:poolId` is encoded `chainId-address` (e.g. `1-0x88e6…a4f2`); a
- * malformed or unresolvable id renders an honest not-found state. All loading /
- * empty / error / disconnected states are real over the live hooks.
+ * The route param `:poolId` is encoded `<chainId>-<poolIdOrAddress>` — the identifier is
+ * EITHER a 40-hex pool address (v2 pair / v3 pool, e.g. `1-0x88e6…a4f2`) OR a 64-hex v4
+ * poolId (bytes32, e.g. `4663-0x1f00…31be3`); both resolve. Identity + KPIs resolve from
+ * the multi-chain data-api keyed by the id's OWN chainId (not the connected wallet chain),
+ * so a market opens regardless of which network the wallet is on. A genuinely malformed id
+ * (bad chain, or an identifier that is neither a 40- nor 64-hex `0x` value) or a pool the
+ * data-api has no record of (after it loads) renders an honest not-found state. All loading
+ * / empty / error / disconnected states are real over the live hooks.
  */
 import { PositionStatus } from '@uniswap/client-data-api/dist/data/v1/poolTypes_pb'
 import type { Currency } from '@uniswap/sdk-core'
@@ -55,7 +60,6 @@ import { getChainLabel, isUniverseChainId, toGraphQLChain } from 'uniswap/src/fe
 import { useLocalizationContext } from 'uniswap/src/features/language/LocalizationContext'
 import { useWalletPositions } from 'uniswap/src/features/positions/hooks/useWalletPositions'
 import type { PositionInfo } from 'uniswap/src/features/positions/types'
-import { AddressStringFormat, normalizeAddress } from 'uniswap/src/utils/addresses'
 import { ExplorerDataType, getExplorerLink } from 'uniswap/src/utils/linking'
 import { isEVMAddress } from 'utilities/src/addresses/evm/evm'
 import { NumberType } from 'utilities/src/format/types'
@@ -87,8 +91,32 @@ const SANS = terminalFonts.sans
 
 /* ------------------------------------------------------------------ helpers */
 
-/** Parse the `chainId-address` route param into a chainId + pool address. */
-function parsePoolId(poolId: string | undefined): { chainId: UniverseChainId; address: string } | undefined {
+/** A `0x`-prefixed 64-hex bytes32 — a Uniswap v4 poolId (not an on-chain address). */
+const V4_POOL_ID_RE = /^0x[0-9a-fA-F]{64}$/
+
+interface ParsedPoolId {
+  chainId: UniverseChainId
+  /** The pool identifier from the URL: a 40-hex ADDRESS (v2/v3) or a 64-hex v4 poolId. */
+  id: string
+  /** True when `id` is a real 40-hex on-chain address (v2 pair / v3 pool); false for a v4 poolId. */
+  idIsAddress: boolean
+}
+
+/**
+ * Parse the `<chainId>-<poolIdOrAddress>` route param.
+ *
+ * Splits on the FIRST '-' only (chainIds never contain '-'; the identifier is
+ * `0x…` so it never does either). The identifier may be EITHER a 40-hex pool
+ * ADDRESS (v2 pair / v3 pool) OR a 64-hex v4 poolId (bytes32) — both are valid
+ * and must resolve; a v4 poolId is NOT malformed.
+ *
+ * The chainId is validated against `isUniverseChainId` (membership in
+ * ALL_CHAIN_IDS): resolution is keyed by the id's OWN chainId, and
+ * `toGraphQLChain(chainId)` (called unguarded when building price-chart
+ * variables) does `getChainInfo(chainId).backendChain.chain`, which THROWS on an
+ * unregistered chainId → a white-screen that would beat the not-found guard.
+ */
+function parsePoolId(poolId: string | undefined): ParsedPoolId | undefined {
   if (!poolId) {
     return undefined
   }
@@ -97,17 +125,31 @@ function parsePoolId(poolId: string | undefined): { chainId: UniverseChainId; ad
     return undefined
   }
   const chainRaw = poolId.slice(0, dash)
-  const address = poolId.slice(dash + 1)
+  const id = poolId.slice(dash + 1)
   const chainNum = Number(chainRaw)
-  // Reject unregistered chains up front: `toGraphQLChain(chainId)` (called
-  // unguarded when building the price-chart variables during render) does
-  // `getChainInfo(chainId).backendChain.chain`, which THROWS on a chainId not in
-  // ALL_CHAIN_IDS → white-screen that beats the not-found guard. `isUniverseChainId`
-  // is the app's chain-registration check (membership in ALL_CHAIN_IDS).
-  if (!Number.isInteger(chainNum) || chainNum <= 0 || !isEVMAddress(address) || !isUniverseChainId(chainNum)) {
+  if (!Number.isInteger(chainNum) || chainNum <= 0 || !isUniverseChainId(chainNum)) {
     return undefined
   }
-  return { chainId: chainNum, address }
+  const idIsAddress = isEVMAddress(id)
+  const isV4PoolId = V4_POOL_ID_RE.test(id)
+  if (!idIsAddress && !isV4PoolId) {
+    return undefined
+  }
+  return { chainId: chainNum, id, idIsAddress }
+}
+
+/** Map the data-api pool's `protocolVersion` display string to the GraphQL enum. */
+function dataApiVersionToGql(version: string | undefined): GraphQLApi.ProtocolVersion | undefined {
+  switch (version) {
+    case 'v2':
+      return GraphQLApi.ProtocolVersion.V2
+    case 'v3':
+      return GraphQLApi.ProtocolVersion.V3
+    case 'v4':
+      return GraphQLApi.ProtocolVersion.V4
+    default:
+      return undefined
+  }
 }
 
 /** Format a pool price ratio (no currency symbol), adaptive decimals. */
@@ -673,12 +715,15 @@ function MarketDetailScreenBody(): JSX.Element {
 
   const parsed = useMemo(() => parsePoolId(poolId), [poolId])
   const chainId = parsed?.chainId
-  const address = parsed?.address
+  const id = parsed?.id
+  const idIsAddress = parsed?.idIsAddress ?? false
 
   const { data: poolData, loading: poolLoading, error: poolError } = usePoolData({
-    poolIdOrAddress: address ? normalizeAddress(address, AddressStringFormat.Lowercase) : '',
+    // v2/v3 pools resolve by ADDRESS, v4 pools by their bytes32 poolId. `isPoolAddress`
+    // routes usePoolData to the v2/v3 (address) vs v4 (poolId) GraphQL query accordingly.
+    poolIdOrAddress: id ? id.toLowerCase() : '',
     chainId,
-    isPoolAddress: address ? isEVMAddress(address) : false,
+    isPoolAddress: idIsAddress,
   })
 
   // Data-api pool — the SAME source the Markets list resolves from
@@ -693,16 +738,20 @@ function MarketDetailScreenBody(): JSX.Element {
     enabled: Boolean(chainId),
   })
   const dataApiPool = useMemo(() => {
-    if (!address || !dataApiPools) {
+    if (!id || !dataApiPools) {
       return undefined
     }
-    const target = address.toLowerCase()
-    // Address match is case-insensitive: the route param carries the URL's checksum
-    // casing while the API returns its own checksum — compare lowercased on both sides.
+    const target = id.toLowerCase()
+    // Match case-insensitively: the route param carries the URL's casing while the
+    // API returns its own. Works for BOTH a 40-hex pool address (v2/v3) and a 64-hex
+    // v4 poolId — the data-api sets `pool.id = poolId` for every protocol version.
     return dataApiPools.find((pool) => pool.id?.toLowerCase() === target)
-  }, [dataApiPools, address])
+  }, [dataApiPools, id])
 
-  const protocolVersion = poolData?.protocolVersion
+  // Protocol version — GraphQL first (served chains), else the data-api pool's version
+  // string (HookSwap custom chains, where the GraphQL gateway serves nothing). This is
+  // what makes v4 pools resolve their fee/version badge + chart wiring off the data-api.
+  const protocolVersion = poolData?.protocolVersion ?? dataApiVersionToGql(dataApiPool?.protocolVersion)
   const isV2 = protocolVersion === GraphQLApi.ProtocolVersion.V2
   const isV3 = protocolVersion === GraphQLApi.ProtocolVersion.V3
   const isV4 = protocolVersion === GraphQLApi.ProtocolVersion.V4
@@ -712,7 +761,7 @@ function MarketDetailScreenBody(): JSX.Element {
   const priceQuery = usePoolPriceChartData({
     variables: chainId
       ? {
-          addressOrId: poolData?.idOrAddress ?? '',
+          addressOrId: poolData?.idOrAddress ?? id ?? '',
           chain: toGraphQLChain(chainId),
           duration: toHistoryDuration(timeframe.period),
           isV2,
@@ -725,7 +774,7 @@ function MarketDetailScreenBody(): JSX.Element {
 
   // Real recent transactions for the trades table (swaps + liquidity add/remove).
   const txResult = usePoolTransactions({
-    address: address ?? '',
+    address: id ?? '',
     chainId,
     token0: poolData?.token0,
     protocolVersion,
@@ -740,13 +789,14 @@ function MarketDetailScreenBody(): JSX.Element {
   // Real wallet LP positions, filtered to this pool.
   const positionsResult = useWalletPositions({ account: account.address ?? '', disabled: !account.address })
   const poolPositions = useMemo(() => {
-    if (!address) {
+    if (!id) {
       return []
     }
+    const target = id.toLowerCase()
     return positionsResult.positions.filter(
-      (p) => p.chainId === chainId && p.poolId?.toLowerCase() === address.toLowerCase(),
+      (p) => p.chainId === chainId && p.poolId?.toLowerCase() === target,
     )
-  }, [positionsResult.positions, address, chainId])
+  }, [positionsResult.positions, id, chainId])
 
   // Unwrap WETH → ETH for display (v2/v3 only — no v4 native/WETH ambiguity here).
   // Prefer the GraphQL pool tokens where present; fall back to the data-api pool
@@ -784,7 +834,9 @@ function MarketDetailScreenBody(): JSX.Element {
   const resolvedVolume24h = poolData?.volumeUSD24H ?? dataApiPool?.volume1Day?.value
   const resolvedFeeAmount = poolData?.feeTier?.feeAmount ?? dataApiPool?.feeTier?.feeAmount
   const resolvedIsDynamic = poolData?.feeTier?.isDynamic ?? dataApiPool?.feeTier?.isDynamic ?? false
-  const resolvedPoolAddress = poolData?.idOrAddress ?? dataApiPool?.id ?? address
+  // For v2/v3 this is an on-chain pool address; for v4 it's the bytes32 poolId (NOT an
+  // address) — the header links it to the explorer only when it's a real address.
+  const resolvedPoolAddress = poolData?.idOrAddress ?? dataApiPool?.id ?? id
 
   // Swap CTA → open the swap form pre-loaded with THIS pool's pair (same deep-link
   // serializer Landing uses). Native currencies pass the chain's native address so
@@ -903,16 +955,18 @@ function MarketDetailScreenBody(): JSX.Element {
     )
   }
 
-  // Gate the whole page ONLY when neither source resolves the pool AND neither is
-  // still loading. The pool identity comes from either the GraphQL feed (served
-  // chains) or the data-api list (custom chains) — if either has it, we render.
-  const hasPool = Boolean(poolData || dataApiPool)
-  const poolResolving = poolLoading || dataApiLoading
+  // The multi-chain data-api (keyed by the id's OWN chainId) is the source of truth for
+  // whether this pool exists — NOT the connected wallet chain, and NOT a client-side
+  // on-chain read. The GraphQL feed (served chains only) is a bonus; when it has the pool
+  // we render, but its absence/error never gates the page (it serves nothing on HookSwap's
+  // custom chains). We show not-found ONLY after the data-api has loaded and has no record.
+  const hasPool = Boolean(dataApiPool || poolData)
+  const poolResolving = dataApiLoading || poolLoading
 
   if (!poolResolving && !hasPool) {
     return (
       <div style={{ padding: '20px var(--tm-gutter)' }}>
-        {poolError ? (
+        {poolError && !dataApiPool ? (
           <ComingSoon
             variant="panel"
             subtext="Market detail appears once this pool has liquidity and trades."
@@ -921,7 +975,7 @@ function MarketDetailScreenBody(): JSX.Element {
         ) : (
           <CenteredState
             title="Market not found"
-            detail="This pool isn't indexed yet on the selected network."
+            detail={`This pool isn't indexed on ${getChainLabel(parsed.chainId)} yet. Open a pool from Markets to view its detail.`}
           />
         )}
       </div>
@@ -1000,7 +1054,9 @@ function MarketDetailScreenBody(): JSX.Element {
               ) : null}
             </div>
             <div style={{ marginTop: 4 }}>
-              <ExplorerAddress address={resolvedPoolAddress} chainId={chainId} fontSize={12} />
+              {/* A v4 poolId (bytes32) is NOT an on-chain address → render it as plain,
+                  non-clickable mono text (ExplorerAddress links only when chainId is set). */}
+              <ExplorerAddress address={resolvedPoolAddress} chainId={idIsAddress ? chainId : undefined} fontSize={12} />
             </div>
           </div>
         </div>
