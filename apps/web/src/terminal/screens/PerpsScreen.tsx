@@ -44,6 +44,7 @@ import { PositionsTable } from '~/terminal/screens/perps/PositionsTable'
 import { PerpsTutorial, PERPS_TUTORIAL_STEPS } from '~/terminal/screens/perps/PerpsTutorial'
 import { TradesFeed } from '~/terminal/screens/perps/TradesFeed'
 import { PERPS_FACTORY_HOME_CHAIN } from '~/terminal/perps/factory/abis'
+import { useMarketNames } from '~/terminal/perps/factory/useMarketNames'
 import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
 import { useCandles } from '~/terminal/perps/engine/useCandles'
 import { useClosePosition } from '~/terminal/perps/engine/useClosePosition'
@@ -74,7 +75,33 @@ export function PerpsScreen(): JSX.Element {
   const [tutorialOpen, setTutorialOpen] = useState(0)
 
   const marketsQuery = useMarkets({ chainId: PERPS_CHAIN })
-  const markets = marketsQuery.markets
+  const rawMarkets = marketsQuery.markets
+
+  // Derive a human name for each market from its on-chain Chainlink refFeed ("ETH / USD" →
+  // "ETH-PERP"). marketId is a one-way keccak hash so the creator's label is unrecoverable —
+  // this reads real on-chain identity instead. Markets whose feed doesn't resolve keep their
+  // honest short-address fallback ("MKT 0x…").
+  const nameInputs = useMemo(
+    () => rawMarkets?.map((m) => ({ market: m.address, collateral: m.collateral })),
+    [rawMarkets],
+  )
+  const { names: marketNames } = useMarketNames({ markets: nameInputs, chainId: PERPS_CHAIN })
+
+  // Enrich the market rows: replace ONLY the address fallback ("MKT 0x…") with the derived
+  // name (never clobber a real engine/catalog symbol). Downstream (chart title, ticket) then
+  // shows the readable name too.
+  const markets = useMemo<PerpMarketView[] | undefined>(() => {
+    if (!rawMarkets) {
+      return rawMarkets
+    }
+    return rawMarkets.map((m) => {
+      const resolved = marketNames.get(m.address.toLowerCase())
+      if (resolved && m.label.startsWith('MKT ')) {
+        return { ...m, label: resolved.name, base: resolved.base }
+      }
+      return m
+    })
+  }, [rawMarkets, marketNames])
 
   // Selected market — kept stable while the address still exists. The registry lists
   // markets in creation order, which is dominated by permissionless test markets; a
@@ -217,7 +244,7 @@ export function PerpsScreen(): JSX.Element {
                 ) : marketsQuery.error ? (
                   <PanelNote>Markets unavailable</PanelNote>
                 ) : markets ? (
-                  <PerpsWatchlist markets={markets} selected={selected?.address} onSelect={(m) => setSelectedAddr(m.address)} />
+                  <PerpsWatchlist markets={markets} names={marketNames} selected={selected?.address} onSelect={(m) => setSelectedAddr(m.address)} />
                 ) : (
                   <PanelNote>Loading markets…</PanelNote>
                 )}

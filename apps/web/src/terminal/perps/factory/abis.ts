@@ -170,6 +170,70 @@ export const marketRegistryAbi = [
   },
 ] as const
 
+/* ------------------------------------------------------------------ oracleGuard ABI */
+
+/**
+ * OracleGuard read surface used to DERIVE a human market name. The MarketRegistry stores
+ * only `keccak256(label)` (one-way) — the label can't be recovered — but every market's
+ * oracle config (registered by the factory at creation) carries the Chainlink `refFeed`,
+ * whose `description()` ("ETH / USD") yields the underlying. `getMarketConfig(market)`
+ * returns the exact `OracleConfig` struct (see `contracts/perps/src/factory/OracleGuard.sol`).
+ */
+export const oracleGuardAbi = [
+  {
+    type: 'function',
+    name: 'getMarketConfig',
+    stateMutability: 'view',
+    inputs: [{ name: 'market', type: 'address' }],
+    outputs: [
+      {
+        name: 'cfg',
+        type: 'tuple',
+        components: [
+          { name: 'sourceType', type: 'bytes32' },
+          { name: 'venue', type: 'address' },
+          { name: 'refFeed', type: 'address' },
+          { name: 'maxDeviationBps', type: 'uint256' },
+          { name: 'maxStaleness', type: 'uint256' },
+          { name: 'minLiquidity', type: 'uint256' },
+          { name: 'dualSourceRequired', type: 'bool' },
+        ],
+      },
+    ],
+  },
+] as const
+
+/* ------------------------------------------------------------------ Chainlink feed + ERC-20 (name derivation) */
+
+/** Chainlink `AggregatorV3Interface` — the feed's human `description()` ("ETH / USD"). */
+export const chainlinkFeedAbi = [
+  {
+    type: 'function',
+    name: 'description',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'string' }],
+  },
+  {
+    type: 'function',
+    name: 'decimals',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint8' }],
+  },
+] as const
+
+/** Minimal ERC-20 — the collateral token's `symbol()` (secondary market label). */
+export const erc20SymbolAbi = [
+  {
+    type: 'function',
+    name: 'symbol',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'string' }],
+  },
+] as const
+
 /* ------------------------------------------------------------------ feeRouter ABI (optional) */
 
 export const feeRouterAbi = [

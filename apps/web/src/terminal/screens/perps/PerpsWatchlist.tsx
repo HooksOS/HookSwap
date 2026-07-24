@@ -2,22 +2,32 @@ import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { EMPTY } from '~/terminal/screens/perps/perpsCatalog'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
+import type { ResolvedMarketName } from '~/terminal/perps/factory/useMarketNames'
 
 const MONO = terminalFonts.mono
 
+function shortenAddr(addr: string): string {
+  return addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : addr
+}
+
 /**
  * Markets watchlist — the live market directory (engine `GET /markets`, on-chain registry
- * fallback). Each row = symbol + tier/lev subrow. Per-row price / 24h change render an
- * honest '—' (the fixed engine contract has no per-market ticker endpoint yet — see the
- * PerpsScreen note); the row identity is REAL on-chain/engine data, never fabricated.
- * Selecting a row drives the rest of the desk.
+ * fallback). Each row = the derived market NAME ("ETH-PERP", from the market's Chainlink
+ * refFeed description) + a secondary line (collateral symbol · tier · short address). When a
+ * name can't be derived, the primary is the honest short-address fallback ("MKT 0x…") the
+ * enriched `m.label` already carries. Per-row price / 24h change render an honest '—' (the
+ * engine has no per-market ticker endpoint yet); identity is REAL on-chain/engine data, never
+ * fabricated. Selecting a row drives the rest of the desk.
  */
 export function PerpsWatchlist({
   markets,
+  names,
   selected,
   onSelect,
 }: {
   markets: PerpMarketView[]
+  /** Lowercased market address → derived name (collateral symbol lives here too). */
+  names?: ReadonlyMap<string, ResolvedMarketName>
   selected?: string
   onSelect: (market: PerpMarketView) => void
 }): JSX.Element {
@@ -26,14 +36,32 @@ export function PerpsWatchlist({
     <div style={{ fontFamily: MONO }}>
       {markets.map((m) => {
         const on = m.address.toLowerCase() === selected?.toLowerCase()
-        const sub = [m.catalogMaxLeverage ? `${m.catalogMaxLeverage}×` : undefined, m.tier === 1 ? 'perm' : m.tier === 0 ? 'curated' : undefined]
-          .filter(Boolean)
-          .join(' · ')
+        const resolved = names?.get(m.address.toLowerCase())
+        const tierLabel = m.tier === 1 ? 'perm' : m.tier === 0 ? 'curated' : undefined
+        // When we derived a name, the primary shows it → surface the collateral + short
+        // address as secondary (disambiguates markets that share a feed, e.g. ETH-PERP ×N).
+        // Otherwise keep the leverage · tier subrow.
+        const sub = resolved
+          ? [
+              resolved.collateralSymbol ? `${resolved.collateralSymbol} collateral` : undefined,
+              tierLabel,
+              shortenAddr(m.address),
+            ]
+              .filter(Boolean)
+              .join(' · ')
+          : [m.catalogMaxLeverage ? `${m.catalogMaxLeverage}×` : undefined, tierLabel]
+              .filter(Boolean)
+              .join(' · ')
         return (
           <button
             key={m.address}
             type="button"
             onClick={() => onSelect(m)}
+            title={
+              resolved
+                ? `${resolved.name}${resolved.refFeedDescription ? ` · feed ${resolved.refFeedDescription}` : ''} · ${m.address}`
+                : m.address
+            }
             style={{
               display: 'flex',
               width: '100%',

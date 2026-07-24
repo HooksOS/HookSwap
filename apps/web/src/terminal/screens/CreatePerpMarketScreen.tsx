@@ -40,6 +40,7 @@ import {
   type CreateMarketForm,
 } from '~/terminal/perps/factory/useCreateMarket'
 import { RegistryStatus, RegistryTier, useMarkets, type MarketRow } from '~/terminal/perps/factory/useMarkets'
+import { useMarketNames } from '~/terminal/perps/factory/useMarketNames'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { assume0xAddress } from '~/utils/wagmi'
 
@@ -389,6 +390,15 @@ function statusLabel(status: RegistryStatus): string {
 function MarketsDirectory({ chainId }: { chainId?: number }): JSX.Element {
   const { ready, markets, count, isLoading, error } = useMarkets({ chainId })
 
+  // Derive a human name per market from its on-chain Chainlink refFeed ("ETH / USD" →
+  // "ETH-PERP"). The label isn't stored on-chain (marketId = one-way keccak) so this reads
+  // the market's oracle instead; markets whose feed is unreadable stay address-only (honest).
+  const nameInputs = useMemo(
+    () => markets?.map((m) => ({ market: m.market, collateral: m.collateral })),
+    [markets],
+  )
+  const { names } = useMarketNames({ markets: nameInputs, chainId })
+
   return (
     <Panel title="Live markets" meta={ready && count !== undefined ? [`${count} total`] : isLoading ? ['loading…'] : undefined}>
       {!ready ? (
@@ -402,6 +412,7 @@ function MarketsDirectory({ chainId }: { chainId?: number }): JSX.Element {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {markets.map((m: MarketRow) => {
+            const resolved = names.get(m.market.toLowerCase())
             return (
               <div
                 key={m.market}
@@ -414,7 +425,26 @@ function MarketsDirectory({ chainId }: { chainId?: number }): JSX.Element {
                   padding: '9px 11px',
                 }}
               >
-                <ExplorerAddress address={m.market} chainId={chainId} fontSize={12} fontWeight={500} />
+                {resolved ? (
+                  // Name derived from the market's Chainlink refFeed → show it prominently,
+                  // address secondary. Several markets can share a feed → the short address
+                  // (in the title) disambiguates.
+                  <div
+                    style={{ display: 'flex', flexDirection: 'column', gap: 1 }}
+                    title={`${resolved.name}${resolved.refFeedDescription ? ` · feed ${resolved.refFeedDescription}` : ''} · ${m.market}`}
+                  >
+                    <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 600, color: terminalColors.ink }}>
+                      {resolved.name}
+                    </span>
+                    <span style={{ fontFamily: MONO, fontSize: 10, color: terminalColors.faint }}>
+                      {resolved.collateralSymbol ? `${resolved.collateralSymbol} · ` : ''}
+                      {shortAddr(m.market)}
+                    </span>
+                  </div>
+                ) : (
+                  // No readable feed → honest address-only identity (unchanged behavior).
+                  <ExplorerAddress address={m.market} chainId={chainId} fontSize={12} fontWeight={500} />
+                )}
                 <TierBadge tier={m.tier} />
                 <span style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt }}>
                   {statusLabel(m.status)}
@@ -428,8 +458,9 @@ function MarketsDirectory({ chainId }: { chainId?: number }): JSX.Element {
         </div>
       )}
       <div style={{ fontFamily: SANS, fontSize: 10.5, color: terminalColors.faint, marginTop: 10, lineHeight: 1.5 }}>
-        Markets are read live from the on-chain MarketRegistry. The human label isn&apos;t stored on-chain — only its
-        keccak marketId — so rows show the market address + creator.
+        Markets are read live from the on-chain MarketRegistry. The creator&apos;s label isn&apos;t stored on-chain — only
+        its keccak marketId — so each name is derived from the market&apos;s Chainlink reference feed (e.g. &ldquo;ETH /
+        USD&rdquo; → ETH-PERP); markets whose feed can&apos;t be read show the market address instead.
       </div>
     </Panel>
   )
