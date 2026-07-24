@@ -34,6 +34,7 @@
  */
 
 import { ethers } from 'ethers'
+import { getDb, getTokenLogoRow, upsertTokenLogoRow } from './indexer/schema'
 import { getProvider } from './onchain'
 
 /* ----------------------------------------------------------------------------------------------------
@@ -220,8 +221,53 @@ const LAUNCHER_ABI = [
  *  — short enough that a slow/dead URI can't stall a handler; resolution runs in the background regardless. */
 const FETCH_TIMEOUT_MS = 5_000
 
-/** Public IPFS gateway for `ipfs://` normalization. */
-const IPFS_GATEWAY = 'https://ipfs.io/ipfs/'
+/**
+ * IPFS gateway base (always ends in `/ipfs/`) for `ipfs://` normalization.
+ *
+ * Reliability: the old default `https://ipfs.io/ipfs/` is a fragile public gateway (frequent slow/504s,
+ * no durable cache) — a bad choice for the load-bearing token-logo path. Default here is Pinata's public
+ * gateway `gateway.pinata.cloud/ipfs/` (durable, hotlink-friendly, CID-addressable). It is env-overridable
+ * via `PINATA_GATEWAY` — set it to a dedicated Pinata subdomain gateway (e.g.
+ * `https://<subdomain>.mypinata.cloud`) for higher rate limits / guaranteed pinned content. We accept the
+ * env value with or without a trailing `/` and with or without the `/ipfs/` suffix.
+ * (NOTE: cloudflare-ipfs.com was decommissioned by Cloudflare — deliberately not used.)
+ */
+function resolveIpfsGateway(): string {
+  const raw = (process.env.PINATA_GATEWAY || '').trim()
+  if (raw) {
+    const base = raw.replace(/\/+$/, '')
+    return /\/ipfs$/i.test(base) ? `${base}/` : `${base}/ipfs/`
+  }
+  return 'https://gateway.pinata.cloud/ipfs/'
+}
+const IPFS_GATEWAY = resolveIpfsGateway()
+
+/**
+ * Optionally pin a resolved image's CID to the operator's Pinata account so it stays durably available
+ * even if the origin/gateway that first served it goes away. NO-OP unless `PINATA_JWT` is set — pinning is
+ * a durability optimization, never required to resolve or serve a logo. Best-effort: any failure is
+ * swallowed. Only pins when the resolved URL is itself an `/ipfs/<cid>` gateway URL (the CID we can pin);
+ * a plain https image (Trust Wallet / CoinGecko) is already on a durable CDN and needs no pinning.
+ */
+async function pinToPinataIfConfigured(imageUrl: string): Promise<void> {
+  const jwt = (process.env.PINATA_JWT || '').trim()
+  if (!jwt) {
+    return
+  }
+  const m = imageUrl.match(/\/ipfs\/([A-Za-z0-9]+)(?:\/|$|\?|#)/)
+  if (!m) {
+    return
+  }
+  try {
+    await fetchWithTimeout('https://api.pinata.cloud/pinning/pinByHash', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${jwt}` },
+      body: JSON.stringify({ hashToPin: m[1] }),
+    })
+  } catch {
+    // best-effort — a failed pin never affects logo resolution.
+  }
+}
 
 /** Path looks like a direct image (extension, ignoring any query/fragment). */
 const IMAGE_EXT_RE = /\.(png|jpe?g|svg|gif|webp)(?:[?#].*)?$/i
@@ -241,6 +287,53 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>()
 /** Keys with a background resolve in flight — dedupes concurrent resolves for the same token. */
 const inFlight = new Set<string>()
+
+/* ----------------------------------------------------------------------------------------------------
+ * DURABLE CACHE (SQLite `token_logo`, see indexer/schema.ts). The in-memory `cache` above evaporates on
+ * restart and can't re-resolve while the RPC is down — so a resolved logo would vanish during exactly the
+ * outages this path must survive. We persist every TERMINAL resolution (a positive gateway logoUrl, or a
+ * deterministic "not a launch / no image" no-logo) to the DB and hydrate from it on a cache miss. A
+ * TRANSIENT failure (RPC down, gateway 5xx/timeout) is NEVER persisted — those are left to retry. All DB
+ * access is wrapped so the logo path never throws if the store is unavailable.
+ * -------------------------------------------------------------------------------------------------- */
+
+/** Load a persisted resolution for a token, or undefined when none / the DB is unavailable. */
+function loadPersisted(chainId: number, addressLower: string): CacheEntry | undefined {
+  try {
+    const row = getTokenLogoRow(getDb(), chainId, addressLower)
+    if (!row) {
+      return undefined
+    }
+    let socials: TokenSocials | undefined
+    if (row.socialsJson) {
+      try {
+        socials = JSON.parse(row.socialsJson) as TokenSocials
+      } catch {
+        socials = undefined
+      }
+    }
+    return { metadataURI: row.metadataURI ?? '', logoUrl: row.logoUrl ?? undefined, socials }
+  } catch {
+    // DB unavailable (never opened, read-only fs, …) → behave as a plain cache miss; live resolve still runs.
+    return undefined
+  }
+}
+
+/** Persist a terminal resolution durably. Best-effort — a write failure never affects the result already returned. */
+function persist(chainId: number, addressLower: string, entry: CacheEntry): void {
+  try {
+    upsertTokenLogoRow(getDb(), {
+      chainId,
+      address: addressLower,
+      metadataURI: entry.metadataURI ?? '',
+      logoUrl: entry.logoUrl ?? null,
+      socialsJson: entry.socials ? JSON.stringify(entry.socials) : null,
+      resolvedAt: Math.floor(Date.now() / 1000),
+    })
+  } catch {
+    // best-effort durability — never throw on the logo path.
+  }
+}
 
 /** ipfs:// (and ipfs://ipfs/) → a public gateway URL; otherwise returned trimmed unchanged. */
 function normalizeUri(uri: string): string {
@@ -330,11 +423,11 @@ function socialsFromJson(json: unknown): TokenSocials | undefined {
 }
 
 /** fetch() with a hard timeout so a slow URI can't hang the background resolve. */
-async function fetchWithTimeout(url: string): Promise<Response> {
+async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   try {
-    return await fetch(url, { signal: controller.signal, redirect: 'follow' })
+    return await fetch(url, { redirect: 'follow', ...init, signal: controller.signal })
   } finally {
     clearTimeout(timer)
   }
@@ -396,26 +489,35 @@ async function resolveInBackground(chainId: number, launcher: string, token: str
     return
   }
   inFlight.add(key)
+  const addressLower = token.toLowerCase()
   try {
     const metadataURI = await readMetadataURI(chainId, launcher, token)
     if (!metadataURI) {
-      // Deterministic: not a launch, or a launch with no metadataURI → honest no-logo, cache it.
-      cache.set(key, { metadataURI: '' })
+      // Deterministic: not a launch, or a launch with no metadataURI → honest no-logo, cache + persist it.
+      const entry: CacheEntry = { metadataURI: '' }
+      cache.set(key, entry)
+      persist(chainId, addressLower, entry)
       return
     }
-    let logoUrl: string | undefined
-    let socials: TokenSocials | undefined
+    let resolved: { logoUrl?: string; socials?: TokenSocials }
     try {
-      const resolved = await resolveUriToLogo(metadataURI)
-      logoUrl = resolved.logoUrl
-      socials = resolved.socials
+      resolved = await resolveUriToLogo(metadataURI)
     } catch (e) {
-      // URI fetch/parse failure — honest no-logo (still a terminal outcome for this immutable URI).
+      // TRANSIENT URI/gateway fetch error (5xx, timeout, network) — do NOT cache (in-memory OR durable)
+      // so a later request retries once the gateway recovers. Caching an empty logo here would pin a
+      // real launched token to a monogram forever after a single gateway blip.
       // eslint-disable-next-line no-console
-      console.warn(`[data-api] logo: failed to resolve metadataURI for ${token} on ${chainId}: ${(e as Error).message}`)
-      logoUrl = undefined
+      console.warn(`[data-api] logo: transient failure resolving metadataURI for ${token} on ${chainId} (will retry): ${(e as Error).message}`)
+      return
     }
-    cache.set(key, { metadataURI, logoUrl, socials })
+    // Terminal outcome (resolved image, or a deterministic no-image launch) → cache + persist durably.
+    const entry: CacheEntry = { metadataURI, logoUrl: resolved.logoUrl, socials: resolved.socials }
+    cache.set(key, entry)
+    persist(chainId, addressLower, entry)
+    // Optionally pin the resolved image to Pinata for durability (no-op unless PINATA_JWT is set).
+    if (resolved.logoUrl) {
+      void pinToPinataIfConfigured(resolved.logoUrl)
+    }
   } catch (e) {
     // RPC error reading the metadataURI — transient; do NOT cache so a later request can retry.
     // eslint-disable-next-line no-console
@@ -438,6 +540,13 @@ export function getLaunchpadLogo(chainId: number, address: string): string | und
   const hit = cache.get(key)
   if (hit) {
     return hit.logoUrl
+  }
+  // Durable-cache hydrate: a previously-resolved outcome survives restarts AND a current RPC/gateway
+  // outage — this is what keeps HSTT's logo showing while the Robinhood RPC is down.
+  const persisted = loadPersisted(chainId, address.toLowerCase())
+  if (persisted) {
+    cache.set(key, persisted)
+    return persisted.logoUrl
   }
   const launcher = LAUNCHER_ADDRESSES[chainId]
   if (!launcher) {

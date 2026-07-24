@@ -21,6 +21,15 @@ export interface ChainConfig {
   rpcEnvVar: string
   /** public fallback RPC (works but rate-limited; replace with hosted via env). */
   publicRpc: string
+  /**
+   * Additional RPC endpoints to fail over to (in order) when the primary (`env` → `publicRpc`) is
+   * unreachable. onchain.getProvider wraps [primary, publicRpc, ...fallbackRpcs] in an ethers
+   * FallbackProvider (quorum 1) so a single endpoint outage doesn't blank on-chain reads — notably token
+   * logos, whose launchpad metadataURI read must survive the primary RPC going down. Every URL must be a
+   * REAL, verified endpoint for this chain (never guessed). Optional; omit where there's no known second
+   * endpoint. Robinhood (4663): QuickNode primary + public RH RPC + blockscout eth-rpc.
+   */
+  fallbackRpcs?: string[]
   nativeSymbol: string
   nativeDecimals: number
   /** wrapped-native token (WETH9-compatible). Real, static, verified metadata. */
@@ -96,6 +105,11 @@ export const CHAINS: Record<number, ChainConfig> = {
     name: 'robinhood',
     rpcEnvVar: 'WEB3_RPC_4663',
     publicRpc: 'https://rpc.mainnet.chain.robinhood.com',
+    // Fail-over endpoints (both live-verified 2026-07-24: eth_blockNumber returned ~0x11a15xx / ~18.48M).
+    // When the QuickNode primary (WEB3_RPC_4663) is down, on-chain reads (incl. launchpad logo metadataURI)
+    // fall through to the public RH RPC, then blockscout's eth-rpc proxy — so a single outage never blanks
+    // Robinhood logos/data. (publicRpc is also in the fallback list via getProvider; deduped there.)
+    fallbackRpcs: ['https://rpc.mainnet.chain.robinhood.com', 'https://robinhoodchain.blockscout.com/api/eth-rpc'],
     nativeSymbol: 'ETH',
     nativeDecimals: 18,
     wrappedNative: { address: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73', symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },

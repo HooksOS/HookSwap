@@ -273,6 +273,24 @@ CREATE TABLE IF NOT EXISTS v4_swap_events (
 );
 CREATE INDEX IF NOT EXISTS idx_v4swap_pool_ts ON v4_swap_events (chainId, poolId, timestamp);
 CREATE INDEX IF NOT EXISTS idx_v4swap_origin  ON v4_swap_events (chainId, origin, timestamp);
+
+-- ============================================================================================
+-- DURABLE TOKEN-LOGO CACHE (see logos.ts). Persists the terminal outcome of resolving a launchpad
+-- token's on-chain metadataURI → final gateway image URL, so a resolved logo SURVIVES a later RPC or
+-- IPFS-gateway outage (the in-memory Map evaporates on restart / can't re-resolve while the RPC is
+-- down). Every row is a REAL resolution: metadataURI is read on-chain, logoUrl is a gateway URL that
+-- actually served the image, socialsJson is parsed from the token's metadata JSON. A NULL logoUrl is a
+-- DETERMINISTIC "no logo" (not a launch, or a launch whose metadata carried no image) — never a
+-- transient failure (those are left uncached so they retry). ADDITIVE; no other table touched.
+CREATE TABLE IF NOT EXISTS token_logo (
+  chainId      INTEGER NOT NULL,
+  address      TEXT    NOT NULL,          -- lowercased token address
+  metadataURI  TEXT    NOT NULL DEFAULT '',
+  logoUrl      TEXT,                       -- final gateway image URL; NULL = deterministic no-logo
+  socialsJson  TEXT,                       -- JSON of {description,twitter,website,telegram} or NULL
+  resolvedAt   INTEGER NOT NULL,
+  PRIMARY KEY (chainId, address)
+);
 `
 
 // ---------- connection singleton ----------
@@ -776,4 +794,35 @@ export function insertV4SwapEvents(db: SqliteDatabase, rows: V4SwapEventRow[]): 
     return inserted
   })
   return insertAll(rows) as number
+}
+
+// ---------- durable token-logo cache (see logos.ts) ----------
+
+/** A persisted token-logo resolution. `logoUrl`/`socialsJson` NULL = deterministic no-logo/no-socials. */
+export interface TokenLogoRow {
+  chainId: number
+  /** lowercased token address. */
+  address: string
+  metadataURI: string
+  logoUrl: string | null
+  socialsJson: string | null
+  resolvedAt: number
+}
+
+/** Read a persisted token-logo resolution, or undefined if never resolved. */
+export function getTokenLogoRow(db: SqliteDatabase, chainId: number, addressLower: string): TokenLogoRow | undefined {
+  return db
+    .prepare(`SELECT chainId, address, metadataURI, logoUrl, socialsJson, resolvedAt FROM token_logo WHERE chainId=? AND address=?`)
+    .get(chainId, addressLower) as TokenLogoRow | undefined
+}
+
+/** Upsert a token-logo resolution (idempotent). Overwrites the prior row so a re-resolve can refresh it. */
+export function upsertTokenLogoRow(db: SqliteDatabase, row: TokenLogoRow): void {
+  db.prepare(
+    `INSERT INTO token_logo (chainId, address, metadataURI, logoUrl, socialsJson, resolvedAt)
+     VALUES (?,?,?,?,?,?)
+     ON CONFLICT(chainId, address) DO UPDATE SET
+       metadataURI=excluded.metadataURI, logoUrl=excluded.logoUrl,
+       socialsJson=excluded.socialsJson, resolvedAt=excluded.resolvedAt`,
+  ).run(row.chainId, row.address, row.metadataURI, row.logoUrl, row.socialsJson, row.resolvedAt)
 }

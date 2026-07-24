@@ -117,7 +117,7 @@ export interface IngestPoolResult {
  * storing a fabricated time).
  */
 async function loadBlockTimestamps(
-  provider: ethers.providers.JsonRpcProvider,
+  provider: ethers.providers.BaseProvider,
   blocks: number[],
   cache: Map<number, number>,
 ): Promise<void> {
@@ -144,7 +144,7 @@ async function loadBlockTimestamps(
  * fabricating an address). Never throws.
  */
 async function loadTxOrigins(
-  provider: ethers.providers.JsonRpcProvider,
+  provider: ethers.providers.BaseProvider,
   txHashes: string[],
   cache: Map<string, string>,
 ): Promise<void> {
@@ -169,7 +169,7 @@ async function loadTxOrigins(
  * pass at the last good cursor (resumes next pass).
  */
 async function ingestPool(
-  provider: ethers.providers.JsonRpcProvider,
+  provider: ethers.providers.BaseProvider,
   chainId: number,
   pool: string,
   startBlock: number,
@@ -257,7 +257,7 @@ const Q96 = 2 ** 96
  * fails (a genuine RPC failure the caller treats as "resume next pass"). Never fabricates.
  */
 async function getLogsAdaptive(
-  provider: ethers.providers.JsonRpcProvider,
+  provider: ethers.providers.BaseProvider,
   filter: { address: string; topics: (string | string[])[] },
   fromBlock: number,
   toBlock: number,
@@ -295,7 +295,7 @@ function scanStartBlock(chainId: number, latest: number, backfill: number, envVa
  * Persists each pool's metadata (real on-chain token reads) to v3_pools. Chunked + resumable + error-safe.
  */
 async function discoverV3Pools(
-  provider: ethers.providers.JsonRpcProvider,
+  provider: ethers.providers.BaseProvider,
   chainId: number,
   chain: ChainConfig,
   latest: number,
@@ -362,7 +362,7 @@ async function discoverV3Pools(
 
 /** Scan one v3 pool's Swap logs start..latest, chunked + resumable. Mirrors the v2 ingestPool loop. */
 async function ingestV3Pool(
-  provider: ethers.providers.JsonRpcProvider,
+  provider: ethers.providers.BaseProvider,
   chainId: number,
   pool: string,
   startBlock: number,
@@ -426,7 +426,7 @@ async function ingestV3Pool(
  * (volume + price history). Error-safe per pool.
  */
 async function ingestV3ForChain(
-  provider: ethers.providers.JsonRpcProvider,
+  provider: ethers.providers.BaseProvider,
   chainId: number,
   chain: ChainConfig,
   latest: number,
@@ -555,7 +555,7 @@ async function resolveCurrencyMeta(
  * v4_pool_state (price + accumulated TVL). Chunked + resumable + error-safe.
  */
 async function ingestV4ForChain(
-  provider: ethers.providers.JsonRpcProvider,
+  provider: ethers.providers.BaseProvider,
   chainId: number,
   chain: ChainConfig,
   latest: number,

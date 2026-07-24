@@ -62,7 +62,7 @@ const V3_FACTORY_EVENT_ABI = [
 ]
 const v3FactoryIface = new ethers.utils.Interface(V3_FACTORY_EVENT_ABI)
 
-const providerCache = new Map<number, ethers.providers.JsonRpcProvider>()
+const providerCache = new Map<number, ethers.providers.BaseProvider>()
 
 /**
  * Per-request RPC timeout (ms). ethers v5 defaults ConnectionInfo.timeout to 120_000ms, which is
@@ -77,7 +77,46 @@ const providerCache = new Map<number, ethers.providers.JsonRpcProvider>()
  */
 const RPC_TIMEOUT_MS = 8_000
 
-export function getProvider(chainId: number): ethers.providers.JsonRpcProvider {
+/**
+ * A sequential multi-endpoint RPC provider: every JSON-RPC call is tried against each endpoint in order,
+ * failing over to the next on ANY transport/server error, and only surfacing the last error if ALL
+ * endpoints fail. This is what makes a single RPC outage (e.g. the Robinhood QuickNode going down) NOT
+ * blank on-chain reads / token-logo resolution: reads transparently fall through to the public RH RPC and
+ * then blockscout's eth-rpc.
+ *
+ * WHY NOT ethers' FallbackProvider: verified 2026-07-24 that with quorum 1 it surfaces a CALL_EXCEPTION
+ * from a dead primary instead of failing over (it treats the primary's error as a terminal result). This
+ * sequential wrapper fails over deterministically. It extends StaticJsonRpcProvider (static network from
+ * the passed chainId → no per-call eth_chainId round-trip) and overrides `send`, through which every
+ * BaseProvider read (call/getLogs/getBalance/getBlockNumber/…) routes.
+ */
+class FailoverProvider extends ethers.providers.StaticJsonRpcProvider {
+  private readonly endpoints: ethers.providers.StaticJsonRpcProvider[]
+  constructor(urls: string[], chainId: number) {
+    super({ url: urls[0], timeout: RPC_TIMEOUT_MS }, chainId)
+    this.endpoints = urls.map((u) => new ethers.providers.StaticJsonRpcProvider({ url: u, timeout: RPC_TIMEOUT_MS }, chainId))
+  }
+  // oxlint-disable-next-line typescript/no-explicit-any -- matches ethers v5 JsonRpcProvider.send signature.
+  async send(method: string, params: Array<any>): Promise<any> {
+    let lastErr: unknown
+    for (const ep of this.endpoints) {
+      try {
+        return await ep.send(method, params)
+      } catch (e) {
+        lastErr = e // this endpoint failed → try the next.
+      }
+    }
+    throw lastErr
+  }
+}
+
+/** Ordered, deduped RPC endpoint list for a chain: primary (env→publicRpc), then publicRpc, then fallbacks. */
+function rpcUrlsFor(chain: ChainConfig): string[] {
+  const ordered = [resolveRpcUrl(chain), chain.publicRpc, ...(chain.fallbackRpcs ?? [])]
+  return [...new Set(ordered.map((u) => u.trim()).filter(Boolean))]
+}
+
+export function getProvider(chainId: number): ethers.providers.BaseProvider {
   const cached = providerCache.get(chainId)
   if (cached) {
     return cached
@@ -86,12 +125,13 @@ export function getProvider(chainId: number): ethers.providers.JsonRpcProvider {
   if (!chain) {
     throw new Error(`unsupported chainId ${chainId}`)
   }
-  // `chainId` passed to the provider avoids an extra eth_chainId round-trip on every call.
+  const urls = rpcUrlsFor(chain)
+  // `chainId` passed to each provider avoids an extra eth_chainId round-trip on every call.
   // `timeout` bounds every RPC call so a slow/dead RPC fails fast instead of hanging (see RPC_TIMEOUT_MS).
-  const provider = new ethers.providers.JsonRpcProvider(
-    { url: resolveRpcUrl(chain), timeout: RPC_TIMEOUT_MS },
-    chainId,
-  )
+  const provider: ethers.providers.BaseProvider =
+    urls.length <= 1
+      ? new ethers.providers.StaticJsonRpcProvider({ url: urls[0] ?? chain.publicRpc, timeout: RPC_TIMEOUT_MS }, chainId)
+      : new FailoverProvider(urls, chainId)
   providerCache.set(chainId, provider)
   return provider
 }
