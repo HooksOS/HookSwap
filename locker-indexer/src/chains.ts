@@ -105,19 +105,22 @@ export function chainName(chainId: number): string {
 // is invented; a chain absent here honestly reports zero farms.
 // ─────────────────────────────────────────────────────────────────────────────
 export const FARM_FACTORIES: Record<number, `0x${string}`[]> = {
-  // mainnet self-service suite mirrors (frontend addresses.ts)
-  4663: ["0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33"], // Robinhood
-  999: ["0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33"], // HyperEVM
-  196: ["0x7f91048007b653b088282a73d180541f9c228677"], // XLayer
-  4326: ["0xd9d4795f2a12305a12c36455adad011f2d6143ab"], // MegaETH
-  57073: ["0x144331bb4c3026d135896cafec3ae3d667f4f376"], // Ink
-  4217: ["0x250c3448278f7b71e3e9b641f2efeb6074820e25"], // Tempo
+  // UNION of the legacy no-fee StakingRewardsFactory AND the fee-enabled factory the frontend
+  // actually creates farms on (contracts/deployments/farms-fees.json). Both are indexed so no
+  // farm — old or new — is missed. (Fee factories added 2026-07-24; the UI createAndFund targets them.)
+  4663: ["0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33", "0x1b51c392de4e3d3e0ab066c5f89492ec0fcf21c3"], // Robinhood (+fee)
+  999: ["0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33", "0xef6348e9c3ed869798cd7c711837fc16d13d1488"], // HyperEVM (+fee)
+  196: ["0x7f91048007b653b088282a73d180541f9c228677", "0x7e814d843d32e683ae25144430399ed77015ee07"], // XLayer (+fee)
+  4326: ["0xd9d4795f2a12305a12c36455adad011f2d6143ab", "0x1eb902735c9d65143e4a67dc05d34fb740a682b4"], // MegaETH (+fee)
+  57073: ["0x144331bb4c3026d135896cafec3ae3d667f4f376", "0x8d26aa9d0556fd1483ad630fe9f6e21c168f2e33"], // Ink (+fee)
+  4217: ["0x250c3448278f7b71e3e9b641f2efeb6074820e25"], // Tempo (fee-farms not deployed — AA gas)
   // Sepolia (11155111) — BOTH the current (security-fixed) factory AND the
   // superseded pre-fix factory carry real test farms → index/union both
   // (contracts/deployments/sepolia-suite.json).
   11155111: [
     "0x144331bb4c3026d135896cafec3ae3d667f4f376",
     "0xb9df9afbcf909a16218285889912820c3f2c6313",
+    "0x3da293ebf0a35aeb4fcec20fd1101ed471f035a4", // fee-enabled factory (farms-fees.json)
   ],
 };
 
