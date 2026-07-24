@@ -28,6 +28,7 @@ import { isBrowserRouterEnabled } from '~/utils/env'
 const TerminalMarketsPage = lazy(() => import('~/terminal/TerminalMarketsPage'))
 const TerminalPerpsPage = lazy(() => import('~/terminal/TerminalPerpsPage'))
 const TerminalCreatePerpMarketPage = lazy(() => import('~/terminal/TerminalCreatePerpMarketPage'))
+const TerminalAdminPage = lazy(() => import('~/terminal/TerminalAdminPage'))
 const TerminalMarketDetailPage = lazy(() => import('~/terminal/TerminalMarketDetailPage'))
 const TerminalPoolsPage = lazy(() => import('~/terminal/TerminalPoolsPage'))
 const TerminalPositionsPage = lazy(() => import('~/terminal/TerminalPositionsPage'))
@@ -369,6 +370,18 @@ export const routes: RouteDefinition[] = [
     getElement: () => (
       <Suspense fallback={null}>
         <TerminalCreatePerpMarketPage />
+      </Suspense>
+    ),
+  }),
+  // Hidden operator console (served at admin.hookswap.org) — NOT in the public nav.
+  // Reads live perps state + generates treasury-Safe batches for owner-only admin actions.
+  createRouteDefinition({
+    path: '/admin',
+    getTitle: () => 'HookSwap Perps Admin',
+    getDescription: () => StaticTitlesAndDescriptions.SwapDescription,
+    getElement: () => (
+      <Suspense fallback={null}>
+        <TerminalAdminPage />
       </Suspense>
     ),
   }),
