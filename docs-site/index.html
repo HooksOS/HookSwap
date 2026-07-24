@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script>(function(){try{var t=localStorage.getItem('hookswap-docs-theme')||'dark';document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','dark')}})()</script>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>HookSwap Docs</title>
@@ -36,6 +37,15 @@
     --display:'Space Grotesk',var(--sans);
     --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
   }
+  /* Dark scheme (DEFAULT) — matches the app's DAYSIGNAL dark tokens. */
+  :root[data-theme="dark"]{
+    --ink:#E6EAE0; --slate:#9AA28F; --faint:#6E7666;
+    --mist:#0E120C; --panel:#171B13; --line:#2A2F25; --line2:#222820; --white:#141812;
+    --green:#38E07B; --green-deep:#3DDC7F; --up:#38E07B; --down:#F0524A;
+    --green-bg:#122A1B; --green-border:#1F5637; --btn-ink:#0B0E08;
+  }
+  .theme-toggle{background:none;border:1px solid var(--line);border-radius:999px;width:30px;height:30px;cursor:pointer;font-size:14px;line-height:1;color:var(--ink);display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-right:12px;transition:border-color .12s}
+  .theme-toggle:hover{border-color:var(--green)}
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
   body{margin:0;font-family:var(--sans);font-size:15px;line-height:1.65;color:var(--ink);background:var(--mist);-webkit-font-smoothing:antialiased}
@@ -157,6 +167,7 @@
   </a>
   <span class="tab">Docs</span>
   <span class="right">
+    <button id="theme-toggle" type="button" aria-label="Toggle light/dark theme" class="theme-toggle">🌙</button>
     <a href="https://hookswap.org" target="_blank" rel="noopener">Open App →</a>
   </span>
 </header>
@@ -461,6 +472,9 @@ function route(){
 }
 window.addEventListener('hashchange', route);
 route();
+
+// Theme toggle — dark is the default; choice persisted. Boot-applied in <head> (no flash).
+(function(){var b=document.getElementById('theme-toggle');if(!b)return;function upd(){b.textContent=document.documentElement.getAttribute('data-theme')==='dark'?'☀️':'🌙';}upd();b.addEventListener('click',function(){var cur=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',cur);try{localStorage.setItem('hookswap-docs-theme',cur);}catch(e){}upd();});})();
 </script>
 </body>
 </html>
