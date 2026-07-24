@@ -17,11 +17,7 @@ import { formatUnits, parseUnits } from 'viem'
 import { useBalance } from 'wagmi'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
-import {
-  BRIDGE_APP_FEE_LABEL,
-  HOOKSWAP_TREASURY,
-  RELAY_NATIVE_ADDRESS,
-} from '~/terminal/bridge/addresses'
+import { RELAY_NATIVE_ADDRESS } from '~/terminal/bridge/addresses'
 import { chainLabel, isHookSwapChain, useBridgeChains } from '~/terminal/bridge/chains'
 import {
   fetchRelayCurrencies,
@@ -582,8 +578,6 @@ export function BridgeScreen(): JSX.Element {
   const rateValue = quote?.details?.rate
     ? `1 ${fromToken?.symbol ?? ''} = ${Number(quote.details.rate).toLocaleString('en-US', { maximumFractionDigits: 8 })} ${toToken?.symbol ?? ''}`
     : '—'
-  const app = quote?.fees?.app
-  const feeValue = app?.amountFormatted
     ? `${Number(app.amountFormatted).toLocaleString('en-US', { maximumFractionDigits: 8 })} ${app.currency?.symbol ?? ''}${app.amountUsd ? ` ($${Number(app.amountUsd).toFixed(2)})` : ''}`
     : '—'
   const relayer = quote?.fees?.relayer
@@ -668,7 +662,7 @@ export function BridgeScreen(): JSX.Element {
             Bridge
           </h1>
           <p style={{ margin: '6px 0 0', fontSize: 13.5, color: terminalColors.ink2, lineHeight: 1.5 }}>
-            Move assets across chains via Relay. HookSwap chains are pinned as destinations. Fee {BRIDGE_APP_FEE_LABEL}.
+            Move assets across chains via Relay. HookSwap chains are pinned as destinations. No HookSwap fee.
           </p>
         </div>
 
@@ -817,7 +811,6 @@ export function BridgeScreen(): JSX.Element {
             >
               <ReceiptRow label="You receive" value={receiveValue} />
               <ReceiptRow label="Rate" value={rateValue} />
-              <ReceiptRow label={`HookSwap fee (${BRIDGE_APP_FEE_LABEL})`} value={feeValue} valueColor={terminalColors.greenDeep} />
               <ReceiptRow label="Relayer fee" value={relayerValue} />
               <ReceiptRow label="Price impact" value={impactValue} valueColor={impactColor} />
               <ReceiptRow label="Est. time" value={timeValue} last />
@@ -873,7 +866,7 @@ export function BridgeScreen(): JSX.Element {
 
         {/* Trust footer */}
         <div style={{ marginTop: 14, textAlign: 'center', fontFamily: MONO, fontSize: 10.5, color: terminalColors.faint }}>
-          Powered by Relay · fees to {shortenAddr(HOOKSWAP_TREASURY)}
+          Powered by Relay
         </div>
       </div>
     </div>

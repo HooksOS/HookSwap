@@ -151,7 +151,8 @@
     "https://trading.hookswap.org",
     "https://data.hookswap.org",
     "wss://*.hookswap.org",
-    "https://robinhoodchain.blockscout.com"
+    "https://robinhoodchain.blockscout.com",
+    "https://api.relay.link"
   ],
   "workerSrc": [
     "'self'",

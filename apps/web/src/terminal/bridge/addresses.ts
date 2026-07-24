@@ -46,12 +46,16 @@ export const BRIDGE_FEE_RECIPIENT = HOOKSWAP_DEPLOYER
  * The param is wired and the fee is quoted/withheld transparently regardless; the
  * dashboard registration only affects payout routing on Relay's side.
  */
-export const BRIDGE_APP_FEE_BPS = 50
+export const BRIDGE_APP_FEE_BPS = 0
 
 /** Human-readable fee percentage for the UI, e.g. "0.50%". */
 export const BRIDGE_APP_FEE_LABEL = `${(BRIDGE_APP_FEE_BPS / 100).toFixed(2)}%`
 
-/** Relay `appFees` payload for a bridge quote — the HookSwap fee to the treasury. */
+/**
+ * Relay `appFees` payload for a bridge quote. HookSwap charges NO app fee (Reggie, 2026-07-23),
+ * so this returns an empty array — no `appFees` are attached to the quote. To re-enable a fee,
+ * set BRIDGE_APP_FEE_BPS > 0 and return `[{ recipient: BRIDGE_FEE_RECIPIENT, fee: String(BRIDGE_APP_FEE_BPS) }]`.
+ */
 export function buildAppFees(): Array<{ recipient: string; fee: string }> {
-  return [{ recipient: BRIDGE_FEE_RECIPIENT, fee: String(BRIDGE_APP_FEE_BPS) }]
+  return []
 }
