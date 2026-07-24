@@ -17,6 +17,7 @@
  * Nothing here invents a schedule, price, amount or date.
  */
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router'
 import { ExplorerDataType } from 'uniswap/src/utils/linking'
 import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
@@ -231,15 +232,23 @@ const mobileStatGridStyle: React.CSSProperties = {
   gap: 8,
 }
 
+/** Stops a row's deep-link navigation firing when an inner explorer link is clicked. */
+function StopClick({ children }: { children: React.ReactNode }): JSX.Element {
+  return <span onClick={(e) => e.stopPropagation()}>{children}</span>
+}
+
 function ScheduleRow({ s }: { s: VestingSchedule }): JSX.Element {
   const [hover, setHover] = useState(false)
   const isMobile = useIsMobileViewport()
+  const navigate = useNavigate()
+  // Each row deep-links to the shareable per-schedule detail page (`/vesting/:chainId/:scheduleId`).
+  const goToSchedule = (): void => navigate(`/vesting/${s.chainId}/${s.id}`)
 
   // Mobile: stacked card — identity + % vested bar full-width on top, stats as a
   // label→value chip grid below (no hover-only affordances).
   if (isMobile) {
     return (
-      <div style={{ ...rowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 12 }}>
+      <div onClick={goToSchedule} style={{ ...rowStyle, flexDirection: 'column', alignItems: 'stretch', gap: 12, cursor: 'pointer' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
           <LedgerAvatar
             seed={s.token.addr}
@@ -249,21 +258,23 @@ function ScheduleRow({ s }: { s: VestingSchedule }): JSX.Element {
           />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-              <ExplorerAddress
-                address={s.token.addr}
-                chainId={s.chainId}
-                type={ExplorerDataType.TOKEN}
-                label={s.token.symbol || undefined}
-                fontSize={13.5}
-                fontWeight={600}
-                style={{ letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis' }}
-              />
+              <StopClick>
+                <ExplorerAddress
+                  address={s.token.addr}
+                  chainId={s.chainId}
+                  type={ExplorerDataType.TOKEN}
+                  label={s.token.symbol || undefined}
+                  fontSize={13.5}
+                  fontWeight={600}
+                  style={{ letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                />
+              </StopClick>
               <StatusPill status={s.status} />
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.ink3 }}>{s.chainName}</span>
               <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
-                to <ExplorerAddress address={s.beneficiary} chainId={s.chainId} fontSize={11} />
+                to <StopClick><ExplorerAddress address={s.beneficiary} chainId={s.chainId} fontSize={11} /></StopClick>
               </span>
               <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
                 {s.cliff > 0 ? `cliff ${fmtDate(s.cliffTime)} · ` : ''}ends {fmtDate(s.endTime)}
@@ -295,10 +306,12 @@ function ScheduleRow({ s }: { s: VestingSchedule }): JSX.Element {
 
   return (
     <div
+      onClick={goToSchedule}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
         ...rowStyle,
+        cursor: 'pointer',
         transform: hover ? 'translateY(-2px)' : undefined,
         boxShadow: hover ? '0 8px 22px -14px rgba(11,15,20,.28)' : undefined,
         borderColor: hover ? terminalColors.greenBorder : terminalColors.line,

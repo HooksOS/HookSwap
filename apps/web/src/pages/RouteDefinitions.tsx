@@ -38,6 +38,7 @@ const TerminalBridgePage = lazy(() => import('~/terminal/TerminalBridgePage'))
 const TerminalMultisenderPage = lazy(() => import('~/terminal/TerminalMultisenderPage'))
 const TerminalCreateTokenPage = lazy(() => import('~/terminal/TerminalCreateTokenPage'))
 const TerminalVestingPage = lazy(() => import('~/terminal/TerminalVestingPage'))
+const TerminalVestingDetailPage = lazy(() => import('~/terminal/TerminalVestingDetailPage'))
 const TerminalFarmsPage = lazy(() => import('~/terminal/TerminalFarmsPage'))
 const TerminalFarmDetailPage = lazy(() => import('~/terminal/TerminalFarmDetailPage'))
 const TerminalAirdropPage = lazy(() => import('~/terminal/TerminalAirdropPage'))
@@ -448,6 +449,16 @@ export const routes: RouteDefinition[] = [
     getElement: () => (
       <Suspense fallback={null}>
         <TerminalVestingPage />
+      </Suspense>
+    ),
+  }),
+  createRouteDefinition({
+    path: '/vesting/:chainId/:scheduleId',
+    getTitle: () => 'Vesting schedule · HookSwap',
+    getDescription: () => 'View a HookSwap token vesting schedule — live vested / claimable amounts, the release curve, and claim.',
+    getElement: () => (
+      <Suspense fallback={null}>
+        <TerminalVestingDetailPage />
       </Suspense>
     ),
   }),
