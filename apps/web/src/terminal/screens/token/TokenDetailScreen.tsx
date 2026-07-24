@@ -33,6 +33,7 @@
  */
 import type { MultichainToken } from '@uniswap/client-data-api/dist/data/v1/types_pb'
 import type { Currency } from '@uniswap/sdk-core'
+import { Token } from '@uniswap/sdk-core'
 import { GraphQLApi } from '@universe/api'
 import { useMemo, useState } from 'react'
 import { Helmet } from 'react-helmet-async/lib/index'
@@ -394,6 +395,43 @@ function TokenDetailScreenBody(): JSX.Element {
   const tokenCurrency = useCurrency({ address, chainId })
   const nativeCurrency = useMemo(() => (chainId !== undefined ? nativeOnChain(chainId) : undefined), [chainId])
 
+  // Build THIS token as a real sdk-core `Token` DIRECTLY from the data-api token meta this
+  // page already resolved (chainId + address + decimals + symbol + name — the SAME feed
+  // driving the header/price above). This is what makes the inline trade ticket + chart
+  // usable with NO connected wallet (a public shareable page): `useCurrency` above resolves
+  // a launch token that's in no token list via an ON-CHAIN decimals/symbol read through the
+  // connected chain's provider — with no wallet on that chain it never resolves, which left
+  // the ticket stuck on "Resolving …". So `useCurrency` is only an enhancement (logo,
+  // canonical metadata) and NEVER a blocker; the data-api-built token is the guaranteed one.
+  const dataApiToken = useMemo((): Token | undefined => {
+    if (chainId === undefined || !address || !token) {
+      return undefined
+    }
+    const target = address.toLowerCase()
+    const chainToken = token.chainTokens.find(
+      (ct) => ct.chainId === chainId && ct.address?.toLowerCase() === target,
+    )
+    if (!chainToken?.address) {
+      return undefined
+    }
+    try {
+      return new Token(
+        chainId,
+        chainToken.address,
+        // data-api resolves decimals from chain; 18 only as a last-resort default when unset.
+        chainToken.decimals || 18,
+        token.symbol || undefined,
+        token.name || undefined,
+      )
+    } catch {
+      return undefined
+    }
+  }, [token, chainId, address])
+
+  // Prefer the richer list/on-chain-resolved currency when available; else fall back to the
+  // data-api-built token so the ticket + chart render + are usable without a wallet.
+  const tradeToken = tokenCurrency ?? dataApiToken
+
   // Which Trades/Holders/Info tab is active below the chart.
   const [detailTab, setDetailTab] = useState<'trades' | 'holders' | 'info'>('trades')
 
@@ -633,13 +671,13 @@ function TokenDetailScreenBody(): JSX.Element {
           {/* Reuse the swap desk's live price-chart panel (native ↔ token, 1H/1D/1W/1M/1Y tabs,
               honest empty state). Driven purely by currency props — no swap store needed here. */}
           <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', order: isMobile ? 2 : 0 }}>
-            <TerminalChartPanel inputCurrency={nativeCurrency} outputCurrency={tokenCurrency} />
+            <TerminalChartPanel inputCurrency={nativeCurrency} outputCurrency={tradeToken} />
           </div>
           {/* The embedded, EXECUTING Buy/Sell ticket — mounts the real swap-engine provider stack
               pre-filled with native ↔ this token and submits through TerminalSwapReviewFlow. */}
           <div style={{ flex: isMobile ? '1 1 auto' : '0 0 344px', minWidth: 0, order: isMobile ? 1 : 0 }}>
             {chainId !== undefined ? (
-              <TokenTradeTicket chainId={chainId} token={tokenCurrency} tokenSymbol={symbol} />
+              <TokenTradeTicket chainId={chainId} token={tradeToken} tokenSymbol={symbol} />
             ) : null}
           </div>
         </div>

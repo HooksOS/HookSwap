@@ -110,7 +110,7 @@ function routeLabelFromTrade(activeTrade: unknown): string | undefined {
       hops
         .map((h) => (h as { type?: string })?.type)
         .map((t) => (t === 'v2-pool' ? 'V2' : t === 'v3-pool' ? 'V3' : t === 'v4-pool' ? 'V4' : undefined))
-        .filter((v): v is string => Boolean(v)),
+        .filter((v): v is 'V2' | 'V3' | 'V4' => Boolean(v)),
     ),
   )
   if (versions.length === 0) {
@@ -716,7 +716,7 @@ export function TokenTradeTicket({
   // Default = Buy: pay native → receive this token.
   const prefilledState = useSwapPrefilledState({
     input: currencyToAsset(native),
-    output: currencyToAsset(token),
+    output: currencyToAsset(token ?? undefined),
     exactAmountToken: '',
     exactCurrencyField: CurrencyField.INPUT,
   })

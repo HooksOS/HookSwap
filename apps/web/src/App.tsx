@@ -48,7 +48,10 @@ function isTerminalLayoutPath(pathname: string): boolean {
     pathname === '/locker' ||
     pathname.startsWith('/lock/') ||
     pathname === '/multisender' ||
-    pathname === '/token/new' ||
+    // All `/token/*` pages (create-token `/token/new` + the shareable token detail
+    // page `/token/:chainId/:address`) mount their OWN TerminalChrome, so App must NOT
+    // wrap them in a second one — doing so double-stacks the nav + TOKEN FEED strip.
+    pathname.startsWith('/token/') ||
     pathname === '/vesting' ||
     pathname === '/farms' ||
     pathname === '/airdrop' ||
