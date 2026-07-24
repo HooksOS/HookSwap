@@ -20,9 +20,11 @@
  */
 import { useState } from 'react'
 import { getChainInfo } from 'uniswap/src/features/chains/chainInfo'
+import type { UniverseChainId } from 'uniswap/src/features/chains/types'
 import { formatUnits, type Address } from '~/chains'
 import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
+import { SwitchChainButton } from '~/terminal/components/SwitchChainButton'
 import { useCreateFarm } from '~/terminal/farms/useCreateFarm'
 import { terminalColors } from '~/terminal/theme/tokens'
 import {
@@ -61,6 +63,7 @@ export function CreateFarmWizard({
   owner,
   connected,
   onConnect,
+  switchTarget,
 }: {
   deployed: boolean
   chainLabel: string
@@ -68,6 +71,7 @@ export function CreateFarmWizard({
   owner: Address | undefined
   connected: boolean
   onConnect: () => void
+  switchTarget?: UniverseChainId
 }): JSX.Element {
   const [stakingToken, setStakingToken] = useState('')
   const [rewardToken, setRewardToken] = useState('')
@@ -171,6 +175,12 @@ export function CreateFarmWizard({
     return (
       <InstrumentPanel title="CREATE A FARM" meta={['not deployed']}>
         <NotDeployedNote chainLabel={chainLabel} />
+        {switchTarget !== undefined ? (
+          <SwitchChainButton
+            target={switchTarget}
+            note="Farms are live on other HookSwap chains — switch networks to launch a farm now."
+          />
+        ) : null}
       </InstrumentPanel>
     )
   }

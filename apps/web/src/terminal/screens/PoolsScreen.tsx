@@ -53,8 +53,9 @@ import { ExploreTablesFilterStoreContextProvider } from '~/features/Explore/stat
 import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens'
 import { useAccount } from '~/hooks/useAccount'
 import { shortAddr } from '~/terminal/components/ExplorerAddress'
+import { pickSwitchTargetChain, supportedChainIdsFromMap, SwitchChainButton } from '~/terminal/components/SwitchChainButton'
 import { AddLiquidityModal } from '~/terminal/pools/AddLiquidityModal'
-import { getPoolAddresses } from '~/terminal/pools/addresses'
+import { getPoolAddresses, POOL_ADDRESSES } from '~/terminal/pools/addresses'
 import { useCreateV2Pool } from '~/terminal/pools/useCreateV2Pool'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
@@ -477,6 +478,8 @@ function PoolsScreenBody(): JSX.Element {
 
   const poolAddrs = getPoolAddresses(chainId)
   const chainReady = Boolean(poolAddrs)
+  // No v2 stack wired on this chain but one IS elsewhere → offer a one-click switch.
+  const switchTarget = chainReady ? undefined : pickSwitchTargetChain(supportedChainIdsFromMap(POOL_ADDRESSES), chainId)
   const wrappedNative = chainId ? WRAPPED_NATIVE_CURRENCY[chainId] : undefined
 
   // Base token options (dedup by symbol). PRIMARY: the active chain's static common-bases
@@ -1020,6 +1023,13 @@ function PoolsScreenBody(): JSX.Element {
             >
               {primaryLabel}
             </button>
+
+            {!chainReady && switchTarget !== undefined ? (
+              <SwitchChainButton
+                target={switchTarget}
+                note="Pool creation is live on other HookSwap chains — switch networks to seed a pool now."
+              />
+            ) : null}
 
             {create.isDone ? (
               <div style={{ marginTop: 10 }}>

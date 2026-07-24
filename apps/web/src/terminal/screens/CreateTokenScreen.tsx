@@ -26,7 +26,8 @@ import { useAccount } from '~/hooks/useAccount'
 import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
-import { getTokenFactoryAddress } from '~/terminal/tokenfactory/addresses'
+import { pickSwitchTargetChain, supportedChainIdsFromMap, SwitchChainButton } from '~/terminal/components/SwitchChainButton'
+import { getTokenFactoryAddress, TOKEN_FACTORY_ADDRESSES } from '~/terminal/tokenfactory/addresses'
 import { useCreateToken } from '~/terminal/tokenfactory/useCreateToken'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { assume0xAddress } from '~/utils/wagmi'
@@ -222,6 +223,9 @@ export function CreateTokenScreen(): JSX.Element {
   const deployed = Boolean(factory)
   const chainLabel = getChainLabel(chainId)
 
+  // When the factory isn't on this chain but IS live elsewhere, offer a one-click switch.
+  const switchTarget = deployed ? undefined : pickSwitchTargetChain(supportedChainIdsFromMap(TOKEN_FACTORY_ADDRESSES), chainId)
+
   const [name, setName] = useState('')
   const [symbol, setSymbol] = useState('')
   const [decimalsInput, setDecimalsInput] = useState('18')
@@ -369,7 +373,15 @@ export function CreateTokenScreen(): JSX.Element {
         <div style={{ flex: '1 1 340px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <Panel title="01 · Token details" meta={deployed ? undefined : ['not deployed']}>
             {!deployed ? (
-              <NotDeployedNote chainLabel={chainLabel} />
+              <>
+                <NotDeployedNote chainLabel={chainLabel} />
+                {switchTarget !== undefined ? (
+                  <SwitchChainButton
+                    target={switchTarget}
+                    note="The token factory is live on other HookSwap chains — switch networks to launch a token now."
+                  />
+                ) : null}
+              </>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>

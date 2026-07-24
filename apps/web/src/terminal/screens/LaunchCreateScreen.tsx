@@ -17,9 +17,11 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { UniverseChainId } from 'uniswap/src/features/chains/types'
+import { isUniverseChainId } from 'uniswap/src/features/chains/utils'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
 import { Eyebrow } from '~/terminal/components/InstrumentPanel'
+import { pickSwitchTargetChain, SwitchChainButton } from '~/terminal/components/SwitchChainButton'
 import { DEFAULT_ENGINE_ID, getEngine, type LaunchEngineId } from '~/terminal/launchpad/engines'
 import { LaunchEnginePicker } from '~/terminal/launchpad/LaunchEnginePicker'
 import { BondingCurveEngine } from '~/terminal/launchpad/engines/BondingCurveEngine'
@@ -40,6 +42,14 @@ export function LaunchCreateScreen(): JSX.Element {
 
   const [engineId, setEngineId] = useState<LaunchEngineId>(DEFAULT_ENGINE_ID)
   const engine = getEngine(engineId)
+
+  // If the selected engine isn't deployed on the connected chain but IS live elsewhere
+  // (SDK-derived `supportedChains`), offer a one-click switch. The engine panel keeps its own
+  // honest "not deployed / Robinhood only" copy; this just makes the network actionable.
+  const engineAvailable = engine.resolveAvailability(chainId).available
+  const launchSwitchTarget = engineAvailable
+    ? undefined
+    : pickSwitchTargetChain(engine.supportedChains.filter(isUniverseChainId), chainId)
 
   const onConnect = (): void => accountDrawer.open()
   const engineProps = { chainId, connected, owner, onConnect }
@@ -89,6 +99,14 @@ export function LaunchCreateScreen(): JSX.Element {
 
       {/* Selected engine identity + panel */}
       <EngineIntro pill={engine.pill} description={engine.description} />
+
+      {launchSwitchTarget !== undefined ? (
+        <SwitchChainButton
+          target={launchSwitchTarget}
+          note={`${engine.label} isn't deployed on your connected network — switch to a chain where it's live to launch.`}
+          style={{ marginBottom: 16, maxWidth: 420 }}
+        />
+      ) : null}
 
       {engineId === 'fairV3' ? (
         <FairLaunchV3Engine {...engineProps} />

@@ -32,6 +32,8 @@ export const AIRDROP_FACTORY_ADDRESSES: Partial<Record<UniverseChainId, Address>
   [UniverseChainId.Tempo]: '0x144331bb4c3026d135896cafec3ae3d667f4f376',
   // Stable (988) — contracts/deployments/stable.json .suite.merkleDistributorFactory (on-chain code verified).
   [UniverseChainId.Stable]: '0x3b5a01efc59f3465b8eb04697f97cfe0ba700d9d',
+  // Sepolia (11155111) — contracts/deployments/sepolia-suite.json .contracts.merkleDistributorFactory.
+  [UniverseChainId.Sepolia]: '0xa87a98a930d90fb8e68d497afe3ade02b949fc10',
 }
 
 /**

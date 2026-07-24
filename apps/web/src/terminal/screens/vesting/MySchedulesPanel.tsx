@@ -9,7 +9,9 @@
  * Honest states throughout: not-deployed → COMING SOON, disconnected → connect prompt,
  * loading → skeleton cards, empty → honest empty, error → retry. Nothing fabricated.
  */
+import type { UniverseChainId } from 'uniswap/src/features/chains/types'
 import { InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
+import { SwitchChainButton } from '~/terminal/components/SwitchChainButton'
 import { VestingScheduleCard } from '~/terminal/screens/vesting/VestingScheduleCard'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { type Address } from '~/chains'
@@ -139,6 +141,7 @@ export function MySchedulesPanel({
   chainId,
   owner,
   onConnect,
+  switchTarget,
 }: {
   deployed: boolean
   connected: boolean
@@ -146,6 +149,7 @@ export function MySchedulesPanel({
   chainId?: number
   owner: Address | undefined
   onConnect: () => void
+  switchTarget?: UniverseChainId
 }): JSX.Element {
   const isMobile = useIsMobileViewport()
   const schedules = useMySchedules({ chainId, owner })
@@ -165,7 +169,17 @@ export function MySchedulesPanel({
 
   const body = ((): JSX.Element => {
     if (!deployed) {
-      return <NotDeployedNote chainLabel={chainLabel} />
+      return (
+        <>
+          <NotDeployedNote chainLabel={chainLabel} />
+          {switchTarget !== undefined ? (
+            <SwitchChainButton
+              target={switchTarget}
+              note="Vesting is live on other HookSwap chains — switch networks to view and claim schedules there."
+            />
+          ) : null}
+        </>
+      )
     }
     if (!connected) {
       return <ConnectState onConnect={onConnect} />

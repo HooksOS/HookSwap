@@ -30,8 +30,9 @@ import { useAccount } from '~/hooks/useAccount'
 import { ExplorerAddress, shortAddr } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
+import { pickSwitchTargetChain, supportedChainIdsFromMap, SwitchChainButton } from '~/terminal/components/SwitchChainButton'
 import { MAX_PER_TX, useMultisend, type MultisendEntry } from '~/terminal/multisender/useMultisend'
-import { getDisperseAddress } from '~/terminal/multisender/addresses'
+import { DISPERSE_ADDRESSES, getDisperseAddress } from '~/terminal/multisender/addresses'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { assume0xAddress } from '~/utils/wagmi'
 
@@ -349,6 +350,9 @@ export function MultisenderScreen(): JSX.Element {
   const deployed = Boolean(disperse)
   const chainLabel = getChainLabel(chainId)
 
+  // Disperse isn't deployed here but IS live on other HookSwap chains → offer a switch.
+  const switchTarget = deployed ? undefined : pickSwitchTargetChain(supportedChainIdsFromMap(DISPERSE_ADDRESSES), chainId)
+
   // Token options from the active chain's static common-bases (includes native).
   const baseOptions: TokenOption[] = useMemo(() => {
     const out: TokenOption[] = []
@@ -544,7 +548,15 @@ export function MultisenderScreen(): JSX.Element {
         <div style={{ flex: '1 1 340px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <InstrumentPanel title="01 · Token" meta={deployed ? undefined : ['not deployed']}>
             {!deployed ? (
-              <NotDeployedNote chainLabel={chainLabel} />
+              <>
+                <NotDeployedNote chainLabel={chainLabel} />
+                {switchTarget !== undefined ? (
+                  <SwitchChainButton
+                    target={switchTarget}
+                    note="Batch send is live on other HookSwap chains — switch networks to send now."
+                  />
+                ) : null}
+              </>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>

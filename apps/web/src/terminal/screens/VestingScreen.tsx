@@ -26,6 +26,7 @@
 import { useState } from 'react'
 import { getChainInfo } from 'uniswap/src/features/chains/chainInfo'
 import { useEnabledChains } from 'uniswap/src/features/chains/hooks/useEnabledChains'
+import type { UniverseChainId } from 'uniswap/src/features/chains/types'
 import { getChainLabel } from 'uniswap/src/features/chains/utils'
 import { useReadContract } from 'wagmi'
 import { formatUnits, type Address } from '~/chains'
@@ -34,12 +35,13 @@ import { useAccount } from '~/hooks/useAccount'
 import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
+import { pickSwitchTargetChain, supportedChainIdsFromMap, SwitchChainButton } from '~/terminal/components/SwitchChainButton'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { MySchedulesPanel } from '~/terminal/screens/vesting/MySchedulesPanel'
 import { VestingExplore } from '~/terminal/screens/vesting/VestingExplore'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { vestingManagerAbi } from '~/terminal/vesting/abis'
-import { getVestingAddress } from '~/terminal/vesting/addresses'
+import { getVestingAddress, VESTING_ADDRESSES } from '~/terminal/vesting/addresses'
 import { useCreateVesting } from '~/terminal/vesting/useCreateVesting'
 import { useMySchedules } from '~/terminal/vesting/useMySchedules'
 import { assume0xAddress } from '~/utils/wagmi'
@@ -379,6 +381,7 @@ function CreateTab({
   onConnect,
   nativeSymbol,
   nativeDecimals,
+  switchTarget,
 }: {
   manager: Address | undefined
   chainLabel: string
@@ -388,6 +391,7 @@ function CreateTab({
   onConnect: () => void
   nativeSymbol?: string
   nativeDecimals?: number
+  switchTarget?: UniverseChainId
 }): JSX.Element {
   const deployed = Boolean(manager)
 
@@ -501,7 +505,15 @@ function CreateTab({
       <div style={{ flex: '1 1 380px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
         <InstrumentPanel title="SCHEDULE DETAILS" corners meta={deployed ? undefined : ['not deployed']}>
           {!deployed ? (
-            <NotDeployedNote chainLabel={chainLabel} />
+            <>
+              <NotDeployedNote chainLabel={chainLabel} />
+              {switchTarget !== undefined ? (
+                <SwitchChainButton
+                  target={switchTarget}
+                  note="Vesting is live on other HookSwap chains — switch networks to create a schedule now."
+                />
+              ) : null}
+            </>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
@@ -656,6 +668,8 @@ export function VestingScreen(): JSX.Element {
 
   const manager = getVestingAddress(chainId)
   const deployed = Boolean(manager)
+  // Manager isn't on this chain but IS live elsewhere → offer a one-click switch.
+  const switchTarget = deployed ? undefined : pickSwitchTargetChain(supportedChainIdsFromMap(VESTING_ADDRESSES), chainId)
 
   // Registry-wide schedule count (real read) — "—" until deployed.
   const countRead = useReadContract({
@@ -797,6 +811,7 @@ export function VestingScreen(): JSX.Element {
           chainId={chainId}
           owner={owner}
           onConnect={onConnect}
+          switchTarget={switchTarget}
         />
       ) : tab === 'create' ? (
         <CreateTab
@@ -808,6 +823,7 @@ export function VestingScreen(): JSX.Element {
           onConnect={onConnect}
           nativeSymbol={native?.symbol}
           nativeDecimals={native?.decimals}
+          switchTarget={switchTarget}
         />
       ) : (
         <VestingExplore />

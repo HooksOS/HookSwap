@@ -36,11 +36,13 @@ import { formatUnits, type Address } from '~/chains'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
 import { merkleDistributorFactoryAbi } from '~/terminal/airdrop/abis'
-import { getAirdropFactory } from '~/terminal/airdrop/addresses'
+import { AIRDROP_FACTORY_ADDRESSES, getAirdropFactory } from '~/terminal/airdrop/addresses'
 import { useClaimAirdrop, useCreateAirdrop, type ClaimsFile } from '~/terminal/airdrop/useAirdrop'
 import { ExplorerAddress, shortAddr } from '~/terminal/components/ExplorerAddress'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
+import { pickSwitchTargetChain, supportedChainIdsFromMap, SwitchChainButton } from '~/terminal/components/SwitchChainButton'
+import type { UniverseChainId } from 'uniswap/src/features/chains/types'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { assume0xAddress } from '~/utils/wagmi'
 import '~/terminal/theme/terminal.css'
@@ -394,6 +396,7 @@ function CreateTab({
   connected,
   owner,
   onConnect,
+  switchTarget,
 }: {
   create: ReturnType<typeof useCreateAirdrop>
   token: string
@@ -405,6 +408,7 @@ function CreateTab({
   connected: boolean
   owner?: Address
   onConnect: () => void
+  switchTarget?: UniverseChainId
 }): JSX.Element {
   const deployed = create.ready
   const symbolLabel = create.tokenSymbol ?? (create.validToken ? '…' : '—')
@@ -501,7 +505,15 @@ function CreateTab({
       <div style={{ flex: '1 1 360px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <InstrumentPanel title="TOKEN & RECIPIENTS" corners meta={deployed ? undefined : ['not deployed']}>
           {!deployed ? (
-            <NotDeployedNote chainLabel={chainLabel} />
+            <>
+              <NotDeployedNote chainLabel={chainLabel} />
+              {switchTarget !== undefined ? (
+                <SwitchChainButton
+                  target={switchTarget}
+                  note="Airdrops are live on other HookSwap chains — switch networks to create one now."
+                />
+              ) : null}
+            </>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
@@ -627,6 +639,7 @@ function ClaimTab({
   chainId,
   owner,
   onConnect,
+  switchTarget,
 }: {
   deployed: boolean
   connected: boolean
@@ -634,6 +647,7 @@ function ClaimTab({
   chainId?: number
   owner?: Address
   onConnect: () => void
+  switchTarget?: UniverseChainId
 }): JSX.Element {
   const [distributor, setDistributor] = useState('')
   const [claimsFile, setClaimsFile] = useState<ClaimsFile | undefined>(undefined)
@@ -723,7 +737,15 @@ function ClaimTab({
       <div style={{ flex: '1 1 360px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <InstrumentPanel title="AIRDROP" corners meta={deployed ? undefined : ['not deployed']}>
           {!deployed ? (
-            <NotDeployedNote chainLabel={chainLabel} />
+            <>
+              <NotDeployedNote chainLabel={chainLabel} />
+              {switchTarget !== undefined ? (
+                <SwitchChainButton
+                  target={switchTarget}
+                  note="This airdrop's chain has HookSwap airdrops live — switch networks to claim there."
+                />
+              ) : null}
+            </>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
@@ -851,6 +873,8 @@ export function AirdropScreen(): JSX.Element {
 
   const factory = getAirdropFactory(chainId)
   const deployed = Boolean(factory)
+  // Factory isn't on this chain but IS live elsewhere → offer a one-click switch.
+  const switchTarget = deployed ? undefined : pickSwitchTargetChain(supportedChainIdsFromMap(AIRDROP_FACTORY_ADDRESSES), chainId)
 
   const create = useCreateAirdrop({ chainId, owner, token, csv })
 
@@ -945,6 +969,7 @@ export function AirdropScreen(): JSX.Element {
           connected={connected}
           owner={owner}
           onConnect={onConnect}
+          switchTarget={switchTarget}
         />
       ) : (
         <ClaimTab
@@ -954,6 +979,7 @@ export function AirdropScreen(): JSX.Element {
           chainId={chainId}
           owner={owner}
           onConnect={onConnect}
+          switchTarget={switchTarget}
         />
       )}
     </div>

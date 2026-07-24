@@ -31,6 +31,8 @@ export const TOKEN_FACTORY_ADDRESSES: Partial<Record<UniverseChainId, Address>> 
   [UniverseChainId.Tempo]: '0x7effe9dd68035f43ad43ae6c31bc1a47ab4579d0',
   // Stable (988) — contracts/deployments/stable.json .suite.tokenFactory (on-chain code verified).
   [UniverseChainId.Stable]: '0x86426094d82bC1fd40F0901965b23D30837Dc66b',
+  // Sepolia (11155111) — contracts/deployments/sepolia-suite.json .contracts.tokenFactory.
+  [UniverseChainId.Sepolia]: '0xf248c369c125094cdb95e8abee095c11758c8f14',
 }
 
 /**

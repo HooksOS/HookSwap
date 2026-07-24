@@ -32,6 +32,9 @@ export const VESTING_ADDRESSES: Partial<Record<UniverseChainId, Address>> = {
   [UniverseChainId.Tempo]: '0xd08e609277ecb0b7e2ef15df5c1fb11436627a63',
   // Stable (988) — contracts/deployments/stable.json .suite.vestingManager (on-chain code verified).
   [UniverseChainId.Stable]: '0xb5a7bf488f2407479e116f713f116546f67c803b',
+  // Sepolia (11155111) — contracts/deployments/sepolia-suite.json .contracts.vestingManager
+  // (2026-07-14 security-fix redeploy; supersedes pre-fix 0xb92598…).
+  [UniverseChainId.Sepolia]: '0x250c3448278f7b71e3e9b641f2efeb6074820e25',
 }
 
 /**

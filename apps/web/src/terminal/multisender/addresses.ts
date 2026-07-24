@@ -29,6 +29,9 @@ export const DISPERSE_ADDRESSES: Partial<Record<UniverseChainId, Address>> = {
   [UniverseChainId.Tempo]: '0xd9d4795f2a12305a12c36455adad011f2d6143ab',
   // Stable (988) — contracts/deployments/stable.json .suite.disperse (on-chain code verified).
   [UniverseChainId.Stable]: '0xd96fc9629afaf325fcdd7f98dc9b8dc2165adcbb',
+  // Sepolia (11155111) — contracts/deployments/sepolia-suite.json .contracts.multisender_Disperse
+  // (2026-07-14 security-fix redeploy; supersedes pre-fix 0xa24cd888…).
+  [UniverseChainId.Sepolia]: '0xd9d4795f2a12305a12c36455adad011f2d6143ab',
 }
 
 /**

@@ -11,10 +11,12 @@
  * that would revert. `useFarmList` supplies the discovery pick-list from the
  * factory's `allFarms()` registry.
  */
+import type { UniverseChainId } from 'uniswap/src/features/chains/types'
 import { formatUnits, type Address } from '~/chains'
 import { ExplorerAddress, shortAddr } from '~/terminal/components/ExplorerAddress'
 import { InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
+import { SwitchChainButton } from '~/terminal/components/SwitchChainButton'
 import { useFarm, useFarmList } from '~/terminal/farms/useFarm'
 import { terminalColors } from '~/terminal/theme/tokens'
 import {
@@ -40,6 +42,7 @@ export function FarmsManage({
   chainId,
   owner,
   onConnect,
+  switchTarget,
   selectedFarm,
   setSelectedFarm,
   farm,
@@ -54,6 +57,7 @@ export function FarmsManage({
   chainId?: number
   owner: Address | undefined
   onConnect: () => void
+  switchTarget?: UniverseChainId
   selectedFarm: string
   setSelectedFarm: (v: string) => void
   farm: ReturnType<typeof useFarm>
@@ -68,6 +72,12 @@ export function FarmsManage({
     return (
       <InstrumentPanel title="FARMS" meta={['not deployed']}>
         <NotDeployedNote chainLabel={chainLabel} />
+        {switchTarget !== undefined ? (
+          <SwitchChainButton
+            target={switchTarget}
+            note="Farms are live on other HookSwap chains — switch networks to stake now."
+          />
+        ) : null}
       </InstrumentPanel>
     )
   }

@@ -34,8 +34,9 @@ import { useEnabledChains } from 'uniswap/src/features/chains/hooks/useEnabledCh
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
 import { Eyebrow } from '~/terminal/components/InstrumentPanel'
+import { pickSwitchTargetChain, supportedChainIdsFromMap } from '~/terminal/components/SwitchChainButton'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
-import { getFarmFactory } from '~/terminal/farms/addresses'
+import { FARM_FACTORY_ADDRESSES, getFarmFactory } from '~/terminal/farms/addresses'
 import { useFarm, useFarmList } from '~/terminal/farms/useFarm'
 import { CreateFarmWizard } from '~/terminal/screens/farms/CreateFarmWizard'
 import { FarmsExplore } from '~/terminal/screens/farms/FarmsExplore'
@@ -70,6 +71,8 @@ export function FarmsScreen(): JSX.Element {
 
   const factory = getFarmFactory(chainId)
   const deployed = Boolean(factory)
+  // Factory isn't on this chain but IS live elsewhere → offer a one-click switch.
+  const switchTarget = deployed ? undefined : pickSwitchTargetChain(supportedChainIdsFromMap(FARM_FACTORY_ADDRESSES), chainId)
 
   // Farm registry (real read) — drives the header "total farms" chip.
   const list = useFarmList({ chainId })
@@ -159,6 +162,7 @@ export function FarmsScreen(): JSX.Element {
           owner={owner}
           connected={connected}
           onConnect={onConnect}
+          switchTarget={switchTarget}
         />
       ) : (
         <FarmsManage
@@ -168,6 +172,7 @@ export function FarmsScreen(): JSX.Element {
           chainId={chainId}
           owner={owner}
           onConnect={onConnect}
+          switchTarget={switchTarget}
           selectedFarm={selectedFarm}
           setSelectedFarm={setSelectedFarm}
           farm={farm}
