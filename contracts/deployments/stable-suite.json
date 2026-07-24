@@ -1,5 +1,5 @@
 {
-  "_note": "STABLE MAINNET (chainId 988, USDT0 native gas) HookSwap self-service suite. Deployer 0xc14C897c6bff88a5Eeac31F795693b9230205125. PENDING — not yet broadcast. Verification: not verified yet (no explorer API key; explorer https://stablescan.xyz).",
+  "_note": "STABLE MAINNET (chainId 988, USDT0 native gas) HookSwap self-service suite. Deployer 0xc14C897c6bff88a5Eeac31F795693b9230205125. PENDING \u2014 not yet broadcast. Verification: not verified yet (no explorer API key; explorer https://stablescan.xyz).",
   "chainId": 988,
   "network": "stable",
   "deployer": "0xc14C897c6bff88a5Eeac31F795693b9230205125",
@@ -11,8 +11,14 @@
     "vestingManager": "TBD"
   },
   "contractParams": {
-    "tokenFactory": { "createFee": "0", "feeReceiver": "0xc14C897c6bff88a5Eeac31F795693b9230205125" },
-    "vestingManager": { "vestingFee": "0", "feeReceiver": "0xc14C897c6bff88a5Eeac31F795693b9230205125" }
+    "tokenFactory": {
+      "createFee": "0",
+      "feeReceiver": "0xc14C897c6bff88a5Eeac31F795693b9230205125"
+    },
+    "vestingManager": {
+      "vestingFee": "0",
+      "feeReceiver": "0xc14C897c6bff88a5Eeac31F795693b9230205125"
+    }
   },
   "deployTx": {
     "multisender_Disperse": "TBD",
@@ -21,5 +27,5 @@
     "tokenFactory": "TBD",
     "vestingManager": "TBD"
   },
-  "_status": "PENDING — awaiting USDT0 gas funding on 988; all addresses TBD until broadcast"
+  "_status": "DEPLOYED \u2014 addresses verified on-chain 2026-07-24 (cast code, codesize>0). Superseded stale 'PENDING' status; canonical record is contracts/deployments/stable.json. Explorer source-verification still pending (no stablescan API key)."
 }

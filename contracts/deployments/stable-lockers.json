@@ -1,1 +1,12 @@
-{ "chain":"stable","chainId":988,"deployer":"0xc14C897c6bff88a5Eeac31F795693b9230205125","lockFeeWei":"40000000000000000","lockFeeNative":"0.04","lockFeeNote":"0.04 native USDT0 (18-dec). Adjustable via setLockFee (onlyOwner) post-deploy.","feeReceiver":"0xc14C897c6bff88a5Eeac31F795693b9230205125","tokenLockerManager":"TBD","v3PositionLocker":"TBD","_status":"PENDING — awaiting USDT0 gas funding on 988; all addresses TBD until broadcast" }
+{
+  "chain": "stable",
+  "chainId": 988,
+  "deployer": "0xc14C897c6bff88a5Eeac31F795693b9230205125",
+  "lockFeeWei": "40000000000000000",
+  "lockFeeNative": "0.04",
+  "lockFeeNote": "0.04 native USDT0 (18-dec). Adjustable via setLockFee (onlyOwner) post-deploy.",
+  "feeReceiver": "0xc14C897c6bff88a5Eeac31F795693b9230205125",
+  "tokenLockerManager": "0x250c3448278f7b71e3e9b641f2efeb6074820e25",
+  "v3PositionLocker": "0x144331bb4c3026d135896cafec3ae3d667f4f376",
+  "_status": "DEPLOYED \u2014 addresses verified on-chain 2026-07-24 (cast code, codesize>0). Superseded stale 'PENDING' status; canonical record is contracts/deployments/stable.json. Explorer source-verification still pending (no stablescan API key)."
+}

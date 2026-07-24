@@ -1,1 +1,10 @@
-{ "chain":"stable","chainId":988,"referralRouter":"TBD","defaultFeeBps":30,"feeAdmin":"0xc14C897c6bff88a5Eeac31F795693b9230205125","swapRouter02Wired":false,"swapRouter02WiredNote":"set true once constructor arg = stable.json swapRouter02 is filled from the real deploy","_status":"PENDING — awaiting USDT0 gas funding on 988; all addresses TBD until broadcast" }
+{
+  "chain": "stable",
+  "chainId": 988,
+  "referralRouter": "0x7EFFe9DD68035f43ad43aE6C31bc1a47Ab4579D0",
+  "defaultFeeBps": 30,
+  "feeAdmin": "0xc14C897c6bff88a5Eeac31F795693b9230205125",
+  "swapRouter02Wired": false,
+  "swapRouter02WiredNote": "set true once constructor arg = stable.json swapRouter02 is filled from the real deploy",
+  "_status": "DEPLOYED \u2014 addresses verified on-chain 2026-07-24 (cast code, codesize>0). Superseded stale 'PENDING' status; canonical record is contracts/deployments/stable.json. Explorer source-verification still pending (no stablescan API key)."
+}
