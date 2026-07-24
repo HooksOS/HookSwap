@@ -501,6 +501,12 @@
     opacity: 0.35;
   }
 }
+/* Spinner for the Terminal swap-review CTA / loading states. */
+@keyframes tm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .tm-panel__title {
   font-family: var(--tm-font-mono);
   font-size: 11px;

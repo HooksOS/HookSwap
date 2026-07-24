@@ -70,10 +70,10 @@ import {
 import { SwapFormWarningStoreContextProvider } from 'uniswap/src/features/transactions/swap/form/stores/swapFormWarningStore/SwapFormWarningStoreContextProvider'
 import { useOnReviewPress } from 'uniswap/src/features/transactions/swap/components/SwapFormButton/hooks/useOnReviewPress'
 import { useSwapOnPrevious } from 'uniswap/src/features/transactions/swap/review/hooks/useSwapOnPrevious'
-import {
-  SwapReviewScreen,
-  SwapReviewScreenProviders,
-} from 'uniswap/src/features/transactions/swap/review/SwapReviewScreen/SwapReviewScreen'
+import { validColor } from 'ui/src/theme'
+import { SwapReviewScreenProviders } from 'uniswap/src/features/transactions/swap/review/SwapReviewScreen/SwapReviewScreen'
+import { TerminalSwapReviewScreen } from '~/terminal/screens/swap/TerminalSwapReview'
+import { resolveTerminalColor } from '~/terminal/theme/tokens'
 import { activePlanStore } from 'uniswap/src/features/transactions/swap/review/stores/activePlan/activePlanStore'
 import { ActivePlanUpdater } from 'uniswap/src/features/transactions/swap/review/stores/activePlan/ActivePlanUpdater'
 import { SwapDependenciesStoreContext } from 'uniswap/src/features/transactions/swap/stores/swapDependenciesStore/SwapDependenciesStoreContext'
@@ -157,19 +157,33 @@ function TerminalCurrentScreen({
         flips true) but only mount `SwapReviewScreen` once we're actually on Review.
       */}
       <SwapReviewScreenProviders hideContent={false} onSubmitSwap={onSubmitSwap}>
+        {/*
+          Terminal chrome: the shared web Modal still owns open/close animation, the
+          scrim, mobile bottom-sheet adaptation, and telemetry (name=SwapReview). We
+          only recolor the card to the DAYSIGNAL surface (`--t-bg`), sharpen the
+          corners, and drop padding so the Terminal review body paints edge-to-edge.
+          The BODY is our Terminal-native `TerminalSwapReviewScreen` — the shared
+          `SwapReviewScreen` and its children are left untouched so other consumers
+          (the stock web SwapFlow) are unaffected.
+        */}
         <Modal
           height="auto"
           alignment={isWebApp ? 'center' : 'top'}
           isModalOpen={screen === TransactionScreen.Review}
           isDismissible={!isSubmitting}
           name={ModalName.SwapReview}
-          padding="$spacing12"
+          maxWidth={424}
+          backgroundColor={validColor(resolveTerminalColor('bg'))}
+          borderColor={validColor(resolveTerminalColor('line'))}
+          borderWidth={1}
+          borderRadius={14}
+          padding="$none"
           gap={0}
           onClose={onPrev}
         >
           {screen === TransactionScreen.Review && (
             <Trace logImpression section={SectionName.SwapReview}>
-              <SwapReviewScreen />
+              <TerminalSwapReviewScreen />
             </Trace>
           )}
         </Modal>
