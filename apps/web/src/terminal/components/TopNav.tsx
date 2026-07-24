@@ -4,6 +4,7 @@ import { ChainLogo } from '~/components/Logo/ChainLogo'
 import { HookLogo } from '~/terminal/components/HookLogo'
 import { ChainInfo } from '~/terminal/components/TopBar'
 import { TerminalNavId } from '~/terminal/config/screens'
+import { useTerminalTheme } from '~/terminal/theme/theme'
 import { terminalColors, terminalFonts, terminalTokenGradients } from '~/terminal/theme/tokens'
 
 /**
@@ -293,6 +294,7 @@ export function TopNav({
   actions,
 }: TopNavProps): JSX.Element {
   const settingsActive = activeId === 'settings'
+  const { theme, toggle } = useTerminalTheme()
   return (
     <div
       style={{
@@ -301,8 +303,9 @@ export function TopNav({
         zIndex: 40,
         height: 64,
         boxSizing: 'border-box',
-        // Desk command bar: translucent white on paper + blur, crisp hairline.
-        background: 'rgba(255,255,255,.86)',
+        // Desk command bar: translucent card surface on the page + blur, crisp hairline.
+        // color-mix keeps the ~86% translucency theme-aware (was hardcoded white).
+        background: `color-mix(in srgb, ${terminalColors.bg} 86%, transparent)`,
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
         borderBottom: `1px solid ${terminalColors.line}`,
@@ -391,6 +394,56 @@ export function TopNav({
           <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke={terminalColors.faint} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M6 9l6 6 6-6" />
           </svg>
+        </button>
+
+        {/* Theme toggle (sun/moon) — dark is the default; flips to light */}
+        <button
+          type="button"
+          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+          onClick={toggle}
+          style={{
+            ...FIELD_BASE,
+            justifyContent: 'center',
+            width: 36,
+            height: 36,
+            padding: 0,
+            cursor: 'pointer',
+            background: terminalColors.panel,
+          }}
+        >
+          {theme === 'dark' ? (
+            // Sun — click to go light
+            <svg
+              width={16}
+              height={16}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={terminalColors.ink2}
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx={12} cy={12} r={4} />
+              <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+            </svg>
+          ) : (
+            // Moon — click to go dark
+            <svg
+              width={16}
+              height={16}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={terminalColors.ink2}
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+            </svg>
+          )}
         </button>
 
         {/* Settings gear */}

@@ -16,7 +16,7 @@
  */
 import { useEffect, useMemo, useRef } from 'react'
 import type { LedgerStack } from '~/terminal/components/ledgerPerChain'
-import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { resolveCssColor, resolveTerminalColor, terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
 export interface TvlPoint {
   /** X-axis label (the snapshot's UTC date). */
@@ -100,8 +100,12 @@ export function LedgerTvlChart({
       ctx.scale(dpr, dpr)
       ctx.clearRect(0, 0, width, height)
 
+      // Canvas can't parse var(--t-*) — resolve the active theme's real hex.
+      const cLine2 = resolveTerminalColor('line2')
+      const cGreen = resolveTerminalColor('brandGreen')
+
       // Faint horizontal grid — drawn even when empty (the chart well).
-      ctx.strokeStyle = terminalColors.line2
+      ctx.strokeStyle = cLine2
       ctx.lineWidth = 1
       for (let g = 1; g < 4; g++) {
         const y = (height / 4) * g
@@ -145,9 +149,11 @@ export function LedgerTvlChart({
             ctx.lineTo(px(i), py(baseline[i]))
           }
           ctx.closePath()
+          // Per-series color may be a var(--t-*) token — resolve to real hex for canvas.
+          const sColor = resolveCssColor(s.color)
           ctx.save()
           ctx.globalAlpha = 0.55
-          ctx.fillStyle = s.color
+          ctx.fillStyle = sColor
           ctx.fill()
           ctx.restore()
           // Crisp top edge.
@@ -156,7 +162,7 @@ export function LedgerTvlChart({
           for (let i = 1; i < n; i++) {
             ctx.lineTo(px(i), py(top[i]))
           }
-          ctx.strokeStyle = s.color
+          ctx.strokeStyle = sColor
           ctx.lineWidth = 1.5
           ctx.lineJoin = 'round'
           ctx.stroke()
@@ -209,7 +215,7 @@ export function LedgerTvlChart({
       for (let i = 1; i < n; i++) {
         ctx.lineTo(px(i), py(series[i].value))
       }
-      ctx.strokeStyle = terminalColors.brandGreen
+      ctx.strokeStyle = cGreen
       ctx.lineWidth = 2
       ctx.lineJoin = 'round'
       ctx.stroke()
@@ -224,13 +230,18 @@ export function LedgerTvlChart({
       ctx.fill()
       ctx.beginPath()
       ctx.arc(ex, ey, 3.2, 0, Math.PI * 2)
-      ctx.fillStyle = terminalColors.brandGreen
+      ctx.fillStyle = cGreen
       ctx.fill()
     }
 
     draw()
     window.addEventListener('resize', draw)
-    return () => window.removeEventListener('resize', draw)
+    // Redraw with the new palette when the theme toggles (canvas can't reflow CSS vars).
+    window.addEventListener('hookswap-theme-change', draw)
+    return () => {
+      window.removeEventListener('resize', draw)
+      window.removeEventListener('hookswap-theme-change', draw)
+    }
   }, [series, height, stack, stackValid])
 
   // In stacked mode the empty state shows when there's nothing real to draw.

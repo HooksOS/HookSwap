@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { resolveTerminalColor, terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { EMPTY } from '~/terminal/screens/perps/perpsCatalog'
 
 const MONO = terminalFonts.mono
@@ -48,8 +48,13 @@ export function PerpsChart({ candles = [], height = 360 }: { candles?: Candle[];
       ctx.scale(dpr, dpr)
       ctx.clearRect(0, 0, width, height)
 
+      // Canvas can't parse var(--t-*) — resolve the active theme's real hexes.
+      const cLine2 = resolveTerminalColor('line2')
+      const cGreen = resolveTerminalColor('brandGreen')
+      const cRed = resolveTerminalColor('redDown')
+
       // Faint horizontal grid — drawn even when empty (the chart well).
-      ctx.strokeStyle = terminalColors.line2
+      ctx.strokeStyle = cLine2
       ctx.lineWidth = 1
       for (let g = 1; g < 5; g++) {
         const y = (height / 5) * g
@@ -73,7 +78,7 @@ export function PerpsChart({ candles = [], height = 360 }: { candles?: Candle[];
       candles.forEach((c, i) => {
         const cx = i * bw + bw / 2
         const up = c.c >= c.o
-        const col = up ? terminalColors.brandGreen : terminalColors.redDown
+        const col = up ? cGreen : cRed
         ctx.strokeStyle = col
         ctx.fillStyle = col
         ctx.lineWidth = 1
@@ -89,7 +94,12 @@ export function PerpsChart({ candles = [], height = 360 }: { candles?: Candle[];
 
     draw()
     window.addEventListener('resize', draw)
-    return () => window.removeEventListener('resize', draw)
+    // Redraw with the new palette when the theme toggles (canvas can't reflow CSS vars).
+    window.addEventListener('hookswap-theme-change', draw)
+    return () => {
+      window.removeEventListener('resize', draw)
+      window.removeEventListener('hookswap-theme-change', draw)
+    }
   }, [candles, height])
 
   const last = candles.length ? candles[candles.length - 1] : undefined

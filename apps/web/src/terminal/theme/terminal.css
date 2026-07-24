@@ -85,41 +85,144 @@
   src: local('IBM Plex Mono SemiBold'), url('/fonts/IBMPlexMono-SemiBold.woff2') format('woff2');
 }
 
+/* ---------------------------------------------------- THEME PALETTES ------
+   Single source of truth for every Terminal color, as `--t-*` custom properties
+   on the document root so they (a) switch instantly when `data-theme` flips on
+   <html>, and (b) are readable from canvas via getComputedStyle(document
+   .documentElement) (see theme/tokens.ts `resolveTerminalColor`).
+
+   DARK is the product DEFAULT: it lives on bare `:root` (no attribute) AND on
+   `:root[data-theme='dark']`, so with no stored preference the page paints dark
+   with zero JS — no flash. `:root[data-theme='light']` reproduces the current
+   DAYSIGNAL LIGHT palette byte-for-byte (values copied verbatim from tokens.ts),
+   so toggling to light is identical to today's look.
+
+   tokens.ts `terminalColors.*` are `var(--t-*)` references, so the ~85 inline-
+   style consumers resolve the active theme automatically with no per-file edits.
+   -------------------------------------------------------------------------- */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  /* Text / ink — near-white with a faint warm-green cast */
+  --t-ink: #e8ece2;
+  --t-ink-2: #adb5a4;
+  --t-ink-3: #7e8676;
+  --t-ink-3-alt: #7e8676;
+  --t-faint: #676e60;
+  /* Lines / dividers — one step up from the surfaces they sit on */
+  --t-line: #2a3124;
+  --t-line-2: #232a1e;
+  --t-line-3: #1c2218;
+  /* Surfaces — deep near-black-green page, raised green-charcoal cards */
+  --t-bg: #1e241a; /* cards, top bar, active pills (most elevated) */
+  --t-bg-app: #0d100c; /* main content / page background (deepest) */
+  --t-panel: #14190f; /* inputs, rail bg, chart wells */
+  --t-panel-2: #171d14; /* segmented-control track, chips */
+  --t-panel-2-alt: #1b2217; /* segmented-control track, chips (alt) */
+  /* Brand green — acid green tuned brighter for legibility on dark */
+  --t-brand-green: #33ce79; /* primary buttons, active accent */
+  --t-green-deep: #4bd689; /* green text / links */
+  --t-green-up: #3fd782; /* positive values */
+  --t-green-bg: #12271a; /* green badge / surface well */
+  --t-green-border: #2c6b45; /* green card border */
+  --t-btn-ink: #08110a; /* dark ink on the bright-green button fill */
+  /* Red / negative — light coral so it reads on dark */
+  --t-red-down: #ff6b5e;
+  --t-red-bg: #2c1310;
+  /* Warn — gold brightened for dark */
+  --t-warn: #e0a93a;
+  --t-warn-bg: #2a2110;
+  --t-warn-bg-alt: #2b2012;
+  /* Accents (categories / token icons) — brightened for dark contrast */
+  --t-accent-indigo: #7c8bff;
+  --t-accent-blue: #5aa0ff;
+  --t-accent-purple: #a98be6;
+  --t-accent-pink: #f06a93;
+  --t-accent-teal: #34c7be;
+  /* Rail-specific */
+  --t-rail-icon-inactive: #676e60;
+  --t-rail-wallet-sub: #676e60;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  /* DAYSIGNAL LIGHT — verbatim from tokens.ts (today's look, unchanged) */
+  --t-ink: #12160f;
+  --t-ink-2: #3c4235;
+  --t-ink-3: #69705f;
+  --t-ink-3-alt: #69705f;
+  --t-faint: #98a08c;
+  --t-line: #dfe2d8;
+  --t-line-2: #e6e8df;
+  --t-line-3: #edefe7;
+  --t-bg: #ffffff;
+  --t-bg-app: #f2f4ec;
+  --t-panel: #f6f8f1;
+  --t-panel-2: #eef1ea;
+  --t-panel-2-alt: #eaece4;
+  --t-brand-green: #0c8a42;
+  --t-green-deep: #0c8a42;
+  --t-green-up: #0c8a42;
+  --t-green-bg: #e9f7ef;
+  --t-green-border: #bfe6cd;
+  --t-btn-ink: #ffffff;
+  --t-red-down: #c0291f;
+  --t-red-bg: #fbeae8;
+  --t-warn: #b98a1e;
+  --t-warn-bg: #fbf3e2;
+  --t-warn-bg-alt: #fbf1e5;
+  --t-accent-indigo: #4b5cf0;
+  --t-accent-blue: #2e7cf6;
+  --t-accent-purple: #7a52c8;
+  --t-accent-pink: #d63d6a;
+  --t-accent-teal: #0f9a92;
+  --t-rail-icon-inactive: #98a08c;
+  --t-rail-wallet-sub: #98a08c;
+}
+
+/* Match the page backdrop to the terminal surface so overscroll / rubber-band
+   areas never flash the host app's default background in either theme. Scoped
+   to `[data-theme]`, which only the Terminal boot sets. */
+:root[data-theme] body {
+  background: var(--t-bg-app);
+}
+
 /* --------------------------------------------------------- CSS variables -- */
 
 .tm-root {
-  /* Colors — DAYSIGNAL LIGHT THEME (mirrors tokens.ts; roles preserved) */
-  --tm-ink: #12160f;
-  --tm-ink-2: #3c4235;
-  --tm-ink-3: #69705f;
-  --tm-ink-3-alt: #69705f;
-  --tm-faint: #98a08c;
-  --tm-line: #dfe2d8;
-  --tm-line-2: #e6e8df;
-  --tm-line-3: #edefe7;
-  --tm-bg: #ffffff;
-  --tm-bg-app: #f2f4ec;
-  --tm-panel: #f6f8f1;
-  --tm-panel-2: #eef1ea;
-  --tm-panel-2-alt: #eaece4;
-  --tm-brand-green: #0c8a42;
-  --tm-green-deep: #0c8a42;
-  --tm-green-up: #0c8a42;
-  --tm-green-bg: #e9f7ef;
-  --tm-green-border: #bfe6cd;
-  --tm-btn-ink: #ffffff;
-  --tm-red-down: #c0291f;
-  --tm-red-bg: #fbeae8;
-  --tm-warn: #b98a1e;
-  --tm-warn-bg: #fbf3e2;
-  --tm-warn-bg-alt: #fbf1e5;
-  --tm-accent-indigo: #4b5cf0;
-  --tm-accent-blue: #2e7cf6;
-  --tm-accent-purple: #7a52c8;
-  --tm-accent-pink: #d63d6a;
-  --tm-accent-teal: #0f9a92;
-  --tm-rail-icon-inactive: #98a08c;
-  --tm-rail-wallet-sub: #98a08c;
+  /* Colors — resolve to the active theme via the `--t-*` palette above.
+     Role names/keys preserved so every existing `--tm-*` consumer is untouched. */
+  --tm-ink: var(--t-ink);
+  --tm-ink-2: var(--t-ink-2);
+  --tm-ink-3: var(--t-ink-3);
+  --tm-ink-3-alt: var(--t-ink-3-alt);
+  --tm-faint: var(--t-faint);
+  --tm-line: var(--t-line);
+  --tm-line-2: var(--t-line-2);
+  --tm-line-3: var(--t-line-3);
+  --tm-bg: var(--t-bg);
+  --tm-bg-app: var(--t-bg-app);
+  --tm-panel: var(--t-panel);
+  --tm-panel-2: var(--t-panel-2);
+  --tm-panel-2-alt: var(--t-panel-2-alt);
+  --tm-brand-green: var(--t-brand-green);
+  --tm-green-deep: var(--t-green-deep);
+  --tm-green-up: var(--t-green-up);
+  --tm-green-bg: var(--t-green-bg);
+  --tm-green-border: var(--t-green-border);
+  --tm-btn-ink: var(--t-btn-ink);
+  --tm-red-down: var(--t-red-down);
+  --tm-red-bg: var(--t-red-bg);
+  --tm-warn: var(--t-warn);
+  --tm-warn-bg: var(--t-warn-bg);
+  --tm-warn-bg-alt: var(--t-warn-bg-alt);
+  --tm-accent-indigo: var(--t-accent-indigo);
+  --tm-accent-blue: var(--t-accent-blue);
+  --tm-accent-purple: var(--t-accent-purple);
+  --tm-accent-pink: var(--t-accent-pink);
+  --tm-accent-teal: var(--t-accent-teal);
+  --tm-rail-icon-inactive: var(--t-rail-icon-inactive);
+  --tm-rail-wallet-sub: var(--t-rail-wallet-sub);
 
   /* Fonts */
   --tm-font-display: 'Space Grotesk', -apple-system, system-ui, sans-serif;
@@ -557,4 +660,35 @@ button.tm-tape__item--btn:hover {
   font-size: 11px !important;
   font-weight: 600 !important;
   color: #69705f !important;
+}
+
+/* ---- DARK override for the token-selector modal ----
+   The dialog portals to <body> (outside .tm-root), so the light remap above is
+   its default. When the Terminal is in dark mode, re-map the same Tamagui theme
+   vars to the dark palette so the modal matches the app. Scoped by the root
+   `data-theme` attribute, which reaches the portaled dialog via <html>. */
+:root[data-theme='dark'] .is_DialogContent:has([data-testid='explore-search-input']) {
+  --surface1: #1e241a;
+  --background: #1e241a;
+  --surface2: #14190f;
+  --surface1Hovered: #232a1e;
+  --surface2Hovered: #171d14;
+  --surface3: #2a3124;
+  --surface3Solid: #2a3124;
+  --neutral1: #e8ece2;
+  --neutral2: #adb5a4;
+  --neutral3: #7e8676;
+  --accent1: #33ce79;
+  --accent2: rgba(51, 206, 121, 0.16);
+  background: #1e241a !important;
+  border: 1px solid #2a3124 !important;
+  box-shadow: 0 40px 90px -20px rgba(0, 0, 0, 0.6) !important;
+}
+:root[data-theme='dark']
+  .is_DialogContent:has([data-testid='explore-search-input'])
+  [data-testid^='section-header-'],
+:root[data-theme='dark']
+  .is_DialogContent:has([data-testid='explore-search-input'])
+  [data-testid^='section-header-'] * {
+  color: #7e8676 !important;
 }

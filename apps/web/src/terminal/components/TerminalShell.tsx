@@ -6,6 +6,7 @@ import { TopNav } from '~/terminal/components/TopNav'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { terminalColors } from '~/terminal/theme/tokens'
 import '~/terminal/theme/terminal.css'
+import '~/terminal/theme/theme' // boot: apply stored/default (dark) theme pre-paint
 
 export interface TerminalShellProps {
   /** Navigation configuration (active screen, nav handler, live wallet stats). */

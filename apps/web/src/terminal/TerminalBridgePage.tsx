@@ -104,7 +104,8 @@ export default function TerminalBridgePage(): JSX.Element {
           height: 64,
           boxSizing: 'border-box',
           // DAYSIGNAL sticky translucent header: paper (bgApp) at ~82% alpha + blur.
-          background: `${terminalColors.bgApp}D1`,
+          // color-mix keeps the alpha theme-aware (bgApp is now a var(--t-*) ref).
+          background: `color-mix(in srgb, ${terminalColors.bgApp} 82%, transparent)`,
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
           borderBottom: `1px solid ${terminalColors.line}`,

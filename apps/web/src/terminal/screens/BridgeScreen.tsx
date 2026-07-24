@@ -578,8 +578,6 @@ export function BridgeScreen(): JSX.Element {
   const rateValue = quote?.details?.rate
     ? `1 ${fromToken?.symbol ?? ''} = ${Number(quote.details.rate).toLocaleString('en-US', { maximumFractionDigits: 8 })} ${toToken?.symbol ?? ''}`
     : '—'
-    ? `${Number(app.amountFormatted).toLocaleString('en-US', { maximumFractionDigits: 8 })} ${app.currency?.symbol ?? ''}${app.amountUsd ? ` ($${Number(app.amountUsd).toFixed(2)})` : ''}`
-    : '—'
   const relayer = quote?.fees?.relayer
   const relayerValue = relayer?.amountUsd
     ? `$${Number(relayer.amountUsd).toFixed(2)}`

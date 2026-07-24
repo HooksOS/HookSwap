@@ -86,6 +86,7 @@ import { HOOKSWAP_LINKS } from '~/terminal/config/screens'
 import { useCaptureRef } from '~/terminal/referral/useCaptureRef'
 import { isHiddenTokenSymbol, pairHasHiddenToken } from '~/terminal/utils/hiddenTokens'
 import '~/terminal/theme/terminal.css'
+import '~/terminal/theme/theme' // boot: apply stored/default (dark) theme pre-paint
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { formatRelativeTime } from '~/terminal/utils/time'
 import type { PoolStat } from '~/types/explore'
@@ -615,7 +616,8 @@ function Header({
         zIndex: 30,
         height: 64,
         // DAYSIGNAL sticky translucent header: paper (bgApp) at ~82% alpha + blur.
-        background: `${terminalColors.bgApp}D1`,
+        // color-mix keeps the alpha theme-aware (bgApp is now a var(--t-*) ref).
+        background: `color-mix(in srgb, ${terminalColors.bgApp} 82%, transparent)`,
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
         borderBottom: `1px solid ${terminalColors.line}`,
