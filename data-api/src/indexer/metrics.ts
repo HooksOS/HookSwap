@@ -255,7 +255,8 @@ export function getPriceHistory(
  * stablecoin-per-native for a chain (e.g. USDG per WETH on Robinhood), from the wrapped-native/
  * stablecoin v2 pool's latest Sync reserves, decimal-adjusted (honoring the stablecoin's real
  * decimals via the pool's stored decimals0/decimals1). Returns `undefined` when:
- *   - the chain has no `stablecoin` configured (RH-only for now; other chains stay undefined),
+ *   - the chain has no `stablecoin` configured (now set for 4663 USDG / 4326 USDm / 57073 USD₮0 /
+ *     999 USDC / 988 USDT0 — all on-chain-verified seeded pools; a chain without one stays undefined),
  *   - no ingested pool pairs {wrappedNative, stablecoin} (the anchor pool isn't seeded/indexed yet),
  *   - the anchor pool has no stored Sync, or either side's reserve is zero.
  * Never fabricated. The single number every other USD value multiplies by.

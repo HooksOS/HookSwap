@@ -70,6 +70,8 @@ interface CacheEntry {
   metadataURI: string
   /** resolved image URL, or undefined for an honest "no logo". */
   logoUrl?: string
+  /** socials/description parsed from a JSON metadataURI, or undefined when none were present. */
+  socials?: TokenSocials
 }
 
 /** Resolved (terminal) results keyed by `${chainId}:${addressLower}`. Also the "already resolved" marker. */
@@ -102,6 +104,68 @@ function imageFromJson(json: unknown): string | undefined {
   return /^https?:\/\//i.test(normalized) ? normalized : undefined
 }
 
+/** Social / description fields captured from a token's metadata JSON — every field optional, never fabricated. */
+export interface TokenSocials {
+  description?: string
+  twitter?: string
+  website?: string
+  telegram?: string
+}
+
+/** A first non-empty string among the given keys of a metadata JSON object, trimmed. */
+function pickString(obj: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = obj[k]
+    if (typeof v === 'string' && v.trim() !== '') {
+      return v.trim()
+    }
+  }
+  return undefined
+}
+
+/** Normalize a social handle/URL to a full https URL for the given platform, or undefined if unusable. */
+function normalizeSocial(raw: string | undefined, base: string): string | undefined {
+  if (!raw) {
+    return undefined
+  }
+  const t = raw.trim()
+  if (/^https?:\/\//i.test(t)) {
+    return t
+  }
+  // Bare handle (`@name` or `name`) → platform URL.
+  const handle = t.replace(/^@/, '')
+  if (!handle || /\s/.test(handle)) {
+    return undefined
+  }
+  return `${base}${handle}`
+}
+
+/**
+ * Extract socials/description from a parsed metadata JSON. Accepts both flat fields
+ * (`twitter`, `website`, `description`) and a nested `{ links: {...} }` / `{ socials: {...} }` object,
+ * the common shapes token metadata JSONs use. Missing fields stay undefined — never invented.
+ */
+function socialsFromJson(json: unknown): TokenSocials | undefined {
+  if (!json || typeof json !== 'object') {
+    return undefined
+  }
+  const obj = json as Record<string, unknown>
+  const nested =
+    (obj.links && typeof obj.links === 'object' ? (obj.links as Record<string, unknown>) : undefined) ??
+    (obj.socials && typeof obj.socials === 'object' ? (obj.socials as Record<string, unknown>) : undefined)
+  const src: Record<string, unknown> = nested ? { ...obj, ...nested } : obj
+
+  const website = normalizeSocial(pickString(src, ['website', 'url', 'homepage', 'external_url']), 'https://')
+  const twitter = normalizeSocial(pickString(src, ['twitter', 'x', 'twitter_url']), 'https://x.com/')
+  const telegram = normalizeSocial(pickString(src, ['telegram', 'tg', 'telegram_url']), 'https://t.me/')
+  const description = pickString(src, ['description', 'about'])
+
+  if (!website && !twitter && !telegram && !description) {
+    return undefined
+  }
+  return { description, twitter, website, telegram }
+}
+
 /** fetch() with a hard timeout so a slow URI can't hang the background resolve. */
 async function fetchWithTimeout(url: string): Promise<Response> {
   const controller = new AbortController()
@@ -122,21 +186,21 @@ async function fetchWithTimeout(url: string): Promise<Response> {
  *   - anything else / any failure → undefined (no logo). Never throws for a "not an image" outcome; a
  *     network/parse error propagates to the caller, which logs + caches no-logo.
  */
-async function resolveUriToLogo(rawUri: string): Promise<string | undefined> {
+async function resolveUriToLogo(rawUri: string): Promise<{ logoUrl?: string; socials?: TokenSocials }> {
   const uri = normalizeUri(rawUri)
   if (!/^https?:\/\//i.test(uri)) {
-    return undefined
+    return {}
   }
   if (IMAGE_EXT_RE.test(uri)) {
-    return uri
+    return { logoUrl: uri }
   }
   const res = await fetchWithTimeout(uri)
   if (!res.ok) {
-    return undefined
+    return {}
   }
   const contentType = (res.headers.get('content-type') || '').toLowerCase()
   if (contentType.startsWith('image/')) {
-    return uri
+    return { logoUrl: uri }
   }
   const looksJson =
     JSON_EXT_RE.test(uri) ||
@@ -145,9 +209,10 @@ async function resolveUriToLogo(rawUri: string): Promise<string | undefined> {
     contentType.includes('text/json')
   if (looksJson) {
     const json = (await res.json()) as unknown
-    return imageFromJson(json)
+    // A full metadata JSON carries both the image and (optionally) socials/description.
+    return { logoUrl: imageFromJson(json), socials: socialsFromJson(json) }
   }
-  return undefined
+  return {}
 }
 
 /** Live read of a token's launch metadataURI. Returns '' for a non-launch token; throws on RPC error. */
@@ -176,15 +241,18 @@ async function resolveInBackground(chainId: number, launcher: string, token: str
       return
     }
     let logoUrl: string | undefined
+    let socials: TokenSocials | undefined
     try {
-      logoUrl = await resolveUriToLogo(metadataURI)
+      const resolved = await resolveUriToLogo(metadataURI)
+      logoUrl = resolved.logoUrl
+      socials = resolved.socials
     } catch (e) {
       // URI fetch/parse failure — honest no-logo (still a terminal outcome for this immutable URI).
       // eslint-disable-next-line no-console
       console.warn(`[data-api] logo: failed to resolve metadataURI for ${token} on ${chainId}: ${(e as Error).message}`)
       logoUrl = undefined
     }
-    cache.set(key, { metadataURI, logoUrl })
+    cache.set(key, { metadataURI, logoUrl, socials })
   } catch (e) {
     // RPC error reading the metadataURI — transient; do NOT cache so a later request can retry.
     // eslint-disable-next-line no-console
@@ -229,4 +297,24 @@ export function resolveTokenLogo(chainId: number, address: string): string | und
     return curated
   }
   return getLaunchpadLogo(chainId, address)
+}
+
+/**
+ * Socials/description for a launchpad token, from cache. Same non-blocking contract as the logo path: a
+ * cache miss returns `undefined` and kicks off the background resolve (the metadataURI read + JSON parse
+ * is shared with the logo resolve, so this never doubles the RPC). Returns undefined for curated / non-JSON
+ * / socials-less tokens — an honest "no socials", never fabricated.
+ */
+export function resolveTokenSocials(chainId: number, address: string): TokenSocials | undefined {
+  if (!address) {
+    return undefined
+  }
+  const key = `${chainId}:${address.toLowerCase()}`
+  const hit = cache.get(key)
+  if (hit) {
+    return hit.socials
+  }
+  // Not resolved yet — trigger the same background resolve the logo path uses, return nothing this call.
+  getLaunchpadLogo(chainId, address)
+  return undefined
 }

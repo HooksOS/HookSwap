@@ -24,6 +24,7 @@ import { ProtocolStatsRequest } from '@uniswap/client-explore/dist/uniswap/explo
 import { handleListTokens, handleListTopPools } from './handlers'
 import { handleSearchTokens } from './searchHandlers'
 import { handleProtocolStats } from './exploreStatsHandlers'
+import { resolveTokenLogo, resolveTokenSocials } from './logos'
 import { isSupportedChain } from './chains'
 import { getDb } from './indexer/schema'
 import {
@@ -41,7 +42,7 @@ import {
  * `/health` branch in server.ts. None of these contains a `.vN.` dotted segment, so they are NEVER caught
  * by server.ts's `CONNECT_SERVICE_PATH_RE = /\/[\w.]+\.v\d+\.\w+\//` (which requires `<word>.v<digit>.<word>`).
  */
-const REST_ROUTE_SUFFIXES = ['/v1/pools', '/v1/tokens', '/v1/search', '/v1/stats', '/v1/leaderboard'] as const
+const REST_ROUTE_SUFFIXES = ['/v1/pools', '/v1/tokens', '/v1/search', '/v1/stats', '/v1/leaderboard', '/v1/token-meta'] as const
 
 /** Default page size for /v1/pools when `limit` is omitted (bounds the JSON payload). */
 const DEFAULT_POOLS_LIMIT = 100
@@ -206,6 +207,38 @@ export async function handleRestRequest(req: IncomingMessage, res: ServerRespons
           metric: metricRaw,
           usdAnchored: isUsdAnchored(db, chainId),
           rows,
+        })
+        return true
+      }
+      case '/v1/token-meta': {
+        // Per-token logo + socials/description, resolved from a launchpad token's on-chain metadataURI
+        // JSON (see logos.ts). Non-blocking: a first, uncached request returns nothing and warms the cache;
+        // a follow-up returns the resolved values. Every field is optional — absent when not present in the
+        // metadata, never fabricated.
+        const { chainId, error } = parseChainId(params)
+        if (error) {
+          sendJson(res, 400, { error })
+          return true
+        }
+        if (chainId === undefined) {
+          sendJson(res, 400, { error: 'missing required query param "chainId"' })
+          return true
+        }
+        const address = (params.get('address') ?? '').trim()
+        if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+          sendJson(res, 400, { error: 'missing or invalid query param "address"' })
+          return true
+        }
+        const logoUrl = resolveTokenLogo(chainId, address)
+        const socials = resolveTokenSocials(chainId, address)
+        sendJson(res, 200, {
+          chainId,
+          address,
+          logoUrl,
+          description: socials?.description,
+          twitter: socials?.twitter,
+          website: socials?.website,
+          telegram: socials?.telegram,
         })
         return true
       }
