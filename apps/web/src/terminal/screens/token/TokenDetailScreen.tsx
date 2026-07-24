@@ -38,6 +38,7 @@ import { useMemo, useState } from 'react'
 import { Helmet } from 'react-helmet-async/lib/index'
 import { Link, useNavigate, useParams } from 'react-router'
 import { getNativeAddress } from 'uniswap/src/constants/addresses'
+import { nativeOnChain } from 'uniswap/src/constants/tokens'
 import { UniverseChainId } from 'uniswap/src/features/chains/types'
 import { getChainLabel, isUniverseChainId } from 'uniswap/src/features/chains/utils'
 import { useLocalizationContext } from 'uniswap/src/features/language/LocalizationContext'
@@ -54,10 +55,12 @@ import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens
 import { useTokenMeta } from '~/terminal/screens/token/useTokenMeta'
 import { useBackendSortedTopPools } from '~/features/Explore/state/topPools/useBackendSortedTopPools'
 import { serializeSwapAddressesToURLParameters } from '~/pages/Swap/Swap/state/tradeQueryParams'
+import { useCurrency } from '~/hooks/Tokens'
 import { ExplorerAddress, shortAddr } from '~/terminal/components/ExplorerAddress'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
-import { LedgerTvlChart, type TvlPoint } from '~/terminal/components/LedgerTvlChart'
+import { TerminalChartPanel } from '~/terminal/screens/swap/TerminalChartPanel'
+import { TokenTradeTicket } from '~/terminal/screens/token/TokenTradeTicket'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import type { PoolStat } from '~/types/explore'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
@@ -183,6 +186,8 @@ interface PoolRow {
   tvl: number
   volume24h: number
   feeLabel?: string
+  /** Protocol version display string from the data-api pools feed ('v2' | 'v3' | 'v4'). */
+  version?: string
 }
 
 /** Pools (chain-scoped, data-api) that hold this token, mapped to display rows. */
@@ -211,6 +216,7 @@ function buildPoolRows(pools: PoolStat[] | undefined, chainId: number, address: 
         volume24h: pool.volume1Day?.value ?? 0,
         // Uniswap fee amounts are hundredths of a bip (3000 → 0.30%).
         feeLabel: feeAmount !== undefined ? `${(feeAmount / 10000).toFixed(2)}%` : undefined,
+        version: pool.protocolVersion || undefined,
       }
     })
 }
@@ -320,97 +326,6 @@ function Kpi({ label, value, valueColor }: { label: string; value: string; value
   )
 }
 
-/**
- * Compact Buy / Sell trade card (main-column ticket).
- *
- * The swap ENGINE is not rebuilt here — this ticket owns the Buy/Sell intent and deep-links
- * into the existing Swap screen pre-filled with this token (same serializer the hero / Markets
- * CTAs use), where the live quote, price impact and slippage are shown before confirming. It
- * shows the real market price only; it never fabricates a quote. Green = buy, red = sell.
- */
-function TradeCard({
-  symbol,
-  price,
-  chainLabel,
-  onBuy,
-  onSell,
-}: {
-  symbol: string
-  price: string
-  chainLabel: string
-  onBuy: () => void
-  onSell: () => void
-}): JSX.Element {
-  const [side, setSide] = useState<'buy' | 'sell'>('buy')
-  const isBuy = side === 'buy'
-  const accent = isBuy ? terminalColors.greenUp : terminalColors.redDown
-
-  return (
-    <InstrumentPanel title={`Trade ${symbol}`} meta={[chainLabel]} style={{ overflow: 'hidden' }}>
-      {/* Buy / Sell segmented control */}
-      <div style={{ display: 'flex', gap: 6, background: terminalColors.panel2, borderRadius: 10, padding: 4 }}>
-        {(['buy', 'sell'] as const).map((s) => {
-          const active = s === side
-          const c = s === 'buy' ? terminalColors.greenUp : terminalColors.redDown
-          return (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setSide(s)}
-              style={{
-                flex: 1,
-                fontFamily: SANS,
-                fontSize: 12.5,
-                fontWeight: 600,
-                textTransform: 'capitalize',
-                padding: '9px 0',
-                borderRadius: 8,
-                cursor: 'pointer',
-                border: `1px solid ${active ? c : 'transparent'}`,
-                background: active ? terminalColors.bg : 'transparent',
-                color: active ? c : terminalColors.ink3,
-              }}
-            >
-              {s}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Market price (real feed value — no fabricated quote) */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 16 }}>
-        <span style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3 }}>Market price</span>
-        <span style={{ fontFamily: MONO, fontSize: 15, fontWeight: 600, color: terminalColors.ink }}>{price}</span>
-      </div>
-
-      <button
-        type="button"
-        onClick={isBuy ? onBuy : onSell}
-        style={{
-          width: '100%',
-          marginTop: 16,
-          fontFamily: SANS,
-          fontSize: 13.5,
-          fontWeight: 600,
-          color: terminalColors.btnInk,
-          background: accent,
-          border: 'none',
-          borderRadius: 10,
-          padding: '12px 16px',
-          cursor: 'pointer',
-        }}
-      >
-        {isBuy ? `Buy ${symbol}` : `Sell ${symbol}`}
-      </button>
-
-      <p style={{ fontFamily: SANS, fontSize: 11.5, lineHeight: 1.5, color: terminalColors.faint, margin: '12px 0 0' }}>
-        Opens the HookSwap swap ticket pre-filled with {symbol}. The live quote, price impact and slippage are shown
-        there before you confirm.
-      </p>
-    </InstrumentPanel>
-  )
-}
-
 /* ------------------------------------------------------------------ the screen */
 
 function TokenDetailScreenBody(): JSX.Element {
@@ -473,21 +388,28 @@ function TokenDetailScreenBody(): JSX.Element {
   // absent for tokens without launchpad JSON metadata; never fabricated.
   const { data: tokenMeta } = useTokenMeta(chainId, address)
 
+  // Resolve THIS token + the chain's native as real `Currency` objects — fed to the embedded
+  // executing trade ticket (native ↔ token) and the reused price-chart panel. `useCurrency`
+  // resolves from the app's token lists + on-chain, so any valid address resolves.
+  const tokenCurrency = useCurrency({ address, chainId })
+  const nativeCurrency = useMemo(() => (chainId !== undefined ? nativeOnChain(chainId) : undefined), [chainId])
+
+  // Which Trades/Holders/Info tab is active below the chart.
+  const [detailTab, setDetailTab] = useState<'trades' | 'holders' | 'info'>('trades')
+
   const stats = token?.stats
   const symbol = token?.symbol || '—'
   const name = token?.name || ''
   const logoUrl = token?.logoUrl || tokenMeta?.logoUrl || resolveLedgerLogo(chainId, address)
   const initials = (symbol || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || '?'
 
-  // Real 1-day price series → the shared canvas chart (theme-correct via resolveTerminalColor,
-  // redraws on `hookswap-theme-change`). Unpriced/NaN points are dropped, never zero-filled.
-  const pricePoints = useMemo<TvlPoint[]>(
-    () =>
-      (stats?.priceHistory1d ?? [])
-        .filter((p) => Number.isFinite(p.value))
-        .map((p) => ({ label: new Date(Number(p.timestamp) * 1000).toISOString(), value: p.value })),
-    [stats],
-  )
+  // STATUS chip — the venue this token trades through, read from the highest-TVL pool that
+  // holds it (data-api `protocolVersion`). "DIRECT V3" / "DIRECT V2". Honest "—" when no pool
+  // is indexed yet; never fabricated.
+  const statusLabel = useMemo(() => {
+    const withVersion = poolRows.find((r) => r.version)
+    return withVersion?.version ? `DIRECT ${withVersion.version.toUpperCase()}` : '—'
+  }, [poolRows])
 
   const activityRows = useMemo(
     () => (chainId !== undefined && address ? buildActivityRows(rawTxns, chainId, address, symbol) : []),
@@ -609,6 +531,20 @@ function TokenDetailScreenBody(): JSX.Element {
                   >
                     {getChainLabel(chainId as UniverseChainId)}
                   </span>
+                  {/* DEX badge — HookSwap + the venue version, from the token's top pool. */}
+                  <span
+                    style={{
+                      fontFamily: MONO,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: terminalColors.greenDeep,
+                      background: terminalColors.greenBg,
+                      padding: '3px 8px',
+                      borderRadius: 999,
+                    }}
+                  >
+                    {statusLabel === '—' ? 'HookSwap' : `HookSwap ${statusLabel.replace('DIRECT ', '')}`}
+                  </span>
                 </div>
                 <div style={{ marginTop: 7 }}>
                   <ExplorerAddress address={address} chainId={chainId} type={ExplorerDataType.TOKEN} short={false} fontSize={12} />
@@ -673,16 +609,19 @@ function TokenDetailScreenBody(): JSX.Element {
           </div>
         </InstrumentPanel>
 
-        {/* ---------------------------------------------- KPI row (real only) */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-          <Kpi label="Price" value={price} />
-          <Kpi label="24h change" value={fmtSignedPct(change1d)} valueColor={changeColor(change1d)} />
+        {/* ---------------------------------------------- stats row (real only) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+          <Kpi label="FDV" value={fiatStats(stats?.fdv)} />
           <Kpi label="24h volume" value={fiatStats(stats?.volume1d)} />
           <Kpi label="Liquidity" value={fiatStats(derivedLiquidity)} />
-          <Kpi label="FDV" value={fiatStats(stats?.fdv)} />
+          {/* Holders isn't served by the token feed yet → honest "—" (never fabricated). */}
+          <Kpi label="Holders" value="—" />
+          <Kpi label="Status" value={statusLabel} />
         </div>
 
-        {/* ---------------------------------------------- main: price chart + trade card */}
+        {/* ---------------------------------------------- main: price chart + INLINE trade ticket
+            On mobile the ticket comes first (buy/sell above the chart); on desktop the chart is
+            the wide left column with the ticket docked right. The ticket EXECUTES inline. */}
         <div
           style={{
             display: 'flex',
@@ -691,69 +630,115 @@ function TokenDetailScreenBody(): JSX.Element {
             alignItems: 'stretch',
           }}
         >
-          <InstrumentPanel
-            live
-            title={`${symbol} price`}
-            meta={['1D']}
-            style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden' }}
-          >
-            <LedgerTvlChart
-              points={pricePoints}
-              height={220}
-              emptyText="No price history yet — builds as trades occur."
-            />
-          </InstrumentPanel>
-          <div style={{ flex: isMobile ? '1 1 auto' : '0 0 320px', minWidth: 0 }}>
-            <TradeCard
-              symbol={symbol}
-              price={price}
-              chainLabel={getChainLabel(chainId as UniverseChainId)}
-              onBuy={() => navigate(swapLink.buy)}
-              onSell={() => navigate(swapLink.sell)}
-            />
+          {/* Reuse the swap desk's live price-chart panel (native ↔ token, 1H/1D/1W/1M/1Y tabs,
+              honest empty state). Driven purely by currency props — no swap store needed here. */}
+          <div style={{ flex: '1 1 auto', minWidth: 0, display: 'flex', order: isMobile ? 2 : 0 }}>
+            <TerminalChartPanel inputCurrency={nativeCurrency} outputCurrency={tokenCurrency} />
+          </div>
+          {/* The embedded, EXECUTING Buy/Sell ticket — mounts the real swap-engine provider stack
+              pre-filled with native ↔ this token and submits through TerminalSwapReviewFlow. */}
+          <div style={{ flex: isMobile ? '1 1 auto' : '0 0 344px', minWidth: 0, order: isMobile ? 1 : 0 }}>
+            {chainId !== undefined ? (
+              <TokenTradeTicket chainId={chainId} token={tokenCurrency} tokenSymbol={symbol} />
+            ) : null}
           </div>
         </div>
 
-        {/* ---------------------------------------------- pools + activity */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            flexWrap: isMobile ? 'nowrap' : 'wrap',
-            gap: 18,
-            alignItems: 'flex-start',
-          }}
-        >
-          {/* Pools list */}
-          <InstrumentPanel
-            flush
-            title="Pools"
-            meta={[symbol]}
-            style={isMobile ? { width: '100%', overflow: 'hidden' } : { flex: '1 1 380px', minWidth: 300, overflow: 'hidden' }}
+        {/* ---------------------------------------------- Trades / Holders / Info tab strip */}
+        <InstrumentPanel flush live={detailTab === 'trades'} title={symbol} meta={[getChainLabel(chainId as UniverseChainId)]}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 2,
+              padding: 10,
+              borderBottom: `1px solid ${terminalColors.line3}`,
+            }}
           >
-            <PoolList
-              rows={poolRows}
-              loading={poolsLoading && poolRows.length === 0}
-              onOpen={(path) => navigate(path)}
-              fiat={fiatStats}
-            />
-          </InstrumentPanel>
+            {(['trades', 'holders', 'info'] as const).map((tab) => {
+              const active = tab === detailTab
+              const labelMap = { trades: 'Trades', holders: 'Holders', info: 'Info' } as const
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setDetailTab(tab)}
+                  style={{
+                    fontFamily: MONO,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    color: active ? terminalColors.ink : terminalColors.ink3,
+                    background: active ? terminalColors.panel2 : 'transparent',
+                    border: 'none',
+                    borderRadius: 7,
+                    padding: '7px 14px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {labelMap[tab]}
+                </button>
+              )
+            })}
+          </div>
 
-          {/* Recent activity */}
-          <InstrumentPanel
-            flush
-            live
-            title="Recent activity"
-            meta={[symbol]}
-            style={isMobile ? { width: '100%', overflow: 'hidden' } : { flex: '1 1 380px', minWidth: 300, overflow: 'hidden' }}
-          >
+          {detailTab === 'trades' ? (
             <ActivityList rows={activityRows} loading={txLoading && activityRows.length === 0} chainId={chainId} />
-          </InstrumentPanel>
-        </div>
+          ) : detailTab === 'holders' ? (
+            <div
+              style={{
+                padding: '30px 16px',
+                textAlign: 'center',
+                fontFamily: SANS,
+                fontSize: 12.5,
+                color: terminalColors.ink3Alt,
+              }}
+            >
+              Holder distribution isn’t indexed yet for this token.
+            </div>
+          ) : (
+            <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {tokenMeta?.description ? (
+                <p style={{ fontFamily: SANS, fontSize: 13, lineHeight: 1.55, color: terminalColors.ink2, margin: 0 }}>
+                  {tokenMeta.description}
+                </p>
+              ) : null}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, rowGap: 10 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: terminalColors.ink3Alt }}>
+                    Contract
+                  </span>
+                  <ExplorerAddress address={address} chainId={chainId} type={ExplorerDataType.TOKEN} short={false} fontSize={12} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: terminalColors.ink3Alt }}>
+                    Venue
+                  </span>
+                  <span style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.ink }}>{statusLabel}</span>
+                </div>
+              </div>
+              {/* This token's live pools */}
+              <div>
+                <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', color: terminalColors.ink3Alt, marginBottom: 8 }}>
+                  Pools
+                </div>
+                <div style={{ border: `1px solid ${terminalColors.line2}`, borderRadius: 10, overflow: 'hidden' }}>
+                  <PoolList
+                    rows={poolRows}
+                    loading={poolsLoading && poolRows.length === 0}
+                    onOpen={(path) => navigate(path)}
+                    fiat={fiatStats}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </InstrumentPanel>
 
         <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.faint, lineHeight: 1.5 }}>
-          Price · volume · FDV · 1D chart from the live token feed; liquidity is summed from this token’s live pools; activity
-          is on-chain swap history. Market cap is omitted where circulating supply isn’t available — never estimated.
+          Price · volume · FDV from the live token feed; liquidity is summed from this token’s live pools; trades are on-chain
+          swap history; the chart uses real price history and shows an honest empty state until trades occur. Buy/Sell executes
+          on HookSwap through the live router. Market cap · holders are omitted where the data isn’t indexed — never estimated.
         </div>
       </div>
     </div>

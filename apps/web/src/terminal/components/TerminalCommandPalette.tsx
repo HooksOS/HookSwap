@@ -136,12 +136,17 @@ function PaletteBody({ onClose }: { onClose: () => void }): JSX.Element {
   // Real token list — same source as the B3 Markets screen (volume-ranked).
   const { topTokens, isLoading: tokensLoading } = useListTokens(undefined)
 
-  const goToSwap = useMemo(
+  // Route a token selection to the TOKEN TRADE TERMINAL (/token/:chainId/:address) — the page
+  // where the user can Buy/Sell inline — instead of the plain /swap deep-link. Falls back to a
+  // /swap prefill only when the token has no ERC-20 address on its primary chain (native-only).
+  const goToToken = useMemo(
     () =>
       (token: MultichainToken): void => {
         const chainToken = token.chainTokens[0]
         let path = '/swap'
-        if (chainToken) {
+        if (chainToken?.address && chainToken.chainId) {
+          path = `/token/${chainToken.chainId}/${chainToken.address}`
+        } else if (chainToken) {
           try {
             path += serializeSwapAddressesToURLParameters({
               outputTokenAddress: chainToken.address || undefined,
@@ -194,12 +199,12 @@ function PaletteBody({ onClose }: { onClose: () => void }): JSX.Element {
         price: priceLabel,
         change,
         sparkline,
-        actionLabel: 'Swap',
-        onAction: () => goToSwap(token),
-        onSelect: () => goToSwap(token),
+        actionLabel: 'Trade',
+        onAction: () => goToToken(token),
+        onSelect: () => goToToken(token),
       }
     })
-  }, [topTokens, q, convertFiatAmountFormatted, goToSwap])
+  }, [topTokens, q, convertFiatAmountFormatted, goToToken])
 
   // --- Quick actions ---------------------------------------------------------
   const actionItems = useMemo<CommandPaletteActionItem[]>(() => {

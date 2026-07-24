@@ -278,6 +278,9 @@ function applySearch(rows: MarketRow[] | undefined, query: string): MarketRow[] 
 interface Mover {
   symbol: string
   change: number
+  /** Primary-chain id + ERC-20 address → link to the token trade terminal (/token/:chainId/:address). */
+  chainId?: number
+  address?: string
 }
 
 /** How many top-ranked (volume-sorted) tokens to consider for the movers heatmap. */
@@ -288,7 +291,15 @@ function buildMovers(tokens: readonly MultichainToken[]): Mover[] {
   // heatmap surfaces notable movers rather than long-tail micro-cap extremes.
   const withChange: Mover[] = tokens
     .slice(0, MOVERS_UNIVERSE)
-    .map((token) => ({ symbol: token.symbol, change: token.stats?.priceChange1d }))
+    .map((token) => {
+      const chainToken = token.chainTokens[0]
+      return {
+        symbol: token.symbol,
+        change: token.stats?.priceChange1d,
+        chainId: chainToken?.chainId,
+        address: chainToken?.address || undefined,
+      }
+    })
     .filter((mover): mover is Mover => mover.symbol !== '' && typeof mover.change === 'number' && mover.change !== 0)
     .sort((a, b) => b.change - a.change)
 
@@ -340,15 +351,32 @@ function FilterChip({
 }
 
 function MoverTile({ mover }: { mover: Mover }): JSX.Element {
+  const navigate = useNavigate()
   const up = mover.change >= 0
+  // A single token → the token trade terminal (Buy/Sell inline). Only when we have both a
+  // chain id and an ERC-20 address (native-only movers stay non-navigable).
+  const tokenPath = mover.chainId !== undefined && mover.address ? `/token/${mover.chainId}/${mover.address}` : undefined
   return (
     <div
+      role={tokenPath ? 'link' : undefined}
+      tabIndex={tokenPath ? 0 : undefined}
+      onClick={tokenPath ? () => navigate(tokenPath) : undefined}
+      onKeyDown={
+        tokenPath
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                navigate(tokenPath)
+              }
+            }
+          : undefined
+      }
       style={{
         border: `1px solid ${up ? terminalColors.greenBorder : terminalColors.redBg}`,
         background: up ? terminalColors.greenBg : terminalColors.redBg,
         borderRadius: 12,
         padding: '12px 14px',
         minWidth: 0,
+        cursor: tokenPath ? 'pointer' : 'default',
       }}
     >
       <div
