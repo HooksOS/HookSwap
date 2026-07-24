@@ -27,9 +27,12 @@ __all__ = [
     "RagPort",
     "StaticFactStore",
     "get_grounding_provider",
+    "LiveStatsClient",
+    "get_live_stats_provider",
 ]
 
 from .image_card import CardResult, render_card
+from .live_stats import LiveStatsClient, get_live_stats_provider
 from .marketing_assistant import DraftResult, MarketingAssistant
 from .rag_port import GroundingFact, RagPort, StaticFactStore, get_grounding_provider
 from .x_client import XClient

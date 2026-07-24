@@ -35,6 +35,10 @@ class DraftRequest(BaseModel):
     with_card: bool = True
     headline: str | None = None  # card headline; defaults to topic
     stat: str | None = None  # only stamped if grounded
+    # None => auto (fetch real live stats only when the brief references a market
+    # number); True => always fetch; False => never. Numbers always come from the
+    # live-stats tool, never the model.
+    with_live_stats: bool | None = None
 
 
 class CardMeta(BaseModel):
@@ -62,6 +66,7 @@ class DraftResponse(BaseModel):
 
 class PublishRequest(DraftRequest):
     confirm: bool = False  # MUST be true to actually post — never auto-publish
+    dry_run: bool = False  # preview exactly what WOULD post; never hits the network
 
 
 class PublishResponse(BaseModel):
@@ -126,7 +131,11 @@ def _result_to_response(result: DraftResult, card: CardMeta | None) -> DraftResp
 def _draft(req: DraftRequest, assistant: MarketingAssistant | None = None) -> tuple[DraftResult, DraftResponse]:
     assistant = assistant or MarketingAssistant()
     result = assistant.draft(
-        req.topic, changelog=req.changelog, chain=req.chain, surface=req.surface
+        req.topic,
+        changelog=req.changelog,
+        chain=req.chain,
+        surface=req.surface,
+        with_live_stats=req.with_live_stats,
     )
     card = _build_card(req, result) if req.with_card else None
     return result, _result_to_response(result, card)
@@ -159,15 +168,7 @@ def publish_post(req: PublishRequest) -> PublishResponse:
             draft=draft_response,
         )
 
-    x = XClient()
-    if not x.is_configured():
-        return PublishResponse(
-            ok=False, posted=False, reason="x_not_configured",
-            draft=draft_response,
-            post_result={"ok": False, "reason": "x_not_configured"},
-        )
-
-    # Attach the card as media when we produced a PNG.
+    # Assemble the exact body + optional media that WOULD post.
     media_png = None
     if draft_response.card and draft_response.card.data_base64:
         media_png = base64.b64decode(draft_response.card.data_base64)
@@ -176,6 +177,40 @@ def publish_post(req: PublishRequest) -> PublishResponse:
     if draft_response.hashtags:
         candidate = body + " " + " ".join(draft_response.hashtags)
         body = candidate if len(candidate) <= 280 else body
+
+    x = XClient()
+
+    # Explicit dry-run: preview what would post, hit no network (even if configured).
+    if req.dry_run:
+        return PublishResponse(
+            ok=False, posted=False, reason="dry_run",
+            draft=draft_response,
+            post_result=x.post_tweet(body, media_png=media_png, dry_run=True),
+        )
+
+    # Honest DRY-RUN when X keys are absent — never fakes a post.
+    if not x.is_configured():
+        return PublishResponse(
+            ok=False, posted=False, reason="x_not_configured",
+            draft=draft_response,
+            post_result={"ok": False, "dry_run": True, "reason": "x_not_configured"},
+        )
+
+    # Master kill-switch — auto-post only behind an explicit flag. Configured but
+    # disabled => never posts; returns the full draft so an operator can review.
+    from app.core.config import get_settings
+
+    if not get_settings().marketing_auto_post_enabled:
+        return PublishResponse(
+            ok=False, posted=False, reason="auto_post_disabled",
+            draft=draft_response,
+            post_result={
+                "ok": False,
+                "dry_run": True,
+                "reason": "auto_post_disabled",
+                "detail": "set HOOKSWAP_AI_MARKETING_AUTO_POST_ENABLED=true to allow posting",
+            },
+        )
 
     post_result = x.post_tweet(body, media_png=media_png)
     return PublishResponse(

@@ -41,7 +41,22 @@ class XCredentials:
 
     @classmethod
     def from_env(cls) -> "XCredentials | None":
-        vals = {name: os.getenv(name) for name in _REQUIRED}
+        # Prefer the app Settings (HOOKSWAP_AI_X_*); fall back to the bare
+        # X_API_KEY/... env names so either wiring style works.
+        settings_vals: dict[str, str | None] = {}
+        try:
+            from app.core.config import get_settings
+
+            s = get_settings()
+            settings_vals = {
+                "X_API_KEY": s.x_api_key,
+                "X_API_SECRET": s.x_api_secret,
+                "X_ACCESS_TOKEN": s.x_access_token,
+                "X_ACCESS_SECRET": s.x_access_secret,
+            }
+        except Exception:
+            settings_vals = {}
+        vals = {name: (settings_vals.get(name) or os.getenv(name)) for name in _REQUIRED}
         if not all(vals.values()):
             return None
         return cls(
@@ -106,9 +121,20 @@ class XClient:
         *,
         media_png: bytes | None = None,
         media_mime: str = "image/png",
+        dry_run: bool = False,
     ) -> dict[str, Any]:
+        # Explicit dry-run: preview exactly what WOULD post, hit no network.
+        if dry_run:
+            return {
+                "ok": False,
+                "dry_run": True,
+                "reason": "dry_run",
+                "configured": self._creds is not None,
+                "would_post": {"text": text, "chars": len(text), "has_media": media_png is not None},
+            }
+        # No credentials => honest DRY-RUN (never posts, never fakes success).
         if self._creds is None:
-            return {"ok": False, "reason": "x_not_configured",
+            return {"ok": False, "dry_run": True, "reason": "x_not_configured",
                     "detail": "missing one or more of " + ", ".join(_REQUIRED)}
 
         # Prefer tweepy if present.

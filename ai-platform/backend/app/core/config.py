@@ -102,6 +102,32 @@ class Settings(BaseSettings):
     data_api_base_url: str = "https://data.hookswap.org"
     trading_api_base_url: str = "https://trading.hookswap.org"
 
+    # --- marketing / X (Twitter) bot ---
+    # Anthropic (Claude) creds/model for drafting are shared with the RAG core:
+    # `anthropic_api_key` + `llm_model` above. `llm_model` defaults to a current
+    # Claude model (claude-opus-4-8) and is what the marketing assistant drafts with.
+    #
+    # X (Twitter) OAuth 1.0a user-context credentials. All four are required to
+    # publish; when ANY is empty the X client runs in DRY-RUN (never posts, never
+    # fakes success). Read by app/marketing/x_client.py, which also falls back to
+    # the bare X_API_KEY/... env names so either wiring style works.
+    x_api_key: str | None = None
+    x_api_secret: str | None = None
+    x_access_token: str | None = None
+    x_access_secret: str | None = None
+    # Master publish kill-switch ("auto-post disable flag"). Even with an explicit
+    # per-request confirm=true AND full X credentials, POST /v1/marketing/publish
+    # will NOT post unless this is True. Default False => the bot can only
+    # draft / dry-run. Set HOOKSWAP_AI_MARKETING_AUTO_POST_ENABLED=true to go live.
+    marketing_auto_post_enabled: bool = False
+    # Pull REAL live stats (TVL / 24h volume) from the data-api for grounding when
+    # a brief references a market number, so any figure in a post traces to the
+    # live-stats tool — never the model. When False (or the fetch returns nothing)
+    # such numbers are omitted, never fabricated.
+    marketing_live_stats_enabled: bool = True
+    # Timeout (seconds) for the live-stats data-api fetch.
+    marketing_live_stats_timeout_s: float = 6.0
+
     # --- rate limit ---
     rate_limit_enabled: bool = True
     rate_limit_default_per_min: int = 60
