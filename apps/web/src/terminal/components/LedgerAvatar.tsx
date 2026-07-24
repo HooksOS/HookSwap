@@ -15,6 +15,25 @@ import { useState } from 'react'
 import { getCommonBase } from 'uniswap/src/constants/routing'
 import { terminalFonts } from '~/terminal/theme/tokens'
 
+/**
+ * Reliable IPFS gateway for normalizing any `ipfs://` logo URL an `<img src>` can't load natively.
+ * Mirrors the data-api default (gateway.pinata.cloud) — durable + hotlink-friendly, NOT the flaky
+ * public ipfs.io. Most logoUrls arrive already-normalized (the data-api resolves them server-side), but
+ * this is a defensive catch-all so a raw `ipfs://…` from any source still renders instead of erroring
+ * straight to the monogram. Non-ipfs URLs pass through unchanged.
+ */
+const IPFS_GATEWAY = 'https://gateway.pinata.cloud/ipfs/'
+export function normalizeLogoUrl(url: string | undefined): string | undefined {
+  if (!url) {
+    return undefined
+  }
+  const t = url.trim()
+  if (/^ipfs:\/\//i.test(t)) {
+    return `${IPFS_GATEWAY}${t.replace(/^ipfs:\/\//i, '').replace(/^ipfs\//i, '')}`
+  }
+  return t
+}
+
 /** Deterministic legible avatar colour from a seed string (stable hue). */
 export function ledgerAvatarColor(seed: string): string {
   let h = 0
@@ -36,7 +55,7 @@ export function resolveLedgerLogo(chainId: number | undefined, address: string |
     return undefined
   }
   const logo = getCommonBase(chainId, address)?.logoUrl
-  return typeof logo === 'string' && logo.length > 0 ? logo : undefined
+  return typeof logo === 'string' && logo.length > 0 ? normalizeLogoUrl(logo) : undefined
 }
 
 export function LedgerAvatar({
@@ -52,7 +71,10 @@ export function LedgerAvatar({
   logoUrl?: string
 }): JSX.Element {
   const [imgFailed, setImgFailed] = useState(false)
-  const showImg = Boolean(logoUrl) && !imgFailed
+  // Defensive: normalize any raw ipfs:// (an <img> can't load it) to the gateway so the logo renders
+  // instead of erroring straight to the monogram. onError below still guarantees the monogram fallback.
+  const src = normalizeLogoUrl(logoUrl)
+  const showImg = Boolean(src) && !imgFailed
 
   return (
     <div
@@ -78,7 +100,7 @@ export function LedgerAvatar({
       {initials}
       {showImg ? (
         <img
-          src={logoUrl}
+          src={src}
           alt=""
           onError={() => setImgFailed(true)}
           style={{
