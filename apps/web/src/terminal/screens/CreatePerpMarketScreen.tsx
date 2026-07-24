@@ -763,7 +763,7 @@ export function CreatePerpMarketScreen(): JSX.Element {
               <SummaryRow label="Max staleness" value="86400 s" />
               <SummaryRow label="Dual-source required" value={tier === MarketTier.Permissionless ? 'Yes' : 'No'} />
               <Notice tone="muted">
-                Default: the Sepolia ETH/USD Chainlink feed — the only venue allowlisted in OracleGuard today. Other venues
+                Default: this chain's ETH/USD Chainlink feed — the venue allowlisted in OracleGuard today. Other venues
                 must be allowlisted by the platform before a market can list against them, or the launch will revert.
               </Notice>
             </div>

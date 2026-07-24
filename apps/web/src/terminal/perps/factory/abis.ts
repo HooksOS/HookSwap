@@ -203,10 +203,10 @@ export interface PerpsFactoryDeployment {
 
 /**
  * Per-chain deployed HookSwapPerps factory suite. Sepolia (11155111) is the canonical
- * validation chain (mandatory-deploy-on-Sepolia-first rule) and is the ONLY chain with a
- * live deploy today. Other HookSwap chains are intentionally absent → the wizard renders an
- * honest "not deployed on this chain" state and prompts a switch to Sepolia. Do NOT invent
- * an address for a chain that hasn't been deployed.
+ * validation chain (mandatory-deploy-on-Sepolia-first rule); Robinhood (4663) carries the
+ * first mainnet PILOT deploy (unaudited, owner = treasury Safe). Chains absent here are NOT
+ * deployed → the wizard renders an honest "not deployed on this chain" state and prompts a
+ * switch to a deployed chain. Do NOT invent an address for a chain that hasn't been deployed.
  */
 export const PERPS_FACTORY_ADDRESSES: Partial<Record<UniverseChainId, PerpsFactoryDeployment>> = {
   [UniverseChainId.Sepolia]: {
@@ -221,6 +221,20 @@ export const PERPS_FACTORY_ADDRESSES: Partial<Record<UniverseChainId, PerpsFacto
     insuranceHub: '0xEAA01a0b3f31aBde9e72A779F9A79E12072e6048',
     weth: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14',
     ethUsdRefFeed: '0x694AA1769357215DE4FAC081bf1f309aDC325306',
+  },
+  [UniverseChainId.Robinhood]: {
+    // Mainnet PILOT (unaudited, capped) — owner/platformAdmin/treasury = 0x011d438E Safe,
+    // matcher = deployer 0xc14C. Fixed factory stack (all 18 on-chain proofs passed). See
+    // contracts/perps/config/factory-robinhood.json.
+    factory: '0xedD55A2E0b7Bf7081e96D933a06BB5f549111732',
+    registry: '0xC19e0ae91f32AaF0bDf4442133DaE82AB8dd183d',
+    feeRouter: '0xD77f47Ae520e2C56E18CADfde732f001D24Ce95B',
+    oracleGuard: '0xE43EE7069699398786753B9Bd8a8c03717B8ba8e',
+    paramGuard: '0x65373b3780e60FE20Bf9192A497C0e62ffd3c8f2',
+    bondManager: '0x422350Fa111F1c678B19F33bB5b405752C78205c',
+    insuranceHub: '0x3e61CF511E2c4dcfA64d6fd7712417ce66AF36aA',
+    weth: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73',
+    ethUsdRefFeed: '0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9',
   },
 }
 
