@@ -37,12 +37,12 @@
     --display:'Space Grotesk',var(--sans);
     --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
   }
-  /* Dark scheme (DEFAULT) — matches the app's DAYSIGNAL dark tokens. */
+  /* Dark scheme (DEFAULT) — exact-matched to the app's DAYSIGNAL dark tokens (theme/terminal.css). */
   :root[data-theme="dark"]{
-    --ink:#E6EAE0; --slate:#9AA28F; --faint:#6E7666;
-    --mist:#0E120C; --panel:#171B13; --line:#2A2F25; --line2:#222820; --white:#141812;
-    --green:#38E07B; --green-deep:#3DDC7F; --up:#38E07B; --down:#F0524A;
-    --green-bg:#122A1B; --green-border:#1F5637; --btn-ink:#0B0E08;
+    --ink:#e8ece2; --slate:#adb5a4; --faint:#676e60;
+    --mist:#0d100c; --panel:#14190f; --line:#2a3124; --line2:#232a1e; --white:#1e241a;
+    --green:#33ce79; --green-deep:#4bd689; --up:#33ce79; --down:#ff6b5e;
+    --green-bg:#12271a; --green-border:#2c6b45; --btn-ink:#08110a;
   }
   .theme-toggle{background:none;border:1px solid var(--line);border-radius:999px;width:30px;height:30px;cursor:pointer;font-size:14px;line-height:1;color:var(--ink);display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-right:12px;transition:border-color .12s}
   .theme-toggle:hover{border-color:var(--green)}
