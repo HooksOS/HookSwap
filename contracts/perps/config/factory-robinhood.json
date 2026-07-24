@@ -1,0 +1,120 @@
+{
+  "chain": "Robinhood Chain",
+  "chainId": 4663,
+  "rpc": "https://rpc.mainnet.chain.robinhood.com",
+  "deployedAt": "2026-07-24",
+  "deployer": "0xc14C897c6bff88a5Eeac31F795693b9230205125",
+  "deployScript": "script/RobinhoodFactoryAll.s.sol",
+  "note": "USER-AUTHORIZED, UNAUDITED MAINNET PILOT of the HookSwapPerps self-service FACTORY stack on Robinhood Chain (4663). Faithful adaptation of script/SepoliaFactoryAll.s.sol. Every stack contract AND all 5 proof markets are owned by the TREASURY 0x011d438E (a Gnosis Safe proxy on RH -> multisig-candidate); the per-market matcher is the deployer 0xc14C as a PILOT placeholder (a real perps-engine matcher must be wired later via each market's setAuthorizedMatcher / factory.setPlatformWiring). Economics were scaled down 1000x vs Sepolia (MATCH_SIZE 1e13, DEP 3e12) purely to keep the real-money outlay tiny; every code path and proof is identical, just smaller. This is PRE-EXTERNAL-AUDIT (see SECURITY_REVIEW.md): treat as a capped pilot, not production. NOT wired to the frontend/engine yet.",
+  "roles": {
+    "treasury": "0x011d438E3eb3fce848950859591ec037C6529E13",
+    "owner_of_every_stack_contract": "0x011d438E3eb3fce848950859591ec037C6529E13",
+    "platformAdmin": "0x011d438E3eb3fce848950859591ec037C6529E13",
+    "feeReceiver_platform_treasury": "0x011d438E3eb3fce848950859591ec037C6529E13",
+    "bondSlashRecipient": "0x011d438E3eb3fce848950859591ec037C6529E13",
+    "listingFeeTreasury": "0x011d438E3eb3fce848950859591ec037C6529E13",
+    "platformMatcher": "0xc14C897c6bff88a5Eeac31F795693b9230205125",
+    "matcherNote": "PILOT: matcher = deployer 0xc14C. Replace with the real perps-engine matcher before going live."
+  },
+  "oracleFeed": {
+    "status": "FOUND + ON-CHAIN VERIFIED",
+    "pair": "ETH / USD",
+    "proxyAddress": "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9",
+    "source": "Chainlink reference-data-directory feeds-robinhood-mainnet.json",
+    "decimals": 8,
+    "verifiedRoundAnswer": "186545000000",
+    "verifiedPriceUsd": "1865.45",
+    "verifiedUpdatedAt": 1784907370,
+    "heartbeat": 86400,
+    "venueAllowlistedAs": "keccak256(\"chainlink\")",
+    "usedAsRefFeedFor": "every created market's OracleGuard config (refFeed = venue = this proxy)"
+  },
+  "addresses": {
+    "MarketRegistry": "0xC19e0ae91f32AaF0bDf4442133DaE82AB8dd183d",
+    "OracleGuard": "0xE43EE7069699398786753B9Bd8a8c03717B8ba8e",
+    "ParamGuard": "0x65373b3780e60FE20Bf9192A497C0e62ffd3c8f2",
+    "InsuranceHub": "0x3e61CF511E2c4dcfA64d6fd7712417ce66AF36aA",
+    "BondManager": "0x422350Fa111F1c678B19F33bB5b405752C78205c",
+    "FeeRouter": "0xD77f47Ae520e2C56E18CADfde732f001D24Ce95B",
+    "PerpMarketImplementation": "0x3AaFDf0194FF9aD09224e25b939ba88847B20B74",
+    "PerpMarketFactory": "0xedD55A2E0b7Bf7081e96D933a06BB5f549111732",
+    "WETH": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73"
+  },
+  "proofMarkets": {
+    "note": "5 demo/proof markets minted by the factory to exercise every feature end-to-end. All owned by the treasury; matcher = deployer.",
+    "marketA_ETH-PERP-A": "0xac39A24eea115fD278a55AF733BD6120637Ce4F3",
+    "marketB_ETH-PERP-B": "0x6871c3Bb19aE035365cc3ADb5833B371995E5dA6",
+    "marketLev_ETH-PERP-LEV": "0x0bE273ba565DD9e01814404BbDe6f8382b4f878A",
+    "marketFallback_ETH-PERP-FALLBACK": "0x4ef1C53782a24423bc12Dd241C100122cb97333c",
+    "staleMarket_ETH-PERP-STALE": "0x6028e80F392F17113926Ea1C4801f29C4E1e81F6"
+  },
+  "factoryConfig": {
+    "curatedMinBond": "50000000000000",
+    "permissionlessMinBond": "100000000000000",
+    "listingFee": "0",
+    "paramGuard_maxLeverage": "200000",
+    "paramGuard_minMaintenanceMarginBps": "50",
+    "paramGuard_feeBandBps": [2, 15],
+    "platformMaxLeverage_fallback": "1000000"
+  },
+  "proofs": {
+    "F1_createMarket": "PASS - marketA ACTIVE in registry, feeReceiver=FeeRouter, oracleGuard wired, cap=10x; registry marketCount=5",
+    "F2_feeSplit": "PASS - collected 2e10 -> platform(treasury) 1e10 (50%, >=40% floor), creator 8e9 (40%), insurance 2e9 (10%)",
+    "F3_isolation": "PASS - untraded marketB feeRouter balance=0, insurance=0",
+    "F4a_bondEscrow": "PASS - marketA bond=1e14; BondManager escrow total=5e14 (5 markets)",
+    "F4b_bondSlash": "PASS - slash(marketB) pushed 1e14 to treasury (measured treasury.balance delta), escrow 5e14->4e14, bond marked slashed",
+    "F4c_withdrawTooEarly": "PASS - withdrawBond(marketLev) reverts WithdrawTooEarly before the 7-day delay",
+    "F5_insuranceCredit": "PASS - insuranceHub.balanceOf(marketA,WETH)=2e9; hub holds 2e9 WETH",
+    "F5a_coverLossOwn": "PASS - coverLoss(marketA) paid 1e9 to coverTo; marketA sub-account 2e9->1e9",
+    "F5b_coverLossCrossMarketRevert": "PASS - coverLoss(marketB) reverts InsufficientMarketInsurance (per-market isolation)",
+    "F6_oracle_deviationPass": "PASS - checkDeviation(marketA, ref) did not revert (mark==ref)",
+    "F6_oracle_deviationRevert": "PASS - checkDeviation @1.5x ref reverts PriceDeviationTooLarge",
+    "F6_oracle_staleRevert": "PASS - staleMarket (maxStaleness=1) reverts StalePrice",
+    "F6_oracle_venueRevert": "PASS - non-allowlisted venue reverts VenueNotAllowed",
+    "F7_paramGuard": "PASS - leverage bound 20x (15x pass / 25x fail / clamp 25x->20x); fee band [2,15] (10 pass / 20 fail / clamp 20->15, 1->2)",
+    "F8_maxLeverage_pass10x": "PASS - marketLev (cap 10x) opens a 10x pair (id 1)",
+    "F8_maxLeverage_fallback": "PASS - marketFallback cap unset (0) -> 100x MAX_LEVERAGE default; 50x pair opens (id 1)",
+    "F8_maxLeverage_revert20x": "PASS - marketLev (cap 10x) settleBatch @20x reverts LeverageTooHigh",
+    "H_ownershipHandover": "PASS - factory.platformAdmin + factory.owner + registry/oracleGuard/paramGuard/insuranceHub/bondManager/feeRouter.owner + all 5 market.owner == TREASURY; platformMatcher == deployer. Independently re-verified with cast after broadcast."
+  },
+  "onChainVerification": {
+    "verifiedWith": "cast (foundry) vs https://rpc.mainnet.chain.robinhood.com after broadcast",
+    "allContractsHaveCode": true,
+    "allOwnersAreTreasury": true,
+    "factoryPlatformAdminIsTreasury": true,
+    "factoryPlatformMatcherIsDeployer": true,
+    "registryMarketCount": 5
+  },
+  "broadcast": {
+    "totalTransactions": 52,
+    "totalReceipts": 52,
+    "allStatusSuccess": true,
+    "totalGasUsed": 20507865,
+    "effectiveGasPriceGwei": 0.117666,
+    "totalGasCostEth": "0.00241307844309",
+    "deployerNetSpendEth": "0.002949",
+    "deployerBalanceBeforeEth": "0.012136090331547500",
+    "deployerBalanceAfterEth": "0.009187361108149500",
+    "eip1559": true,
+    "legacyFlagUsed": false,
+    "deployTxHashes": {
+      "MarketRegistry": "0x09e5f08566d930c05c0c445f4d582abce6e6e576747bf60f038e584af62bc8a2",
+      "OracleGuard": "0x1f6cd1cc3d593768e7c64bc1d92710f1191efa7a5310c72a8e23701ea13573ea",
+      "ParamGuard": "0x2542d4ea5abc876cd0d008a87864936b41979d0f6e8442fd7281275ec7c57536",
+      "InsuranceHub": "0x959d7a515f6140efd83591c8b828bbc3bfe766eb44bbc2c30fdcd152bba3de94",
+      "BondManager": "0x2b784a410f0401de4aed4e4524d06252aee77011b9ebf0b413760d7c0ffeb8f5",
+      "FeeRouter": "0x70b3972d080a5338623e0e44acb1a5b5ec9c63f20e554630309e75d8a8ce8a5e",
+      "PerpMarketImplementation": "0xb3268220553f116f70740e3a6211c7acdf7c5dca4719f0e6febe1a69024d64ad",
+      "PerpMarketFactory": "0xacad2c86b732df1854efcecd6880d036efe630636fac0daa975fa97db8430ad4"
+    },
+    "firstTxHash": "0x09e5f08566d930c05c0c445f4d582abce6e6e576747bf60f038e584af62bc8a2",
+    "lastTxHash": "0xc982b6de8d5cff33c5b845d37a910e4cb1de10986161998078846553c5721d2c",
+    "fullBroadcastLog": "broadcast/RobinhoodFactoryAll.s.sol/4663/run-latest.json"
+  },
+  "remainingToProduction": [
+    "External security audit (SECURITY_REVIEW.md: 2 High already wired/fixed on the Sepolia impl v5 lineage; still pre-paid-audit).",
+    "Replace the PILOT matcher (deployer 0xc14C) with the real perps-engine matcher on each market + factory.setPlatformWiring.",
+    "Wire the RH factory + markets into the frontend (apps/web/src/terminal/perps/factory/*) + engine/keeper (currently Sepolia-only).",
+    "Seed real collateral liquidity + real market depth (the proof markets carry only 3e12 dust collateral)."
+  ]
+}
