@@ -35,6 +35,21 @@ export interface ChainConfig {
   /** deployed HookSwap v3 factory. Used for v3 `PoolCreated` log-scan discovery (see onchain.ts). */
   v3Factory: string
   /**
+   * Canonical Uniswap v4 singleton `PoolManager` for this chain (bytes32-poolId-keyed pools), when one
+   * exists. Source: V4-ENABLEMENT-PLAN.md §4 (each address `eth_getCode`-confirmed on-chain 2026-07-21)
+   * and matches `vendor/sdk-core` `v4PoolManagerAddress`. The event indexer scans its Initialize/Swap/
+   * ModifyLiquidity logs for v4 pool discovery + metrics. OMITTED where a chain has NO canonical v4
+   * (HyperEVM 999, Stable 988 — verified none) → v4 discovery is skipped honestly for that chain.
+   */
+  v4PoolManager?: string
+  /**
+   * Block the v4 `PoolManager` was deployed at — the start block for the singleton Initialize/Swap scan.
+   * Optional: like v3, unbounded full-history scans are avoided. When unset, the indexer's first v4 pass
+   * is bounded to `latest - INDEXER_BACKFILL_BLOCKS` (logged, honest partial) or env
+   * `V4_SCAN_FROM_BLOCK_<chainId>`. Fill once the deploy block is recorded for full history.
+   */
+  v4DeployBlock?: number
+  /**
    * Deployed `HookSwapTokenFactory` (self-service, fixed-supply ERC-20 launcher) address. When set,
    * onchain.ts `enumerateEcosystemTokens` reads its `allTokens()` / `allTokensLength()` + `tokenAt(i)`
    * to surface EVERY self-service-created token in the token surfaces (Markets/picker/search) even when
@@ -86,6 +101,9 @@ export const CHAINS: Record<number, ChainConfig> = {
     wrappedNative: { address: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73', symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
     v2Factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     v3Factory: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
+    // Canonical Uniswap v4 PoolManager (V4-ENABLEMENT-PLAN.md §4, getCode-confirmed; == sdk-core). HOOK
+    // (v4-only) liquidity lives here. Singleton — the indexer scans its Initialize/Swap logs for v4 pools.
+    v4PoolManager: '0x8366a39cc670b4001a1121b8f6a443a643e40951',
     // Self-service token factory + launchpad launcher — enumerated for pool-less token discovery.
     // tokenFactory from apps/web/src/terminal/tokenfactory/addresses.ts; launcher from @hookos/sdk.
     tokenFactory: '0x13064247c5687a912fb362e2bb28f24e24f3bdca',
@@ -110,6 +128,8 @@ export const CHAINS: Record<number, ChainConfig> = {
     wrappedNative: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
     v2Factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     v3Factory: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
+    // Canonical Uniswap v4 PoolManager (V4-ENABLEMENT-PLAN.md §4, getCode-confirmed; == sdk-core).
+    v4PoolManager: '0xacb7e78fa05d562e0a5d3089ec896d57d057d38e',
     // tokenFactory from apps/web/src/terminal/tokenfactory/addresses.ts; launcher from @hookos/sdk (4326).
     tokenFactory: '0x144331bb4c3026d135896cafec3ae3d667f4f376',
     launcher: '0x528Bcecff5DA16cE65C198fBe42dA55A0088d4c2',
@@ -132,6 +152,9 @@ export const CHAINS: Record<number, ChainConfig> = {
     wrappedNative: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
     v2Factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     v3Factory: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
+    // Canonical Uniswap v4 PoolManager (V4-ENABLEMENT-PLAN.md §4, getCode-confirmed; shares the CREATE2
+    // address with XLayer — distinct legit deploys; == sdk-core).
+    v4PoolManager: '0x360e68faccca8ca495c1b759fd9eee466db9fb32',
     // tokenFactory from apps/web/src/terminal/tokenfactory/addresses.ts. No launcher on Ink (not a @hookos/sdk chain).
     tokenFactory: '0x7effe9dd68035f43ad43ae6c31bc1a47ab4579d0',
     // TODO(v3DeployBlock): v3 factory deploy block not recorded in contracts/deployments/ink.json.
@@ -152,6 +175,9 @@ export const CHAINS: Record<number, ChainConfig> = {
     wrappedNative: { address: '0xe538905cf8410324e03A5A23C1c177a474D59b2b', symbol: 'WOKB', name: 'Wrapped OKB', decimals: 18 },
     v2Factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     v3Factory: '0xAB34Bb3767020059A35e71D03f13E9e4fbCD07aC',
+    // Canonical Uniswap v4 PoolManager (V4-ENABLEMENT-PLAN.md §4, getCode-confirmed; shares the CREATE2
+    // address with Ink — distinct legit deploys; == sdk-core).
+    v4PoolManager: '0x360e68faccca8ca495c1b759fd9eee466db9fb32',
     // tokenFactory from apps/web/src/terminal/tokenfactory/addresses.ts. No launcher on XLayer (not a @hookos/sdk chain).
     tokenFactory: '0x70b9025746387e10a9ced77a4c1670def0871376',
     // TODO(v3DeployBlock): v3 factory deploy block not recorded in contracts/deployments/xlayer.json.
@@ -225,6 +251,8 @@ export const CHAINS: Record<number, ChainConfig> = {
     wrappedNative: { address: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14', symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
     v2Factory: '0xF62c03E08ada871A0bEb309762E260a7a6a880E6',
     v3Factory: '0x0227628f3F023bb0B980b67D528571c95c6DaC1c',
+    // Canonical Uniswap v4 PoolManager on Sepolia (V4-ENABLEMENT-PLAN.md §4, getCode-confirmed; == sdk-core).
+    v4PoolManager: '0xE03A1074c86CFeDd5C142C4F04F1a1536e203543',
   },
 }
 

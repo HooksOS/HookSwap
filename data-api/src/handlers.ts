@@ -124,15 +124,31 @@ import {
   getSpotPriceNative,
   getTokenPriceUsd,
   getUsdPerNative,
+  getV3PoolTvlUsd,
+  getV3PoolVolumeUsd24h,
+  getV3PriceChange24hNative,
+  getV3PriceHistory,
+  getV3SpotPriceNative,
+  getV4PoolTvlUsd,
+  getV4PoolVolumeUsd24h,
+  getV4PriceChange24hNative,
+  getV4PriceHistory,
+  getV4SpotPriceNative,
+  PricePoint,
+  SpotPriceNative,
 } from './indexer/metrics'
 import {
   getDb,
   getPoolMeta,
   getSwapEventsByTx,
+  getV3PoolRows,
+  getV4PoolRows,
   getWalletSwapEvents,
   PoolMetaRow,
   SqliteDatabase,
   SwapEventRow,
+  V3PoolRow,
+  V4PoolRow,
 } from './indexer/schema'
 
 /** Uniswap v2 fixed swap fee = 0.30%, expressed in pips (hundredths of a bip) as the proto expects. */
@@ -215,6 +231,26 @@ function toProtoErc20Token(meta: TokenMeta): Token {
     type: TokenType.ERC20,
     metadata: logoUrl ? new TokenMetadata({ logoUrl }) : undefined,
   })
+}
+
+/**
+ * data.v1.Token from a stored v3/v4 pool row's (address, symbol, decimals). The v4 zero-address currency
+ * is the chain's NATIVE coin → emit a NATIVE token (empty address sentinel), else a normal ERC-20 (tiered
+ * logo via toProtoErc20Token). `name` falls back to the symbol (the indexer stores symbol, not name).
+ */
+function protoTokenFromRow(chainId: number, address: string, symbol: string, decimals: number): Token {
+  if (!address || address.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+    const chain = getChain(chainId)
+    return new Token({
+      chainId,
+      address: '',
+      symbol: chain?.nativeSymbol ?? symbol,
+      name: chain?.nativeSymbol ?? symbol,
+      decimals: chain?.nativeDecimals ?? decimals,
+      type: TokenType.NATIVE,
+    })
+  }
+  return toProtoErc20Token({ chainId, address, symbol, name: symbol, decimals, isWrappedNative: false })
 }
 
 // ---------- Event-indexer stats: native-sourceable token metrics from the SQLite indexer ----------
@@ -429,6 +465,274 @@ function buildPoolStats(db: SqliteDatabase, chainId: number, poolAddress: string
   return stats
 }
 
+// ---------- Event-indexer stats: v3 / v4 (concentrated-liquidity) pool + token metrics ----------
+
+/**
+ * USD-anchored PoolStats for a v3 OR v4 pool from the indexer's concentrated-liquidity metrics (price
+ * from sqrtPriceX96; TVL from live pool balances (v3) / accumulated principal (v4); native-leg USD
+ * volume). `feeTier` is the pool's real fee (pips) for the APR calc. Same honesty/gating contract as the
+ * v2 buildPoolStats: every field independently gated + finite-guarded; undefined (→ honest "—") when the
+ * chain has no USD anchor or nothing could be sourced. Never fabricated.
+ */
+function buildConcentratedPoolStats(
+  db: SqliteDatabase,
+  chainId: number,
+  poolKey: string,
+  feeTier: number,
+  tvlFn: (db: SqliteDatabase, chainId: number, key: string) => number | undefined,
+  volFn: (db: SqliteDatabase, chainId: number, key: string) => number | undefined,
+): PoolStats | undefined {
+  let usdPerNative: number | undefined
+  try {
+    usdPerNative = getUsdPerNative(db, chainId)
+  } catch {
+    return undefined
+  }
+  if (usdPerNative === undefined) {
+    return undefined
+  }
+  const stats = new PoolStats()
+  try {
+    const tvl = tvlFn(db, chainId, poolKey)
+    if (tvl !== undefined && tvl >= 0 && Number.isFinite(tvl)) {
+      stats.tvl = tvl
+    }
+  } catch {
+    /* leave tvl unset */
+  }
+  try {
+    const vol = volFn(db, chainId, poolKey)
+    if (vol !== undefined && vol >= 0 && Number.isFinite(vol)) {
+      stats.volume1d = vol
+    }
+  } catch {
+    /* leave volume1d unset */
+  }
+  // Fee APR as a PERCENT from the pool's real fee (pips → fraction = feeTier / 1e6). Same convention as v2.
+  if (stats.tvl !== undefined && stats.tvl > 0 && stats.volume1d !== undefined && feeTier > 0) {
+    const aprPercent = ((stats.volume1d * (feeTier / 1_000_000) * 365) / stats.tvl) * 100
+    if (Number.isFinite(aprPercent) && aprPercent >= 0) {
+      stats.apr = aprPercent
+    }
+  }
+  if (stats.tvl === undefined && stats.volume1d === undefined && stats.apr === undefined) {
+    return undefined
+  }
+  return stats
+}
+
+const buildV3PoolStats = (db: SqliteDatabase, chainId: number, pool: string, feeTier: number): PoolStats | undefined =>
+  buildConcentratedPoolStats(db, chainId, pool, feeTier, getV3PoolTvlUsd, getV3PoolVolumeUsd24h)
+
+const buildV4PoolStats = (db: SqliteDatabase, chainId: number, poolId: string, feeTier: number): PoolStats | undefined =>
+  buildConcentratedPoolStats(db, chainId, poolId, feeTier, getV4PoolTvlUsd, getV4PoolVolumeUsd24h)
+
+/* ---- best-effort circulating/total supply cache (for FDV/mcap of v3/v4-launched tokens) ----
+ * FDV = totalSupply × priceUsd. totalSupply is a live ERC-20 read, so — exactly like the logo resolver —
+ * it is fetched in the BACKGROUND and cached; a handler never blocks on it. First request returns FDV
+ * unset (honest "—"); once the supply resolves, later requests include it. Never fabricated. */
+const totalSupplyCache = new Map<string, number>()
+const totalSupplyInFlight = new Set<string>()
+const TOTAL_SUPPLY_TTL_MS = 300_000
+const totalSupplyAt = new Map<string, number>()
+
+function totalSupplyHumanCached(chainId: number, address: string, decimals: number): number | undefined {
+  if (!address) {
+    return undefined
+  }
+  const key = `${chainId}:${address.toLowerCase()}`
+  const now = Date.now()
+  const at = totalSupplyAt.get(key)
+  const cached = totalSupplyCache.get(key)
+  if (cached !== undefined && at !== undefined && now - at < TOTAL_SUPPLY_TTL_MS) {
+    return cached
+  }
+  if (!totalSupplyInFlight.has(key)) {
+    totalSupplyInFlight.add(key)
+    void getErc20TotalSupply(chainId, address)
+      .then((raw) => {
+        const human = Number(ethers.utils.formatUnits(raw, decimals))
+        if (Number.isFinite(human) && human >= 0) {
+          totalSupplyCache.set(key, human)
+          totalSupplyAt.set(key, Date.now())
+        }
+      })
+      .catch(() => {
+        /* transient RPC error — leave uncached so a later request retries. Never fabricate a supply. */
+      })
+      .finally(() => totalSupplyInFlight.delete(key))
+  }
+  // Return the last known value (even if slightly stale) rather than nothing, if we have one.
+  return cached
+}
+
+/** Metric getters for a concentrated (v3/v4) pool, so one token-stats builder serves both versions. */
+interface ConcentratedMetricFns {
+  spot: (db: SqliteDatabase, chainId: number, key: string) => SpotPriceNative | undefined
+  change: (db: SqliteDatabase, chainId: number, key: string) => number | undefined
+  history: (db: SqliteDatabase, chainId: number, key: string, since: number, bucket: number) => PricePoint[]
+  volumeUsd: (db: SqliteDatabase, chainId: number, key: string) => number | undefined
+}
+
+const V3_METRIC_FNS: ConcentratedMetricFns = {
+  spot: getV3SpotPriceNative,
+  change: getV3PriceChange24hNative,
+  history: getV3PriceHistory,
+  volumeUsd: getV3PoolVolumeUsd24h,
+}
+const V4_METRIC_FNS: ConcentratedMetricFns = {
+  spot: getV4SpotPriceNative,
+  change: getV4PriceChange24hNative,
+  history: getV4PriceHistory,
+  volumeUsd: getV4PoolVolumeUsd24h,
+}
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
+/**
+ * Build TokenStats for a token from a representative concentrated (v3/v4) pool pairing it with the chain's
+ * NATIVE side (wrapped-native, or the v4 zero-address native). Unlike the v2 builder, this does NOT require
+ * a 24h price-change baseline — a freshly-launched v3 pool has a real sqrtPriceX96 price with zero swaps,
+ * and that price (+ FDV) is exactly what the token page needs. Every field is independently sourced +
+ * gated; USD fields need the chain's anchor. Returns undefined only when nothing could be sourced.
+ */
+function buildConcentratedTokenStats(
+  db: SqliteDatabase,
+  tok: Token,
+  poolKey: string,
+  token0: string,
+  token1: string,
+  fns: ConcentratedMetricFns,
+): TokenStats | undefined {
+  const chain = getChain(tok.chainId)
+  if (!chain || !tok.address) {
+    return undefined
+  }
+  const addr = tok.address.toLowerCase()
+  const wnative = chain.wrappedNative.address.toLowerCase()
+  const a0 = token0.toLowerCase()
+  const a1 = token1.toLowerCase()
+  const tokenIsToken0 = a0 === addr
+  const tokenIsToken1 = a1 === addr
+  if (!tokenIsToken0 && !tokenIsToken1) {
+    return undefined
+  }
+  // The OTHER side must be the native side to price this token via the anchor.
+  const otherAddr = tokenIsToken0 ? a1 : a0
+  const otherIsNative = otherAddr === wnative || otherAddr === ZERO_ADDRESS
+  if (!otherIsNative) {
+    return undefined
+  }
+
+  const stats = new TokenStats()
+  let any = false
+
+  // 24h price change (native), oriented to THIS token (same conversion as the v2 builder).
+  const f = fns.change(db, tok.chainId, poolKey)
+  if (f !== undefined) {
+    const tokenChangeFraction = tokenIsToken0 ? f : -f / (1 + f)
+    if (Number.isFinite(tokenChangeFraction)) {
+      stats.priceChange1d = tokenChangeFraction * 100
+      any = true
+    }
+  }
+
+  // Native price history (hourly close), oriented to this token (token0 → as-is; token1 → inverse).
+  try {
+    const sinceTs = Math.floor(Date.now() / 1000) - PRICE_HISTORY_WINDOW_SEC
+    const history = fns.history(db, tok.chainId, poolKey, sinceTs, PRICE_HISTORY_BUCKET_SEC)
+    const series = history
+      .filter((pt) => Number.isFinite(pt.price) && pt.price > 0)
+      .map(
+        (pt) =>
+          new TimestampedValue({ timestamp: BigInt(pt.t), value: tokenIsToken0 ? pt.price : 1 / pt.price }),
+      )
+    if (series.length) {
+      stats.priceHistory1d = series
+      any = true
+    }
+  } catch {
+    /* omit history; never fabricate */
+  }
+
+  // USD-anchored fields (price, volume, fdv) — gated on the chain's anchor.
+  try {
+    const usdPerNative = getUsdPerNative(db, tok.chainId)
+    if (usdPerNative !== undefined) {
+      const spot = fns.spot(db, tok.chainId, poolKey)
+      if (spot) {
+        const priceInNative = tokenIsToken0 ? spot.priceToken0InToken1 : spot.priceToken1InToken0
+        const priceUsd = getTokenPriceUsd(db, tok.chainId, priceInNative)
+        if (priceUsd !== undefined && priceUsd > 0 && Number.isFinite(priceUsd)) {
+          stats.price = priceUsd
+          any = true
+          // FDV/mcap = totalSupply × priceUsd (best-effort; background-resolved supply — see cache).
+          const supply = totalSupplyHumanCached(tok.chainId, tok.address, tok.decimals)
+          if (supply !== undefined && supply > 0) {
+            const fdv = supply * priceUsd
+            if (Number.isFinite(fdv) && fdv >= 0) {
+              stats.fdv = fdv
+            }
+          }
+        }
+      }
+      const volumeUsd = fns.volumeUsd(db, tok.chainId, poolKey)
+      if (volumeUsd !== undefined && volumeUsd >= 0 && Number.isFinite(volumeUsd)) {
+        stats.volume1d = volumeUsd
+        any = true
+      }
+    }
+  } catch {
+    /* leave USD fields unset; never fabricate */
+  }
+
+  return any ? stats : undefined
+}
+
+/**
+ * TokenStats for a token, trying every protocol version in turn: v2 (existing native+USD builder) →
+ * else a representative v3 pool (indexer-discovered) → else a representative v4 pool. This is what makes a
+ * v3-only launch (e.g. HSTT) carry a real price / mcap / 24h / sparkline instead of an empty "—".
+ */
+function buildTokenStatsAnyVersion(
+  db: SqliteDatabase,
+  tok: Token,
+  pairs: V2PairData[] | undefined,
+  v3Pools: V3PoolRow[] | undefined,
+  v4Pools: V4PoolRow[] | undefined,
+): TokenStats | undefined {
+  const v2 = buildTokenStats(db, tok, pairs)
+  if (v2) {
+    return v2
+  }
+  if (!tok.address) {
+    return undefined
+  }
+  const chain = getChain(tok.chainId)
+  if (!chain) {
+    return undefined
+  }
+  const addr = tok.address.toLowerCase()
+  const wnative = chain.wrappedNative.address.toLowerCase()
+  const pairsNative = (a0: string, a1: string): boolean => {
+    const other = a0 === addr ? a1 : a1 === addr ? a0 : ''
+    return other === wnative || other === ZERO_ADDRESS
+  }
+  // v3: prefer the token/native pool with the most sourceable USD volume, else the first one.
+  const v3 = (v3Pools ?? []).find((p) => pairsNative(p.token0.toLowerCase(), p.token1.toLowerCase()))
+  if (v3) {
+    const s = buildConcentratedTokenStats(db, tok, v3.pool, v3.token0, v3.token1, V3_METRIC_FNS)
+    if (s) {
+      return s
+    }
+  }
+  const v4 = (v4Pools ?? []).find((p) => pairsNative(p.currency0.toLowerCase(), p.currency1.toLowerCase()))
+  if (v4) {
+    return buildConcentratedTokenStats(db, tok, v4.poolId, v4.currency0, v4.currency1, V4_METRIC_FNS)
+  }
+  return undefined
+}
+
 // ---------- REAL: listTokens ----------
 
 export async function handleListTokens(req: ListTokensRequest): Promise<ListTokensResponse> {
@@ -437,6 +741,18 @@ export async function handleListTokens(req: ListTokensRequest): Promise<ListToke
   // Reuse the v2 pairs discovered below to locate each token's representative wrapped-native pool
   // (for native-denominated stats), so we don't re-hit the RPC/cache a second time per token.
   const pairsByChain = new Map<number, V2PairData[]>()
+  // Indexer-discovered v3/v4 pools per chain — the source that lets v3-only launches (e.g. HSTT) surface
+  // with a price/mcap/chart. Read once per chain from the shared SQLite (the indexer persists them).
+  const v3PoolsByChain = new Map<number, V3PoolRow[]>()
+  const v4PoolsByChain = new Map<number, V4PoolRow[]>()
+  // Indexer DB handle up-front so the chain loop can read persisted v3/v4 pools. Unavailable → no stats
+  // and no indexer-sourced v3/v4 tokens (honest degrade), core static+v2 tokens still returned.
+  let db: SqliteDatabase | undefined
+  try {
+    db = getDb()
+  } catch {
+    db = undefined
+  }
 
   for (const chainId of chainIds) {
     const chain = getChain(chainId)
@@ -492,22 +808,49 @@ export async function handleListTokens(req: ListTokensRequest): Promise<ListToke
     } catch {
       // RPC down for this chain — still return its static tokens (native + wrapped + seeded).
     }
-    // Same for tokens discovered in this chain's REAL on-chain v3 pools (PoolCreated-log-discovered,
-    // metadata read live on-chain). Deduped against everything already added (static + v2 tokens).
-    try {
-      const v3pools = await getV3PoolsCached(chainId)
-      for (const p of v3pools) {
-        for (const meta of [p.token0, p.token1]) {
-          const key = meta.address.toLowerCase()
-          if (seen.has(key)) {
-            continue
+    // Tokens discovered in this chain's REAL on-chain v3 + v4 pools — sourced from the event indexer's
+    // PERSISTED discovery (v3_pools / v4_pools), NOT a live RPC scan. This is what surfaces every LaunchPad
+    // launch (all v3) with real metadata. Deduped against everything already added. v4 currency 0x0 = the
+    // native asset (already added above) → skipped by the empty-address guard.
+    if (db) {
+      try {
+        const v3Rows = getV3PoolRows(db, chainId)
+        v3PoolsByChain.set(chainId, v3Rows)
+        for (const p of v3Rows) {
+          for (const t of [
+            { address: p.token0, symbol: p.symbol0, decimals: p.decimals0 },
+            { address: p.token1, symbol: p.symbol1, decimals: p.decimals1 },
+          ]) {
+            const key = t.address.toLowerCase()
+            if (!key || seen.has(key)) {
+              continue
+            }
+            seen.add(key)
+            tokens.push(toProtoErc20Token({ chainId, address: t.address, symbol: t.symbol, name: t.symbol, decimals: t.decimals, isWrappedNative: false }))
           }
-          seen.add(key)
-          tokens.push(toProtoErc20Token(meta))
         }
+      } catch {
+        // DB read failure — non-fatal; static + v2 tokens still returned.
       }
-    } catch {
-      // RPC down / no v3 discovery for this chain — non-fatal; static + v2 tokens still returned.
+      try {
+        const v4Rows = getV4PoolRows(db, chainId)
+        v4PoolsByChain.set(chainId, v4Rows)
+        for (const p of v4Rows) {
+          for (const t of [
+            { address: p.currency0, symbol: p.symbol0, decimals: p.decimals0 },
+            { address: p.currency1, symbol: p.symbol1, decimals: p.decimals1 },
+          ]) {
+            const key = t.address.toLowerCase()
+            if (!key || key === ZERO_ADDRESS || seen.has(key)) {
+              continue
+            }
+            seen.add(key)
+            tokens.push(toProtoErc20Token({ chainId, address: t.address, symbol: t.symbol, name: t.symbol, decimals: t.decimals, isWrappedNative: false }))
+          }
+        }
+      } catch {
+        // DB read failure — non-fatal.
+      }
     }
     // Ecosystem tokens: self-service-factory-created + launchpad-launched tokens (enumerated on-chain via
     // allTokens()/launchCount()+getLaunch()), surfaced even when they have NO pool yet. Metadata read live
@@ -534,15 +877,7 @@ export async function handleListTokens(req: ListTokensRequest): Promise<ListToke
   // Build the `multichainTokens[]` the Markets/Landing/Analytics panels actually read (price, 24H %,
   // sparkline, movers). For HookSwap the same asset isn't bridged across our chains, so each entry is a
   // single-chain group (one `chainTokens[]` element). Core fields are always returned; `stats` is attached
-  // only when the indexer yields a real, unit-safe native metric (see buildTokenStats) — otherwise omitted.
-  let db: SqliteDatabase | undefined
-  try {
-    db = getDb()
-  } catch {
-    // Indexer DB unavailable (e.g. better-sqlite3 not installed in this env) — still return tokens,
-    // just without stats. Never throw, never fabricate.
-    db = undefined
-  }
+  // only when the indexer yields a real, unit-safe metric across ANY version (v2 → v3 → v4) — otherwise omitted.
   const multichainTokens = visibleTokens.map((tok) => {
     const mt = new MultichainToken({
       // Deterministic id; not used as a join key by the UI (it joins by chainToken address + symbol).
@@ -555,7 +890,13 @@ export async function handleListTokens(req: ListTokensRequest): Promise<ListToke
       ],
     })
     if (db) {
-      const stats = buildTokenStats(db, tok, pairsByChain.get(tok.chainId))
+      const stats = buildTokenStatsAnyVersion(
+        db,
+        tok,
+        pairsByChain.get(tok.chainId),
+        v3PoolsByChain.get(tok.chainId),
+        v4PoolsByChain.get(tok.chainId),
+      )
       if (stats) {
         mt.stats = stats
       }
@@ -620,43 +961,61 @@ export async function handleListTopPools(req: ListTopPoolsRequest): Promise<List
     }
   }
 
-  // v3 pools (PoolCreated-log-discovered, real on-chain balances). Same per-chain error-safety as v2.
-  const perChainV3 = await Promise.all(
-    chainIds.map(async (chainId) => {
+  // v3 + v4 pools — sourced from the event indexer's PERSISTED discovery (v3_pools / v4_pools), each with
+  // real USD-anchored stats from the concentrated-liquidity metrics (sqrtPriceX96 price; v3 live-balance
+  // TVL / v4 accumulated TVL; native-leg USD volume). This is what makes every LaunchPad launch (all v3)
+  // show real TVL/volume instead of $0. Never fabricated: stats stay unset without an anchor / swaps.
+  if (db) {
+    for (const chainId of chainIds) {
+      // v3
       try {
-        return await getV3PoolsCached(chainId)
-      } catch {
-        return [] as V3PoolData[]
-      }
-    }),
-  )
-
-  for (const chainV3 of perChainV3) {
-    for (const p of chainV3) {
-      // Hide pools whose either side is a test/seed placeholder token (see hiddenTokens.ts).
-      if (pairHasHiddenToken(p.token0.symbol, p.token1.symbol)) {
-        continue
-      }
-      const pool = new Pool({
-        chainId: p.chainId,
-        poolId: p.poolAddress,
-        token0: toProtoErc20Token(p.token0),
-        token1: toProtoErc20Token(p.token1),
-        protocolVersion: ProtocolVersion.V3,
-        // real v3 fee (pips, straight from the PoolCreated event) — NOT the fixed v2 0.30%.
-        feeTier: p.fee,
-        isDynamicFee: false,
-      })
-      // The event indexer currently ingests only v2 Sync/Swap events (see ingest.ts), so v3 pools have
-      // no pool_meta → buildPoolStats returns undefined and stats stays UNSET (honest "—"). Wired anyway so
-      // v3 USD stats light up automatically if/when v3 event ingestion is added. Never fabricated.
-      if (db) {
-        const stats = buildPoolStats(db, p.chainId, p.poolAddress)
-        if (stats) {
-          pool.stats = stats
+        for (const p of getV3PoolRows(db, chainId)) {
+          if (pairHasHiddenToken(p.symbol0, p.symbol1)) {
+            continue
+          }
+          const pool = new Pool({
+            chainId,
+            poolId: p.pool,
+            token0: protoTokenFromRow(chainId, p.token0, p.symbol0, p.decimals0),
+            token1: protoTokenFromRow(chainId, p.token1, p.symbol1, p.decimals1),
+            protocolVersion: ProtocolVersion.V3,
+            feeTier: p.fee, // real v3 fee (pips) from PoolCreated
+            isDynamicFee: false,
+          })
+          const stats = buildV3PoolStats(db, chainId, p.pool, p.fee)
+          if (stats) {
+            pool.stats = stats
+          }
+          pools.push(pool)
         }
+      } catch {
+        // DB read failure — serve what we can.
       }
-      pools.push(pool)
+      // v4 (singleton; poolId). Dynamic-fee pools carry the flag 0x800000 in `fee`.
+      try {
+        for (const p of getV4PoolRows(db, chainId)) {
+          if (pairHasHiddenToken(p.symbol0, p.symbol1)) {
+            continue
+          }
+          const isDynamic = (p.fee & 0x800000) !== 0
+          const pool = new Pool({
+            chainId,
+            poolId: p.poolId,
+            token0: protoTokenFromRow(chainId, p.currency0, p.symbol0, p.decimals0),
+            token1: protoTokenFromRow(chainId, p.currency1, p.symbol1, p.decimals1),
+            protocolVersion: ProtocolVersion.V4,
+            feeTier: isDynamic ? 0 : p.fee,
+            isDynamicFee: isDynamic,
+          })
+          const stats = buildV4PoolStats(db, chainId, p.poolId, isDynamic ? 0 : p.fee)
+          if (stats) {
+            pool.stats = stats
+          }
+          pools.push(pool)
+        }
+      } catch {
+        // DB read failure — serve what we can.
+      }
     }
   }
 

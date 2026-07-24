@@ -23,21 +23,47 @@
  */
 
 import { ethers } from 'ethers'
-import { getProvider, getV2Pairs } from '../onchain'
-import { supportedChainIds } from '../chains'
+import { getProvider, getTokenMeta, getV2Pairs, readV3LiveState, TokenMeta } from '../onchain'
+import { ChainConfig, getChain, supportedChainIds } from '../chains'
 import {
   getCursor,
   getDb,
+  getV3PoolRows,
+  getV4PoolRow,
+  getV4PoolState,
   insertSwapEvents,
   insertSyncEvents,
+  insertV3SwapEvents,
+  insertV4SwapEvents,
   setCursor,
   SNAPSHOT_LOG_INDEX,
   SwapEventRow,
   SyncEventRow,
   upsertPoolMeta,
+  upsertV3Pool,
+  upsertV4Pool,
+  V3SwapEventRow,
+  V4SwapEventRow,
   writeReserveSnapshot,
+  writeV3PoolState,
+  writeV4PoolState,
 } from './schema'
-import { parseSwapLog, parseSyncLog, SWAP_TOPIC, SYNC_TOPIC } from './abis'
+import {
+  parseSwapLog,
+  parseSyncLog,
+  parseV3PoolCreatedLog,
+  parseV3SwapLog,
+  parseV4InitializeLog,
+  parseV4ModifyLiquidityLog,
+  parseV4SwapLog,
+  SWAP_TOPIC,
+  SYNC_TOPIC,
+  V3_POOL_CREATED_TOPIC,
+  V3_SWAP_TOPIC,
+  V4_INITIALIZE_TOPIC,
+  V4_MODIFY_LIQUIDITY_TOPIC,
+  V4_SWAP_TOPIC,
+} from './abis'
 
 /** Blocks per eth_getLogs window. Public RPCs commonly cap ranges; 9_500 matches onchain.ts's v3 scanner. */
 const INDEXER_LOG_CHUNK = 9_500
@@ -213,6 +239,511 @@ async function ingestPool(
   return { swaps, syncs }
 }
 
+/* ============================================================================================
+ * v3 INGEST — factory PoolCreated discovery (persisted) + per-pool Swap scan + live slot0/balance state.
+ * ============================================================================================ */
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+/** 2^96 as a float — for sqrtPriceX96 → raw-sqrt-price conversion in the v4 TVL tick-math. */
+const Q96 = 2 ** 96
+
+/**
+ * getLogs with ADAPTIVE range-splitting. A busy singleton (the v4 PoolManager emits every pool's events)
+ * can exceed an RPC's per-query log cap (e.g. Robinhood's "logs matched by query exceeds limit of 10000")
+ * even on a small block span. On ANY getLogs error over a multi-block range we bisect and retry each half,
+ * down to a single block. Returns the union of all sub-range logs. Throws only if a SINGLE-block query
+ * fails (a genuine RPC failure the caller treats as "resume next pass"). Never fabricates.
+ */
+async function getLogsAdaptive(
+  provider: ethers.providers.JsonRpcProvider,
+  filter: { address: string; topics: (string | string[])[] },
+  fromBlock: number,
+  toBlock: number,
+): Promise<ethers.providers.Log[]> {
+  try {
+    return await provider.getLogs({ ...filter, fromBlock, toBlock })
+  } catch (err) {
+    if (fromBlock >= toBlock) {
+      throw err // single block already — a real failure, let the caller resume next pass
+    }
+    const mid = Math.floor((fromBlock + toBlock) / 2)
+    const [a, b] = await Promise.all([
+      getLogsAdaptive(provider, filter, fromBlock, mid),
+      getLogsAdaptive(provider, filter, mid + 1, toBlock),
+    ])
+    return a.concat(b)
+  }
+}
+
+/** Resolve the FIRST-scan start block for a factory/PoolManager scan: env override → deployBlock → latest-backfill. */
+function scanStartBlock(chainId: number, latest: number, backfill: number, envVar: string, deployBlock: number | undefined): number {
+  const env = process.env[envVar]
+  if (env && /^\d+$/.test(env.trim())) {
+    return Number(env.trim())
+  }
+  if (typeof deployBlock === 'number') {
+    return deployBlock
+  }
+  return Math.max(0, latest - backfill)
+}
+
+/**
+ * Discover NEW v3 pools on a chain by scanning the v3 factory's PoolCreated logs from a persisted
+ * discovery cursor (keyed by the factory address so it never collides with a real pool's swap cursor).
+ * Persists each pool's metadata (real on-chain token reads) to v3_pools. Chunked + resumable + error-safe.
+ */
+async function discoverV3Pools(
+  provider: ethers.providers.JsonRpcProvider,
+  chainId: number,
+  chain: ChainConfig,
+  latest: number,
+  backfill: number,
+): Promise<number> {
+  const db = getDb()
+  if (!chain.v3Factory || /^0x0+$/.test(chain.v3Factory)) {
+    return 0
+  }
+  const factory = chain.v3Factory.toLowerCase()
+  const cursorKey = `v3factory:${factory}`
+  const cursor = getCursor(db, chainId, cursorKey)
+  let start =
+    cursor !== undefined ? cursor + 1 : scanStartBlock(chainId, latest, backfill, `V3_SCAN_FROM_BLOCK_${chainId}`, chain.v3DeployBlock)
+  if (start > latest) {
+    return 0
+  }
+  if (cursor === undefined) {
+    // eslint-disable-next-line no-console
+    console.log(`[indexer] chain ${chainId} v3 discovery: first factory scan bounded to ${start}-${latest}`)
+  }
+  let discovered = 0
+  while (start <= latest) {
+    const end = Math.min(start + INDEXER_LOG_CHUNK - 1, latest)
+    let logs: ethers.providers.Log[]
+    try {
+      logs = await provider.getLogs({ address: factory, topics: [V3_POOL_CREATED_TOPIC], fromBlock: start, toBlock: end })
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[indexer] chain ${chainId} v3 discovery getLogs ${start}-${end} failed; resuming next pass`, err)
+      break
+    }
+    for (const log of logs) {
+      const pc = parseV3PoolCreatedLog(log)
+      if (!pc) {
+        continue
+      }
+      const [t0, t1] = await Promise.all([
+        getTokenMeta(chainId, pc.token0).catch(() => undefined),
+        getTokenMeta(chainId, pc.token1).catch(() => undefined),
+      ])
+      if (!t0 || !t1) {
+        continue // couldn't read real token metadata — skip, never fabricate
+      }
+      upsertV3Pool(db, {
+        chainId,
+        pool: pc.pool,
+        token0: t0.address.toLowerCase(),
+        token1: t1.address.toLowerCase(),
+        decimals0: t0.decimals,
+        decimals1: t1.decimals,
+        symbol0: t0.symbol,
+        symbol1: t1.symbol,
+        fee: pc.fee,
+        tickSpacing: pc.tickSpacing,
+      })
+      discovered++
+    }
+    setCursor(db, chainId, cursorKey, end)
+    start = end + 1
+  }
+  return discovered
+}
+
+/** Scan one v3 pool's Swap logs start..latest, chunked + resumable. Mirrors the v2 ingestPool loop. */
+async function ingestV3Pool(
+  provider: ethers.providers.JsonRpcProvider,
+  chainId: number,
+  pool: string,
+  startBlock: number,
+  latest: number,
+  tsCache: Map<number, number>,
+  originCache: Map<string, string>,
+): Promise<number> {
+  const db = getDb()
+  let swaps = 0
+  let start = startBlock
+  while (start <= latest) {
+    const end = Math.min(start + INDEXER_LOG_CHUNK - 1, latest)
+    let logs: ethers.providers.Log[]
+    try {
+      logs = await getLogsAdaptive(provider, { address: pool, topics: [V3_SWAP_TOPIC] }, start, end)
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[indexer] chain ${chainId} v3 pool ${pool} getLogs ${start}-${end} failed; resuming next pass`, err)
+      break
+    }
+    await loadBlockTimestamps(provider, logs.map((l) => l.blockNumber), tsCache)
+    await loadTxOrigins(provider, logs.map((l) => l.transactionHash), originCache)
+    const rows: V3SwapEventRow[] = []
+    for (const log of logs) {
+      const ts = tsCache.get(log.blockNumber)
+      if (ts === undefined) {
+        continue
+      }
+      const p = parseV3SwapLog(log)
+      if (!p) {
+        continue
+      }
+      const origin = originCache.get(log.transactionHash) ?? ''
+      rows.push({
+        chainId,
+        pool,
+        blockNumber: log.blockNumber,
+        logIndex: log.logIndex,
+        txHash: p.txHash,
+        sender: p.sender,
+        recipient: p.recipient,
+        origin,
+        amount0: p.amount0,
+        amount1: p.amount1,
+        sqrtPriceX96: p.sqrtPriceX96,
+        liquidity: p.liquidity,
+        tick: p.tick,
+        timestamp: ts,
+      })
+    }
+    swaps += insertV3SwapEvents(db, rows)
+    setCursor(db, chainId, pool, end)
+    start = end + 1
+  }
+  return swaps
+}
+
+/**
+ * Ingest all known v3 pools on a chain: (1) discover new pools from the factory, (2) snapshot each pool's
+ * live slot0 (exact price) + token balances (exact TVL basis) into v3_pool_state, (3) scan its Swap logs
+ * (volume + price history). Error-safe per pool.
+ */
+async function ingestV3ForChain(
+  provider: ethers.providers.JsonRpcProvider,
+  chainId: number,
+  chain: ChainConfig,
+  latest: number,
+  backfill: number,
+  tsCache: Map<number, number>,
+  originCache: Map<string, string>,
+): Promise<{ pools: number; swaps: number }> {
+  const db = getDb()
+  let discovered = 0
+  try {
+    discovered = await discoverV3Pools(provider, chainId, chain, latest, backfill)
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(`[indexer] chain ${chainId} v3 discovery failed (skipped)`, err)
+  }
+  const pools = getV3PoolRows(db, chainId)
+  let swaps = 0
+  for (const pool of pools) {
+    try {
+      // Live slot0 + balances snapshot — exact current price + TVL basis, independent of the swap backfill.
+      const live = await readV3LiveState(chainId, pool.pool, pool.token0, pool.token1)
+      if (live) {
+        writeV3PoolState(db, {
+          chainId,
+          pool: pool.pool,
+          blockNumber: latest,
+          sqrtPriceX96: live.sqrtPriceX96,
+          tick: live.tick,
+          liquidity: live.liquidity,
+          balance0: live.balance0,
+          balance1: live.balance1,
+          timestamp: Math.floor(Date.now() / 1000),
+        })
+      }
+      const cursor = getCursor(db, chainId, pool.pool)
+      const start = cursor !== undefined ? cursor + 1 : Math.max(0, latest - backfill)
+      if (start <= latest) {
+        swaps += await ingestV3Pool(provider, chainId, pool.pool, start, latest, tsCache, originCache)
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[indexer] chain ${chainId} v3 pool ${pool.pool} ingest failed (skipped)`, err)
+    }
+  }
+  return { pools: pools.length, swaps }
+}
+
+/* ============================================================================================
+ * v4 INGEST — singleton PoolManager scan (Initialize + Swap + ModifyLiquidity), one cursor per chain.
+ * TVL is accumulated per pool from ModifyLiquidity via tick-math (v4 has no per-pool balanceOf).
+ * ============================================================================================ */
+
+/** In-memory per-pool folding state for one v4 ingest pass (seeded from persisted v4_pool_state). */
+interface V4FoldState {
+  sqrtPriceX96: string
+  tick: number
+  liquidity: string
+  /** accumulated TVL in HUMAN units. */
+  tvl0: number
+  tvl1: number
+  dec0: number
+  dec1: number
+  block: number
+  touched: boolean
+}
+
+/** Convert a v4 ModifyLiquidity (signed liquidityDelta over [tickLower,tickUpper]) to signed HUMAN token amounts
+ *  at the pool's current raw sqrt price — the standard concentrated-liquidity principal math. */
+function liquidityDeltaToAmountsHuman(
+  liquidityDelta: string,
+  tickLower: number,
+  tickUpper: number,
+  sqrtPriceX96Raw: string,
+  dec0: number,
+  dec1: number,
+): { amount0Human: number; amount1Human: number } {
+  const L = Number(liquidityDelta)
+  const sqrtPx = Number(sqrtPriceX96Raw)
+  if (!Number.isFinite(L) || L === 0 || !(sqrtPx > 0)) {
+    return { amount0Human: 0, amount1Human: 0 }
+  }
+  const sqrtP = sqrtPx / Q96
+  const sqrtA = Math.pow(1.0001, tickLower / 2)
+  const sqrtB = Math.pow(1.0001, tickUpper / 2)
+  if (!(sqrtA > 0) || !(sqrtB > sqrtA)) {
+    return { amount0Human: 0, amount1Human: 0 }
+  }
+  const absL = Math.abs(L)
+  let amount0Raw = 0
+  let amount1Raw = 0
+  if (sqrtP <= sqrtA) {
+    amount0Raw = (absL * (sqrtB - sqrtA)) / (sqrtA * sqrtB)
+  } else if (sqrtP >= sqrtB) {
+    amount1Raw = absL * (sqrtB - sqrtA)
+  } else {
+    amount0Raw = (absL * (sqrtB - sqrtP)) / (sqrtP * sqrtB)
+    amount1Raw = absL * (sqrtP - sqrtA)
+  }
+  const sign = L < 0 ? -1 : 1
+  return {
+    amount0Human: (sign * amount0Raw) / Math.pow(10, dec0),
+    amount1Human: (sign * amount1Raw) / Math.pow(10, dec1),
+  }
+}
+
+/** Resolve a v4 currency's {symbol, decimals}. The zero address = the chain's native coin (v4 native). */
+async function resolveCurrencyMeta(
+  chainId: number,
+  chain: ChainConfig,
+  currency: string,
+): Promise<{ symbol: string; decimals: number } | undefined> {
+  if (currency.toLowerCase() === ZERO_ADDRESS) {
+    return { symbol: chain.nativeSymbol, decimals: chain.nativeDecimals }
+  }
+  const m = await getTokenMeta(chainId, currency).catch(() => undefined as TokenMeta | undefined)
+  if (!m || !m.symbol) {
+    return undefined
+  }
+  return { symbol: m.symbol, decimals: m.decimals }
+}
+
+/**
+ * Ingest a chain's v4 PoolManager (singleton). Scans Initialize/Swap/ModifyLiquidity from one persisted
+ * cursor (keyed by the PoolManager address), folding events IN ORDER to maintain each pool's current price
+ * and accumulated TVL. Persists v4_pools (discovery), v4_swap_events (volume/price history), and
+ * v4_pool_state (price + accumulated TVL). Chunked + resumable + error-safe.
+ */
+async function ingestV4ForChain(
+  provider: ethers.providers.JsonRpcProvider,
+  chainId: number,
+  chain: ChainConfig,
+  latest: number,
+  backfill: number,
+  tsCache: Map<number, number>,
+): Promise<{ pools: number; swaps: number }> {
+  const db = getDb()
+  if (!chain.v4PoolManager || /^0x0+$/.test(chain.v4PoolManager)) {
+    return { pools: 0, swaps: 0 }
+  }
+  const pm = chain.v4PoolManager.toLowerCase()
+  const cursorKey = `v4pm:${pm}`
+  const cursor = getCursor(db, chainId, cursorKey)
+  let start =
+    cursor !== undefined ? cursor + 1 : scanStartBlock(chainId, latest, backfill, `V4_SCAN_FROM_BLOCK_${chainId}`, chain.v4DeployBlock)
+  if (start > latest) {
+    return { pools: 0, swaps: 0 }
+  }
+  if (cursor === undefined) {
+    // eslint-disable-next-line no-console
+    console.log(`[indexer] chain ${chainId} v4 PoolManager ${pm}: first scan bounded to ${start}-${latest}`)
+  }
+
+  // Per-pass fold state, seeded lazily from persisted v4_pool_state so accumulation resumes correctly.
+  const stateMap = new Map<string, V4FoldState>()
+  const ensureState = (poolId: string): V4FoldState => {
+    const existing = stateMap.get(poolId)
+    if (existing) {
+      return existing
+    }
+    const persisted = getV4PoolState(db, chainId, poolId)
+    const known = getV4PoolRow(db, chainId, poolId)
+    const st: V4FoldState = {
+      sqrtPriceX96: persisted?.sqrtPriceX96 ?? '',
+      tick: persisted?.tick ?? 0,
+      liquidity: persisted?.liquidity ?? '0',
+      tvl0: persisted ? Number(persisted.tvl0Human) || 0 : 0,
+      tvl1: persisted ? Number(persisted.tvl1Human) || 0 : 0,
+      dec0: known?.decimals0 ?? -1,
+      dec1: known?.decimals1 ?? -1,
+      block: persisted?.blockNumber ?? latest,
+      touched: false,
+    }
+    stateMap.set(poolId, st)
+    return st
+  }
+
+  let poolsCount = 0
+  let swaps = 0
+  while (start <= latest) {
+    const end = Math.min(start + INDEXER_LOG_CHUNK - 1, latest)
+    let logs: ethers.providers.Log[]
+    try {
+      // Adaptive: the v4 singleton is busy enough to blow past an RPC's per-query log cap on a 9.5k span,
+      // so bisect-on-error down to single blocks (see getLogsAdaptive).
+      logs = await getLogsAdaptive(
+        provider,
+        { address: pm, topics: [[V4_INITIALIZE_TOPIC, V4_SWAP_TOPIC, V4_MODIFY_LIQUIDITY_TOPIC]] },
+        start,
+        end,
+      )
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[indexer] chain ${chainId} v4 PoolManager getLogs ${start}-${end} failed; resuming next pass`, err)
+      break
+    }
+    await loadBlockTimestamps(provider, logs.map((l) => l.blockNumber), tsCache)
+    // Fold in strict chain order so the running sqrtPrice used by ModifyLiquidity tick-math is correct.
+    logs.sort((a, b) => a.blockNumber - b.blockNumber || a.logIndex - b.logIndex)
+
+    const swapRows: V4SwapEventRow[] = []
+    for (const log of logs) {
+      const topic0 = log.topics[0]
+      const ts = tsCache.get(log.blockNumber)
+      if (topic0 === V4_INITIALIZE_TOPIC) {
+        const init = parseV4InitializeLog(log)
+        if (!init) {
+          continue
+        }
+        const [m0, m1] = await Promise.all([
+          resolveCurrencyMeta(chainId, chain, init.currency0),
+          resolveCurrencyMeta(chainId, chain, init.currency1),
+        ])
+        if (!m0 || !m1) {
+          continue
+        }
+        upsertV4Pool(db, {
+          chainId,
+          poolId: init.poolId,
+          currency0: init.currency0,
+          currency1: init.currency1,
+          decimals0: m0.decimals,
+          decimals1: m1.decimals,
+          symbol0: m0.symbol,
+          symbol1: m1.symbol,
+          fee: init.fee,
+          tickSpacing: init.tickSpacing,
+          hooks: init.hooks,
+        })
+        const st = ensureState(init.poolId)
+        st.sqrtPriceX96 = init.sqrtPriceX96
+        st.tick = init.tick
+        st.dec0 = m0.decimals
+        st.dec1 = m1.decimals
+        st.block = log.blockNumber
+        st.touched = true
+        poolsCount++
+      } else if (topic0 === V4_SWAP_TOPIC) {
+        const sw = parseV4SwapLog(log)
+        if (!sw || ts === undefined) {
+          continue
+        }
+        swapRows.push({
+          chainId,
+          poolId: sw.poolId,
+          blockNumber: log.blockNumber,
+          logIndex: log.logIndex,
+          txHash: sw.txHash,
+          sender: sw.sender,
+          origin: '',
+          amount0: sw.amount0,
+          amount1: sw.amount1,
+          sqrtPriceX96: sw.sqrtPriceX96,
+          liquidity: sw.liquidity,
+          tick: sw.tick,
+          fee: sw.fee,
+          timestamp: ts,
+        })
+        const st = ensureState(sw.poolId)
+        st.sqrtPriceX96 = sw.sqrtPriceX96
+        st.tick = sw.tick
+        st.liquidity = sw.liquidity
+        st.block = log.blockNumber
+        st.touched = true
+      } else if (topic0 === V4_MODIFY_LIQUIDITY_TOPIC) {
+        const ml = parseV4ModifyLiquidityLog(log)
+        if (!ml) {
+          continue
+        }
+        const st = ensureState(ml.poolId)
+        if (st.dec0 < 0) {
+          const known = getV4PoolRow(db, chainId, ml.poolId)
+          if (known) {
+            st.dec0 = known.decimals0
+            st.dec1 = known.decimals1
+          }
+        }
+        if (st.dec0 < 0 || !st.sqrtPriceX96) {
+          continue // no price/decimals context (Initialize before scan window) — skip TVL fold honestly
+        }
+        const { amount0Human, amount1Human } = liquidityDeltaToAmountsHuman(
+          ml.liquidityDelta,
+          ml.tickLower,
+          ml.tickUpper,
+          st.sqrtPriceX96,
+          st.dec0,
+          st.dec1,
+        )
+        st.tvl0 = Math.max(0, st.tvl0 + amount0Human)
+        st.tvl1 = Math.max(0, st.tvl1 + amount1Human)
+        st.block = log.blockNumber
+        st.touched = true
+      }
+    }
+    swaps += insertV4SwapEvents(db, swapRows)
+    // Persist every touched pool's price + accumulated TVL, THEN advance the cursor (resumable).
+    const nowSec = Math.floor(Date.now() / 1000)
+    for (const [poolId, st] of stateMap) {
+      if (!st.touched || !st.sqrtPriceX96) {
+        continue
+      }
+      writeV4PoolState(db, {
+        chainId,
+        poolId,
+        blockNumber: st.block,
+        sqrtPriceX96: st.sqrtPriceX96,
+        tick: st.tick,
+        liquidity: st.liquidity,
+        tvl0Human: String(st.tvl0),
+        tvl1Human: String(st.tvl1),
+        timestamp: nowSec,
+      })
+      st.touched = false
+    }
+    setCursor(db, chainId, cursorKey, end)
+    start = end + 1
+  }
+  return { pools: poolsCount, swaps }
+}
+
 /**
  * One full ingest pass across all supported chains. Discovers pools (getV2Pairs), records pool_meta,
  * then backfills/tails each pool's Swap+Sync logs. Error-safe per chain and per pool — always resolves.
@@ -288,6 +819,26 @@ export async function runIngestOnce(): Promise<IngestPoolResult[]> {
         } catch (err) {
           // eslint-disable-next-line no-console
           console.warn(`[indexer] chain ${chainId} pool ${pool} ingest failed (skipped)`, err)
+        }
+      }
+
+      // ---- v3 + v4 ingestion for this chain (ADDITIVE; the v2 pass above is unchanged) ----
+      // Driven off the per-chain deployment config: v3 runs wherever a v3Factory is set; v4 runs wherever
+      // a v4PoolManager is set (omitted on chains with no canonical v4, e.g. HyperEVM 999 / Stable 988).
+      const chain = getChain(chainId)
+      if (chain) {
+        try {
+          const v3 = await ingestV3ForChain(provider, chainId, chain, latest, backfill, tsCache, originCache)
+          const v4 = await ingestV4ForChain(provider, chainId, chain, latest, backfill, tsCache)
+          if (v3.pools || v3.swaps || v4.pools || v4.swaps) {
+            // eslint-disable-next-line no-console
+            console.log(
+              `[indexer] chain ${chainId}: v3 ${v3.pools} pools/+${v3.swaps} swaps · v4 ${v4.pools} pools/+${v4.swaps} swaps`,
+            )
+          }
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(`[indexer] chain ${chainId} v3/v4 pass failed (skipped)`, err)
         }
       }
     } catch (err) {

@@ -10,14 +10,15 @@
  * uses.
  *
  * WHAT WE POPULATE (fully real, USD-anchored — never fabricated):
- *   - `ProtocolStats.dailyProtocolTvl.v2`            — summed USD TVL across the chain(s)' live v2 pools
- *   - `ProtocolStats.historicalProtocolVolume.{Month,Year,Max}.v2` — summed 24h USD volume across v2 pools
+ *   - `ProtocolStats.dailyProtocolTvl.{v2,v3,v4}`    — summed USD TVL across the chain(s)' live v2 pools +
+ *     the indexer's discovered v3 pools + v4 (singleton PoolManager) pools; the interface sums the versions.
+ *   - `ProtocolStats.historicalProtocolVolume.{Month,Year,Max}.{v2,v3,v4}` — summed 24h USD volume per version
  *   - `ExploreStats.stats.{dailyProtocolTvl,historicalProtocolVolume}` — the same aggregates
  *
  * USD HONESTY (the hard rule): every USD figure derives from the ONE on-chain anchor rate
- * `getUsdPerNative(db, chainId)` (the chain's wrapped-native/stablecoin v2 pool — RH's WETH/USDG).
- * Until that anchor pool is seeded + ingested, `getUsdPerNative` (and therefore `getPoolTvlUsd` /
- * `getPoolVolumeUsd24h`) return `undefined`, so NO pool contributes and we emit EMPTY series (proto
+ * `getUsdPerNative(db, chainId)` (the chain's wrapped-native/stablecoin v2 pool — RH's WETH/USDG). v3/v4
+ * price comes from the pool's sqrtPriceX96 and is anchored via that same rate. Until the anchor pool is
+ * ingested, every USD metric returns `undefined`, so NO pool contributes and we emit EMPTY series (proto
  * default) — never a fabricated number. The frontend renders an empty series as an honest $0 / 0%.
  * The instant a WETH/USDG pool is ingested the aggregates light up automatically. There is no external
  * oracle. Only a SINGLE current data point is emitted per protocol version (we have current TVL + a
@@ -25,8 +26,6 @@
  * is an honest 0% (its own new-launch convention), not a fabricated trend.
  *
  * WHAT WE LEAVE UNSET (never faked):
- *   - v3 / v4 series — the event indexer ingests only v2 Sync/Swap events, so v3 pools have no
- *     pool_meta → no USD metric is sourceable for them; v4 is excluded from HookSwap entirely.
  *   - ExplorerStats.{topTokens,poolStats,tokenStats,transactionStats,...} — those are served by
  *     DataApiService.listTokens / listTopPools; the flag-gated ExploreStats path only needs TVL/volume.
  *
@@ -61,8 +60,15 @@ import { isSupportedChain, supportedChainIds } from './chains'
 import { pairHasHiddenToken } from './hiddenTokens'
 import { getV2PairsCached } from './handlers'
 import { collectChainTokens } from './searchHandlers'
-import { getDb } from './indexer/schema'
-import { getPoolTvlUsd, getPoolVolumeUsd24h } from './indexer/metrics'
+import { getDb, getV3PoolRows, getV4PoolRows } from './indexer/schema'
+import {
+  getPoolTvlUsd,
+  getPoolVolumeUsd24h,
+  getV3PoolTvlUsd,
+  getV3PoolVolumeUsd24h,
+  getV4PoolTvlUsd,
+  getV4PoolVolumeUsd24h,
+} from './indexer/metrics'
 
 /**
  * The interface passes `chainId` as a string: either a specific chain id (e.g. "4663") or the
@@ -79,101 +85,129 @@ function resolveRequestChainIds(chainIdStr: string): number[] {
   return Number.isFinite(n) && isSupportedChain(n) ? [n] : []
 }
 
-interface V2UsdAggregate {
-  /** summed USD TVL across contributing v2 pools; undefined when NO pool could be USD-anchored. */
+interface VersionUsd {
+  /** summed USD TVL across contributing pools of this version; undefined when none could be USD-anchored. */
   tvlUsd?: number
-  /** summed 24h USD volume across contributing v2 pools; undefined when NO pool could be USD-anchored. */
+  /** summed 24h USD volume; undefined when none could be USD-anchored. */
   volumeUsd24h?: number
 }
 
-/**
- * Sum USD TVL + 24h USD volume across every live v2 pool on one chain, from the indexer metrics. A
- * field stays `undefined` unless at least one pool yielded a real (anchor-defined, finite, ≥0) value —
- * so with no seeded WETH/USDG anchor the whole aggregate is undefined and nothing is fabricated. A real
- * zero (anchor exists, pools traded nothing) is a genuine 0, distinct from undefined. Never throws.
- */
-async function aggregateV2UsdForChain(
-  db: ReturnType<typeof getDb>,
-  chainId: number,
-): Promise<V2UsdAggregate> {
-  let pairs
-  try {
-    pairs = await getV2PairsCached(chainId)
-  } catch {
-    // RPC down for this chain — contribute nothing (honest), don't fail the whole response.
-    return {}
-  }
-
-  let tvlSum = 0
-  let tvlCount = 0
-  let volSum = 0
-  let volCount = 0
-
-  for (const p of pairs) {
-    // Exclude test/seed placeholder pools (tHOOK/… pairs) from the protocol TVL/volume aggregate so
-    // seed liquidity never inflates the Landing/Analytics headline stats (see hiddenTokens.ts).
-    if (pairHasHiddenToken(p.token0.symbol, p.token1.symbol)) {
-      continue
-    }
-    // ingest.ts stores pool addresses lowercased → key the metrics reads the same way.
-    const poolKey = p.pairAddress.toLowerCase()
-    try {
-      const tvl = getPoolTvlUsd(db, chainId, poolKey)
-      if (tvl !== undefined && Number.isFinite(tvl) && tvl >= 0) {
-        tvlSum += tvl
-        tvlCount++
-      }
-    } catch {
-      // leave this pool out of the TVL sum
-    }
-    try {
-      const vol = getPoolVolumeUsd24h(db, chainId, poolKey)
-      if (vol !== undefined && Number.isFinite(vol) && vol >= 0) {
-        volSum += vol
-        volCount++
-      }
-    } catch {
-      // leave this pool out of the volume sum
-    }
-  }
-
-  return {
-    tvlUsd: tvlCount > 0 ? tvlSum : undefined,
-    volumeUsd24h: volCount > 0 ? volSum : undefined,
-  }
+/** Per-protocol-version USD aggregate (v2 + v3 + v4). undefined fields = nothing sourceable (never faked). */
+interface UsdAggregate {
+  v2: VersionUsd
+  v3: VersionUsd
+  v4: VersionUsd
 }
 
-/** Sum the per-chain v2 aggregates across all targeted chains. undefined fields stay undefined unless ≥1 chain contributed. */
-async function aggregateV2Usd(chainIds: number[]): Promise<V2UsdAggregate> {
+/** Fold one pool's (tvl, vol) into running sums, counting only real (finite, ≥0) contributions. */
+interface RunningSums {
+  tvlSum: number
+  tvlCount: number
+  volSum: number
+  volCount: number
+}
+function foldPoolUsd(
+  sums: RunningSums,
+  tvl: number | undefined,
+  vol: number | undefined,
+): void {
+  if (tvl !== undefined && Number.isFinite(tvl) && tvl >= 0) {
+    sums.tvlSum += tvl
+    sums.tvlCount++
+  }
+  if (vol !== undefined && Number.isFinite(vol) && vol >= 0) {
+    sums.volSum += vol
+    sums.volCount++
+  }
+}
+function toVersionUsd(sums: RunningSums): VersionUsd {
+  return { tvlUsd: sums.tvlCount > 0 ? sums.tvlSum : undefined, volumeUsd24h: sums.volCount > 0 ? sums.volSum : undefined }
+}
+
+/**
+ * Sum USD TVL + 24h USD volume across every live v2, v3, and v4 pool on one chain, from the indexer
+ * metrics. v2 pools come from the live RPC discovery; v3/v4 from the indexer's persisted discovery.
+ * Test/seed placeholder pools are excluded so seed liquidity never inflates the headline. A field stays
+ * undefined unless ≥1 pool yielded a real value (no fabrication); a real zero is a genuine 0. Never throws.
+ */
+async function aggregateUsdForChain(db: ReturnType<typeof getDb>, chainId: number): Promise<UsdAggregate> {
+  const v2 = { tvlSum: 0, tvlCount: 0, volSum: 0, volCount: 0 }
+  const v3 = { tvlSum: 0, tvlCount: 0, volSum: 0, volCount: 0 }
+  const v4 = { tvlSum: 0, tvlCount: 0, volSum: 0, volCount: 0 }
+
+  // v2 (live-discovered pools).
+  try {
+    for (const p of await getV2PairsCached(chainId)) {
+      if (pairHasHiddenToken(p.token0.symbol, p.token1.symbol)) {
+        continue
+      }
+      const poolKey = p.pairAddress.toLowerCase()
+      try {
+        foldPoolUsd(v2, getPoolTvlUsd(db, chainId, poolKey), getPoolVolumeUsd24h(db, chainId, poolKey))
+      } catch {
+        /* leave this pool out */
+      }
+    }
+  } catch {
+    // RPC down — contribute no v2 for this chain (honest), don't fail the whole response.
+  }
+
+  // v3 (indexer-discovered pools).
+  try {
+    for (const p of getV3PoolRows(db, chainId)) {
+      if (pairHasHiddenToken(p.symbol0, p.symbol1)) {
+        continue
+      }
+      try {
+        foldPoolUsd(v3, getV3PoolTvlUsd(db, chainId, p.pool), getV3PoolVolumeUsd24h(db, chainId, p.pool))
+      } catch {
+        /* leave out */
+      }
+    }
+  } catch {
+    /* no v3 rows / DB read failure */
+  }
+
+  // v4 (indexer-discovered singleton pools).
+  try {
+    for (const p of getV4PoolRows(db, chainId)) {
+      if (pairHasHiddenToken(p.symbol0, p.symbol1)) {
+        continue
+      }
+      try {
+        foldPoolUsd(v4, getV4PoolTvlUsd(db, chainId, p.poolId), getV4PoolVolumeUsd24h(db, chainId, p.poolId))
+      } catch {
+        /* leave out */
+      }
+    }
+  } catch {
+    /* no v4 rows / DB read failure */
+  }
+
+  return { v2: toVersionUsd(v2), v3: toVersionUsd(v3), v4: toVersionUsd(v4) }
+}
+
+/** Sum the per-chain per-version aggregates across all targeted chains. */
+async function aggregateUsd(chainIds: number[]): Promise<UsdAggregate> {
   // Indexer DB handle for USD-anchored metrics. If unavailable (better-sqlite3 not installed / no DB),
   // every USD figure is undefined → empty series → honest $0 in the UI. Never throw, never fabricate.
   let db: ReturnType<typeof getDb>
   try {
     db = getDb()
   } catch {
-    return {}
+    return { v2: {}, v3: {}, v4: {} }
   }
 
-  const perChain = await Promise.all(chainIds.map((chainId) => aggregateV2UsdForChain(db, chainId)))
+  const perChain = await Promise.all(chainIds.map((chainId) => aggregateUsdForChain(db, chainId)))
 
-  let tvlSum = 0
-  let tvlCount = 0
-  let volSum = 0
-  let volCount = 0
-  for (const a of perChain) {
-    if (a.tvlUsd !== undefined) {
-      tvlSum += a.tvlUsd
-      tvlCount++
+  const sum = (pick: (a: UsdAggregate) => VersionUsd): VersionUsd => {
+    const s = { tvlSum: 0, tvlCount: 0, volSum: 0, volCount: 0 }
+    for (const a of perChain) {
+      foldPoolUsd(s, pick(a).tvlUsd, pick(a).volumeUsd24h)
     }
-    if (a.volumeUsd24h !== undefined) {
-      volSum += a.volumeUsd24h
-      volCount++
-    }
+    return toVersionUsd(s)
   }
-  return {
-    tvlUsd: tvlCount > 0 ? tvlSum : undefined,
-    volumeUsd24h: volCount > 0 ? volSum : undefined,
-  }
+  return { v2: sum((a) => a.v2), v3: sum((a) => a.v3), v4: sum((a) => a.v4) }
 }
 
 /** A single USD-denominated TimestampedAmount at `now`, or [] when the value is undefined (honest empty). */
@@ -185,22 +219,28 @@ function usdPointSeries(value: number | undefined, nowSec: number): TimestampedA
 }
 
 /**
- * Build the shared DailyProtocolTvl + HistoricalProtocolVolume from a v2 USD aggregate.
- * v2 carries the (single, current) real point; v3/v4 stay empty (not USD-sourceable / excluded).
- * The volume aggregate is a 24h figure, placed as the latest point in every timeframe bucket
- * (Month/Year/Max) — each bucket's LATEST point is exactly "the current 24h volume", which is what the
- * interface's use24hProtocolVolume reads; we simply lack the older points for a real trend.
+ * Build the shared DailyProtocolTvl + HistoricalProtocolVolume from the per-version USD aggregate. Each
+ * version (v2/v3/v4) carries its own (single, current) real point; the interface sums the versions for the
+ * headline TVL/24h-volume. A version with nothing sourceable stays an empty series (honest $0, never faked).
+ * The volume aggregate is a 24h figure, placed as the latest point in every timeframe bucket (Month/Year/
+ * Max) — each bucket's LATEST point is exactly "the current 24h volume" (what use24hProtocolVolume reads).
  */
-function buildProtocolSeries(agg: V2UsdAggregate): {
+function buildProtocolSeries(agg: UsdAggregate): {
   dailyProtocolTvl: DailyProtocolTvl
   historicalProtocolVolume: HistoricalProtocolVolume
 } {
   const nowSec = Math.floor(Date.now() / 1000)
-  const tvlSeries = usdPointSeries(agg.tvlUsd, nowSec)
-  const volSeries = usdPointSeries(agg.volumeUsd24h, nowSec)
-
-  const dailyProtocolTvl = new DailyProtocolTvl({ v2: tvlSeries, v3: [], v4: [] })
-  const volumeSplit = (): VolumeSplit => new VolumeSplit({ v2: volSeries, v3: [], v4: [] })
+  const dailyProtocolTvl = new DailyProtocolTvl({
+    v2: usdPointSeries(agg.v2.tvlUsd, nowSec),
+    v3: usdPointSeries(agg.v3.tvlUsd, nowSec),
+    v4: usdPointSeries(agg.v4.tvlUsd, nowSec),
+  })
+  const volumeSplit = (): VolumeSplit =>
+    new VolumeSplit({
+      v2: usdPointSeries(agg.v2.volumeUsd24h, nowSec),
+      v3: usdPointSeries(agg.v3.volumeUsd24h, nowSec),
+      v4: usdPointSeries(agg.v4.volumeUsd24h, nowSec),
+    })
   const historicalProtocolVolume = new HistoricalProtocolVolume({
     Month: volumeSplit(),
     Year: volumeSplit(),
@@ -214,7 +254,7 @@ export async function handleProtocolStats(req: ProtocolStatsRequest): Promise<Pr
   if (chainIds.length === 0) {
     return new ProtocolStatsResponse() // empty-but-valid for an unsupported/unknown chain
   }
-  const agg = await aggregateV2Usd(chainIds)
+  const agg = await aggregateUsd(chainIds)
   const { dailyProtocolTvl, historicalProtocolVolume } = buildProtocolSeries(agg)
   return new ProtocolStatsResponse({ dailyProtocolTvl, historicalProtocolVolume })
 }
@@ -224,7 +264,7 @@ async function handleExploreStats(req: ExploreStatsRequest): Promise<ExploreStat
   if (chainIds.length === 0) {
     return new ExploreStatsResponse() // empty-but-valid for an unsupported/unknown chain
   }
-  const agg = await aggregateV2Usd(chainIds)
+  const agg = await aggregateUsd(chainIds)
   const { dailyProtocolTvl, historicalProtocolVolume } = buildProtocolSeries(agg)
   // Only the protocol TVL/volume aggregates are populated here; topTokens/poolStats/tokenStats/etc are
   // served by DataApiService.listTokens/listTopPools (this ExploreStats path is flag-gated off by default).

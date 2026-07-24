@@ -163,6 +163,115 @@ CREATE TABLE IF NOT EXISTS ingest_cursor (
   lastBlock    INTEGER NOT NULL,
   PRIMARY KEY (chainId, pool)
 );
+
+-- ============================================================================================
+-- UNISWAP-v3-STYLE pools (every LaunchPad launch is a v3 pool). ADDITIVE — v2 tables untouched.
+-- Price comes from v3_swap_events.sqrtPriceX96 (a v3 pool's BALANCES do not give price); TVL comes
+-- from the pool contract's live ERC-20 balances snapshotted in v3_pool_state (exact).
+-- ============================================================================================
+CREATE TABLE IF NOT EXISTS v3_pools (
+  chainId      INTEGER NOT NULL,
+  pool         TEXT    NOT NULL,
+  token0       TEXT    NOT NULL,
+  token1       TEXT    NOT NULL,
+  decimals0    INTEGER NOT NULL,
+  decimals1    INTEGER NOT NULL,
+  symbol0      TEXT    NOT NULL DEFAULT '',
+  symbol1      TEXT    NOT NULL DEFAULT '',
+  fee          INTEGER NOT NULL,
+  tickSpacing  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (chainId, pool)
+);
+
+-- One row per v3 pool: latest slot0 (price) + live pool token balances (TVL). REPLACE-updated each pass.
+CREATE TABLE IF NOT EXISTS v3_pool_state (
+  chainId      INTEGER NOT NULL,
+  pool         TEXT    NOT NULL,
+  blockNumber  INTEGER NOT NULL,
+  sqrtPriceX96 TEXT    NOT NULL,
+  tick         INTEGER NOT NULL DEFAULT 0,
+  liquidity    TEXT    NOT NULL DEFAULT '0',
+  balance0     TEXT    NOT NULL,
+  balance1     TEXT    NOT NULL,
+  timestamp    INTEGER NOT NULL,
+  PRIMARY KEY (chainId, pool)
+);
+
+CREATE TABLE IF NOT EXISTS v3_swap_events (
+  chainId      INTEGER NOT NULL,
+  pool         TEXT    NOT NULL,
+  blockNumber  INTEGER NOT NULL,
+  logIndex     INTEGER NOT NULL,
+  txHash       TEXT    NOT NULL,
+  sender       TEXT    NOT NULL DEFAULT '',
+  recipient    TEXT    NOT NULL DEFAULT '',
+  origin       TEXT    NOT NULL DEFAULT '',
+  amount0      TEXT    NOT NULL,
+  amount1      TEXT    NOT NULL,
+  sqrtPriceX96 TEXT    NOT NULL,
+  liquidity    TEXT    NOT NULL DEFAULT '0',
+  tick         INTEGER NOT NULL DEFAULT 0,
+  timestamp    INTEGER NOT NULL,
+  PRIMARY KEY (chainId, pool, blockNumber, logIndex)
+);
+CREATE INDEX IF NOT EXISTS idx_v3swap_pool_ts   ON v3_swap_events (chainId, pool, timestamp);
+CREATE INDEX IF NOT EXISTS idx_v3swap_recipient ON v3_swap_events (chainId, recipient);
+CREATE INDEX IF NOT EXISTS idx_v3swap_origin    ON v3_swap_events (chainId, origin, timestamp);
+
+-- ============================================================================================
+-- UNISWAP-v4 SINGLETON pools (bytes32 poolId; one PoolManager per chain). ADDITIVE.
+-- Price from v4_swap_events.sqrtPriceX96; volume from swap amounts; TVL accumulated in v4_pool_state
+-- (the singleton PoolManager has no per-pool balanceOf — see ingest.ts for the tick-math accumulation).
+-- ============================================================================================
+CREATE TABLE IF NOT EXISTS v4_pools (
+  chainId      INTEGER NOT NULL,
+  poolId       TEXT    NOT NULL,
+  currency0    TEXT    NOT NULL,
+  currency1    TEXT    NOT NULL,
+  decimals0    INTEGER NOT NULL,
+  decimals1    INTEGER NOT NULL,
+  symbol0      TEXT    NOT NULL DEFAULT '',
+  symbol1      TEXT    NOT NULL DEFAULT '',
+  fee          INTEGER NOT NULL,
+  tickSpacing  INTEGER NOT NULL DEFAULT 0,
+  hooks        TEXT    NOT NULL DEFAULT '',
+  PRIMARY KEY (chainId, poolId)
+);
+
+-- One row per v4 pool: latest sqrtPriceX96/tick (price) + accumulated TVL token amounts (HUMAN units,
+-- decimal-adjusted, decimal strings). REPLACE-updated as the PoolManager scan folds events in order.
+CREATE TABLE IF NOT EXISTS v4_pool_state (
+  chainId      INTEGER NOT NULL,
+  poolId       TEXT    NOT NULL,
+  blockNumber  INTEGER NOT NULL,
+  sqrtPriceX96 TEXT    NOT NULL,
+  tick         INTEGER NOT NULL DEFAULT 0,
+  liquidity    TEXT    NOT NULL DEFAULT '0',
+  tvl0Human    TEXT    NOT NULL DEFAULT '0',
+  tvl1Human    TEXT    NOT NULL DEFAULT '0',
+  timestamp    INTEGER NOT NULL,
+  PRIMARY KEY (chainId, poolId)
+);
+
+CREATE TABLE IF NOT EXISTS v4_swap_events (
+  chainId      INTEGER NOT NULL,
+  poolId       TEXT    NOT NULL,
+  blockNumber  INTEGER NOT NULL,
+  logIndex     INTEGER NOT NULL,
+  txHash       TEXT    NOT NULL,
+  sender       TEXT    NOT NULL DEFAULT '',
+  origin       TEXT    NOT NULL DEFAULT '',
+  amount0      TEXT    NOT NULL,
+  amount1      TEXT    NOT NULL,
+  sqrtPriceX96 TEXT    NOT NULL,
+  liquidity    TEXT    NOT NULL DEFAULT '0',
+  tick         INTEGER NOT NULL DEFAULT 0,
+  fee          INTEGER NOT NULL DEFAULT 0,
+  timestamp    INTEGER NOT NULL,
+  PRIMARY KEY (chainId, poolId, blockNumber, logIndex)
+);
+CREATE INDEX IF NOT EXISTS idx_v4swap_pool_ts ON v4_swap_events (chainId, poolId, timestamp);
+CREATE INDEX IF NOT EXISTS idx_v4swap_origin  ON v4_swap_events (chainId, origin, timestamp);
 `
 
 // ---------- connection singleton ----------
@@ -379,4 +488,248 @@ export function getSwapEventsByTx(db: SqliteDatabase, chainId: number, txHashLow
         ORDER BY blockNumber ASC, logIndex ASC`,
     )
     .all(chainId, txHashLower) as SwapEventRow[]
+}
+
+// ============================================================================================
+// v3 storage (row shapes + write/read helpers). All big ints are TEXT decimal strings (exact).
+// ============================================================================================
+
+export interface V3PoolRow {
+  chainId: number
+  pool: string
+  token0: string
+  token1: string
+  decimals0: number
+  decimals1: number
+  symbol0: string
+  symbol1: string
+  fee: number
+  tickSpacing: number
+}
+
+export interface V3PoolStateRow {
+  chainId: number
+  pool: string
+  blockNumber: number
+  sqrtPriceX96: string
+  tick: number
+  liquidity: string
+  balance0: string
+  balance1: string
+  timestamp: number
+}
+
+export interface V3SwapEventRow {
+  chainId: number
+  pool: string
+  blockNumber: number
+  logIndex: number
+  txHash: string
+  sender: string
+  recipient: string
+  origin: string
+  amount0: string
+  amount1: string
+  sqrtPriceX96: string
+  liquidity: string
+  tick: number
+  timestamp: number
+}
+
+/** Upsert a discovered v3 pool's metadata (real on-chain values). */
+export function upsertV3Pool(db: SqliteDatabase, row: V3PoolRow): void {
+  db.prepare(
+    `INSERT INTO v3_pools (chainId, pool, token0, token1, decimals0, decimals1, symbol0, symbol1, fee, tickSpacing)
+     VALUES (?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(chainId, pool) DO UPDATE SET
+       token0=excluded.token0, token1=excluded.token1,
+       decimals0=excluded.decimals0, decimals1=excluded.decimals1,
+       symbol0=excluded.symbol0, symbol1=excluded.symbol1,
+       fee=excluded.fee, tickSpacing=excluded.tickSpacing`,
+  ).run(row.chainId, row.pool, row.token0, row.token1, row.decimals0, row.decimals1, row.symbol0, row.symbol1, row.fee, row.tickSpacing)
+}
+
+/** All discovered v3 pools on a chain (for the pool/token surfaces). */
+export function getV3PoolRows(db: SqliteDatabase, chainId: number): V3PoolRow[] {
+  return db
+    .prepare(
+      `SELECT chainId, pool, token0, token1, decimals0, decimals1, symbol0, symbol1, fee, tickSpacing
+         FROM v3_pools WHERE chainId=?`,
+    )
+    .all(chainId) as V3PoolRow[]
+}
+
+/** One discovered v3 pool by address, or undefined. */
+export function getV3PoolRow(db: SqliteDatabase, chainId: number, pool: string): V3PoolRow | undefined {
+  return db
+    .prepare(
+      `SELECT chainId, pool, token0, token1, decimals0, decimals1, symbol0, symbol1, fee, tickSpacing
+         FROM v3_pools WHERE chainId=? AND pool=?`,
+    )
+    .get(chainId, pool) as V3PoolRow | undefined
+}
+
+/** Write the pool's latest slot0 + live balances snapshot (exactly one row per pool, REPLACE). */
+export function writeV3PoolState(db: SqliteDatabase, row: V3PoolStateRow): void {
+  db.prepare(
+    `INSERT OR REPLACE INTO v3_pool_state (chainId, pool, blockNumber, sqrtPriceX96, tick, liquidity, balance0, balance1, timestamp)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+  ).run(row.chainId, row.pool, row.blockNumber, row.sqrtPriceX96, row.tick, row.liquidity, row.balance0, row.balance1, row.timestamp)
+}
+
+/** Read the pool's latest state snapshot, or undefined. */
+export function getV3PoolState(db: SqliteDatabase, chainId: number, pool: string): V3PoolStateRow | undefined {
+  return db
+    .prepare(
+      `SELECT chainId, pool, blockNumber, sqrtPriceX96, tick, liquidity, balance0, balance1, timestamp
+         FROM v3_pool_state WHERE chainId=? AND pool=?`,
+    )
+    .get(chainId, pool) as V3PoolStateRow | undefined
+}
+
+/** Insert a batch of v3 swap events idempotently. Returns count inserted (new rows). */
+export function insertV3SwapEvents(db: SqliteDatabase, rows: V3SwapEventRow[]): number {
+  if (rows.length === 0) {
+    return 0
+  }
+  const stmt = db.prepare(
+    `INSERT OR IGNORE INTO v3_swap_events
+       (chainId, pool, blockNumber, logIndex, txHash, sender, recipient, origin, amount0, amount1, sqrtPriceX96, liquidity, tick, timestamp)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  )
+  const insertAll = db.transaction((batch: V3SwapEventRow[]) => {
+    let inserted = 0
+    for (const r of batch) {
+      const res = stmt.run(
+        r.chainId, r.pool, r.blockNumber, r.logIndex, r.txHash, r.sender, r.recipient, r.origin,
+        r.amount0, r.amount1, r.sqrtPriceX96, r.liquidity, r.tick, r.timestamp,
+      )
+      inserted += res.changes
+    }
+    return inserted
+  })
+  return insertAll(rows) as number
+}
+
+// ============================================================================================
+// v4 storage (singleton PoolManager; bytes32 poolId).
+// ============================================================================================
+
+export interface V4PoolRow {
+  chainId: number
+  poolId: string
+  currency0: string
+  currency1: string
+  decimals0: number
+  decimals1: number
+  symbol0: string
+  symbol1: string
+  fee: number
+  tickSpacing: number
+  hooks: string
+}
+
+export interface V4PoolStateRow {
+  chainId: number
+  poolId: string
+  blockNumber: number
+  sqrtPriceX96: string
+  tick: number
+  liquidity: string
+  /** accumulated TVL token amounts in HUMAN (decimal-adjusted) units, decimal strings. */
+  tvl0Human: string
+  tvl1Human: string
+  timestamp: number
+}
+
+export interface V4SwapEventRow {
+  chainId: number
+  poolId: string
+  blockNumber: number
+  logIndex: number
+  txHash: string
+  sender: string
+  origin: string
+  amount0: string
+  amount1: string
+  sqrtPriceX96: string
+  liquidity: string
+  tick: number
+  fee: number
+  timestamp: number
+}
+
+/** Upsert a discovered v4 pool's metadata (from Initialize). */
+export function upsertV4Pool(db: SqliteDatabase, row: V4PoolRow): void {
+  db.prepare(
+    `INSERT INTO v4_pools (chainId, poolId, currency0, currency1, decimals0, decimals1, symbol0, symbol1, fee, tickSpacing, hooks)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(chainId, poolId) DO UPDATE SET
+       currency0=excluded.currency0, currency1=excluded.currency1,
+       decimals0=excluded.decimals0, decimals1=excluded.decimals1,
+       symbol0=excluded.symbol0, symbol1=excluded.symbol1,
+       fee=excluded.fee, tickSpacing=excluded.tickSpacing, hooks=excluded.hooks`,
+  ).run(row.chainId, row.poolId, row.currency0, row.currency1, row.decimals0, row.decimals1, row.symbol0, row.symbol1, row.fee, row.tickSpacing, row.hooks)
+}
+
+/** All discovered v4 pools on a chain. */
+export function getV4PoolRows(db: SqliteDatabase, chainId: number): V4PoolRow[] {
+  return db
+    .prepare(
+      `SELECT chainId, poolId, currency0, currency1, decimals0, decimals1, symbol0, symbol1, fee, tickSpacing, hooks
+         FROM v4_pools WHERE chainId=?`,
+    )
+    .all(chainId) as V4PoolRow[]
+}
+
+/** One discovered v4 pool by poolId, or undefined. */
+export function getV4PoolRow(db: SqliteDatabase, chainId: number, poolId: string): V4PoolRow | undefined {
+  return db
+    .prepare(
+      `SELECT chainId, poolId, currency0, currency1, decimals0, decimals1, symbol0, symbol1, fee, tickSpacing, hooks
+         FROM v4_pools WHERE chainId=? AND poolId=?`,
+    )
+    .get(chainId, poolId) as V4PoolRow | undefined
+}
+
+/** Write the v4 pool's latest price + accumulated-TVL snapshot (one row per poolId, REPLACE). */
+export function writeV4PoolState(db: SqliteDatabase, row: V4PoolStateRow): void {
+  db.prepare(
+    `INSERT OR REPLACE INTO v4_pool_state (chainId, poolId, blockNumber, sqrtPriceX96, tick, liquidity, tvl0Human, tvl1Human, timestamp)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+  ).run(row.chainId, row.poolId, row.blockNumber, row.sqrtPriceX96, row.tick, row.liquidity, row.tvl0Human, row.tvl1Human, row.timestamp)
+}
+
+/** Read the v4 pool's latest state snapshot, or undefined. */
+export function getV4PoolState(db: SqliteDatabase, chainId: number, poolId: string): V4PoolStateRow | undefined {
+  return db
+    .prepare(
+      `SELECT chainId, poolId, blockNumber, sqrtPriceX96, tick, liquidity, tvl0Human, tvl1Human, timestamp
+         FROM v4_pool_state WHERE chainId=? AND poolId=?`,
+    )
+    .get(chainId, poolId) as V4PoolStateRow | undefined
+}
+
+/** Insert a batch of v4 swap events idempotently. Returns count inserted. */
+export function insertV4SwapEvents(db: SqliteDatabase, rows: V4SwapEventRow[]): number {
+  if (rows.length === 0) {
+    return 0
+  }
+  const stmt = db.prepare(
+    `INSERT OR IGNORE INTO v4_swap_events
+       (chainId, poolId, blockNumber, logIndex, txHash, sender, origin, amount0, amount1, sqrtPriceX96, liquidity, tick, fee, timestamp)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  )
+  const insertAll = db.transaction((batch: V4SwapEventRow[]) => {
+    let inserted = 0
+    for (const r of batch) {
+      const res = stmt.run(
+        r.chainId, r.poolId, r.blockNumber, r.logIndex, r.txHash, r.sender, r.origin,
+        r.amount0, r.amount1, r.sqrtPriceX96, r.liquidity, r.tick, r.fee, r.timestamp,
+      )
+      inserted += res.changes
+    }
+    return inserted
+  })
+  return insertAll(rows) as number
 }

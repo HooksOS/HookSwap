@@ -206,9 +206,14 @@ const LAUNCHER_ADDRESSES: Record<number, string> = {
  * deterministic "not a launch → no logo" from a transient RPC error; `getLaunchByToken` returns the launch
  * struct whose `metadataURI` field we read. (Full ABI: apps/web/src/terminal/launchpad/abis.ts.)
  */
+// getLaunchByToken returns a Solidity STRUCT → the ABI MUST use a `tuple(...)` single return. A flat
+// multi-return signature FAILS to decode (the struct is head-offset-encoded because of its dynamic
+// `string metadataURI`) — verified on-chain 2026-07-24 (cast: flat errors, tuple decodes; HSTT's
+// metadataURI = ipfs://QmUyyjXah7w36jho4mi5khc51eQorC19qE6StqfVBEMEAM). This is the fix that lets a
+// launched token (e.g. HSTT) resolve its real launch logo instead of falling back to a monogram.
 const LAUNCHER_ABI = [
   'function isHookOSV3Token(address) view returns (bool)',
-  'function getLaunchByToken(address token) view returns (address token, address pool, address creator, uint256 tokenId, uint24 feeTier, uint8 dex, address locker, uint8 pair, address pairToken, string metadataURI, uint256 createdAt)',
+  'function getLaunchByToken(address token) view returns (tuple(address token, address pool, address creator, uint256 tokenId, uint24 feeTier, uint8 dex, address locker, uint8 pair, address pairToken, string metadataURI, uint256 createdAt))',
 ]
 
 /** HTTP fetch budget for a metadataURI (and any nested image URL). Mirrors onchain.ts' 8s RPC cap intent

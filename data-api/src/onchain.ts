@@ -47,9 +47,12 @@ const TOKEN_FACTORY_ABI = [
 // HookOSV3Launcher (launchpad). Enumeration + the launch struct verified against
 // locker-indexer/src/launchpad/abi.ts + indexer.ts: launchCount() → N, getLaunch(id) for ids 0..N-1,
 // the struct's FIRST field is the launched token address (the rest is pool/creator/tokenId/... — unused here).
+// NOTE: getLaunch returns a Solidity STRUCT — the ABI MUST declare it as a `tuple(...)` single return
+// (a flat multi-return signature FAILS to decode because the struct is head-offset ABI-encoded due to its
+// dynamic `string metadataURI`; verified on-chain 2026-07-24 with cast — flat form errors, tuple decodes).
 const LAUNCHER_ABI = [
   'function launchCount() view returns (uint256)',
-  'function getLaunch(uint256) view returns (address token, address pool, address creator, uint256 tokenId, uint24 feeTier, uint8 dex, address locker, uint8 pair, address pairToken, string metadataURI, uint256 createdAt)',
+  'function getLaunch(uint256) view returns (tuple(address token, address pool, address creator, uint256 tokenId, uint24 feeTier, uint8 dex, address locker, uint8 pair, address pairToken, string metadataURI, uint256 createdAt))',
 ]
 // UniswapV3Factory has NO on-chain pool enumerator (no allPools()), so the only way to discover v3
 // pools is to scan its `PoolCreated` event log. token0/token1/fee are indexed; tickSpacing/pool are
@@ -458,7 +461,8 @@ async function scanV3PoolCreated(
             pool: parsed.args.pool as string,
             token0: parsed.args.token0 as string,
             token1: parsed.args.token1 as string,
-            fee: (parsed.args.fee as BigNumber).toNumber(),
+            // ethers v5 decodes indexed uint24 as a plain number (not BigNumber) → BigNumber.from normalizes.
+            fee: BigNumber.from(parsed.args.fee).toNumber(),
           })
         } catch {
           // Non-conforming log at this address — skip it, never fabricate a pool.
@@ -554,6 +558,56 @@ export interface SpotPrice {
   priceInNative: number
   /** always undefined in Phase 1 — no USD reference exists on these chains. Kept explicit, never faked. */
   usd: undefined
+}
+
+/** Minimal UniswapV3Pool state ABI — slot0 (price/tick) + current in-range liquidity. */
+const V3_POOL_STATE_ABI = [
+  'function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)',
+  'function liquidity() view returns (uint128)',
+]
+
+export interface V3LiveState {
+  sqrtPriceX96: string
+  tick: number
+  liquidity: string
+  /** live ERC-20 balances of the pool contract (raw base units), aligned to token0 / token1 — exact TVL basis. */
+  balance0: string
+  balance1: string
+}
+
+/**
+ * Live-read a v3 pool's slot0 price + in-range liquidity + its two token balances. The pool's token
+ * BALANCES are the EXACT TVL basis (a concentrated-liquidity pool holds the real tokens), while
+ * `sqrtPriceX96` is the EXACT price (balances alone do NOT give price). Returns undefined on any RPC/
+ * contract error (caller keeps the last snapshot rather than fabricating). Never throws.
+ */
+export async function readV3LiveState(
+  chainId: number,
+  pool: string,
+  token0: string,
+  token1: string,
+): Promise<V3LiveState | undefined> {
+  try {
+    const provider = getProvider(chainId)
+    const poolC = new ethers.Contract(pool, V3_POOL_STATE_ABI, provider)
+    const t0 = new ethers.Contract(token0, ERC20_ABI, provider)
+    const t1 = new ethers.Contract(token1, ERC20_ABI, provider)
+    const [slot0, liquidity, balance0, balance1] = await Promise.all([
+      poolC.slot0(),
+      poolC.liquidity() as Promise<BigNumber>,
+      t0.balanceOf(pool) as Promise<BigNumber>,
+      t1.balanceOf(pool) as Promise<BigNumber>,
+    ])
+    return {
+      sqrtPriceX96: (slot0.sqrtPriceX96 as BigNumber).toString(),
+      tick: Number(slot0.tick),
+      liquidity: liquidity.toString(),
+      balance0: balance0.toString(),
+      balance1: balance1.toString(),
+    }
+  } catch {
+    return undefined
+  }
 }
 
 export async function getSpotPrices(chainId: number): Promise<SpotPrice[]> {

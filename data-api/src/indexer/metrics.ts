@@ -12,7 +12,15 @@
 
 import { BigNumber, ethers } from 'ethers'
 import { getChain } from '../chains'
-import { getPoolMeta, PoolMetaRow, SqliteDatabase } from './schema'
+import {
+  getPoolMeta,
+  getV3PoolRow,
+  getV3PoolState,
+  getV4PoolRow,
+  getV4PoolState,
+  PoolMetaRow,
+  SqliteDatabase,
+} from './schema'
 
 const SECONDS_PER_DAY = 86_400
 
@@ -392,4 +400,344 @@ export function getPoolVolumeUsd24h(db: SqliteDatabase, chainId: number, pool: s
   }
   const nativeVol = t0IsNative ? vol.volumeToken0 : vol.volumeToken1
   return nativeVol * usdPerNative
+}
+
+/* ============================================================================================
+ * UNISWAP-v3 + v4 METRICS (sqrtPriceX96 price; both-sides USD TVL; native-leg USD volume)
+ *
+ * SHARED MATH:
+ *   price(token0-in-token1, HUMAN) = (sqrtPriceX96 / 2^96)^2 × 10^(dec0 - dec1)
+ *   — this is the ONLY correct price for a concentrated-liquidity pool; the pool's raw token BALANCES
+ *     do NOT give price (verified on-chain: HSTT/WETH balance-ratio ≠ sqrtPrice-derived price).
+ *
+ * USD anchoring reuses the SAME single on-chain rate as v2 — `getUsdPerNative(db, chainId)` (the v2
+ * wrapped-native/stablecoin pool). A v3/v4 pool must have a NATIVE side (wrapped-native, or the v4 zero-
+ * address native currency) to be USD-anchored; otherwise every USD field is undefined (never fabricated).
+ *   token USD price  = priceInNative × usdPerNative
+ *   pool USD TVL     = nativeSideAmount × usdPerNative  +  otherSideAmount × priceOtherInNative × usdPerNative
+ *   pool 24h USD vol = nativeLegSwapVolume × usdPerNative
+ * A pool with no swaps yet returns a genuine 0 volume / empty history (distinct from undefined).
+ * ============================================================================================ */
+
+const Q96 = 2 ** 96
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
+/** price of token0 expressed in token1 (HUMAN units) from a v3/v4 sqrtPriceX96. undefined if not > 0. */
+function priceFromSqrtX96(sqrtPriceX96: string, dec0: number, dec1: number): number | undefined {
+  const s = Number(sqrtPriceX96)
+  if (!(s > 0) || !Number.isFinite(s)) {
+    return undefined
+  }
+  const ratio = s / Q96
+  const price0in1 = ratio * ratio * Math.pow(10, dec0 - dec1)
+  return price0in1 > 0 && Number.isFinite(price0in1) ? price0in1 : undefined
+}
+
+/** True when a token/currency address is the chain's native side (wrapped-native, or v4 zero-address native). */
+function isNativeSideAddr(addr: string, wnativeLower: string): boolean {
+  const a = addr.toLowerCase()
+  return a === wnativeLower || a === ZERO_ADDRESS
+}
+
+// ---------- v3 ----------
+
+/**
+ * Latest reserve-derived-equivalent spot price for a v3 pool, both directions, from the pool's latest
+ * slot0 sqrtPriceX96 snapshot. Native/token-denominated only (same shape/semantics as the v2 helper, so
+ * handlers orient + USD-anchor it identically). undefined with no state snapshot / no meta / zero price.
+ */
+export function getV3SpotPriceNative(db: SqliteDatabase, chainId: number, pool: string): SpotPriceNative | undefined {
+  const meta = getV3PoolRow(db, chainId, pool)
+  const state = getV3PoolState(db, chainId, pool)
+  if (!meta || !state) {
+    return undefined
+  }
+  const p0 = priceFromSqrtX96(state.sqrtPriceX96, meta.decimals0, meta.decimals1)
+  if (p0 === undefined || !(p0 > 0)) {
+    return undefined
+  }
+  return { priceToken0InToken1: p0, priceToken1InToken0: 1 / p0 }
+}
+
+/**
+ * Full v3 pool USD TVL = both sides valued in USD. The native side is priced directly via the anchor;
+ * the paired (launch) token is priced via the pool's own sqrtPriceX96 (its native-denominated price) ×
+ * the anchor. Requires a native side + an ingested anchor. undefined otherwise (never fabricated).
+ */
+export function getV3PoolTvlUsd(db: SqliteDatabase, chainId: number, pool: string): number | undefined {
+  const usdPerNative = getUsdPerNative(db, chainId)
+  if (usdPerNative === undefined) {
+    return undefined
+  }
+  const chain = getChain(chainId)
+  const meta = getV3PoolRow(db, chainId, pool)
+  const state = getV3PoolState(db, chainId, pool)
+  if (!chain || !meta || !state) {
+    return undefined
+  }
+  const wnative = chain.wrappedNative.address.toLowerCase()
+  const t0IsNative = isNativeSideAddr(meta.token0, wnative)
+  const t1IsNative = isNativeSideAddr(meta.token1, wnative)
+  if (!t0IsNative && !t1IsNative) {
+    return undefined
+  }
+  const bal0 = Number(ethers.utils.formatUnits(state.balance0, meta.decimals0))
+  const bal1 = Number(ethers.utils.formatUnits(state.balance1, meta.decimals1))
+  const p0 = priceFromSqrtX96(state.sqrtPriceX96, meta.decimals0, meta.decimals1) // token1 per token0
+  let usd: number
+  if (p0 === undefined || !(p0 > 0)) {
+    // No usable price — value only the native side (exact), honestly omit the unpriceable other side.
+    const nativeBal = t0IsNative ? bal0 : bal1
+    usd = nativeBal * usdPerNative
+  } else if (t0IsNative) {
+    // token0 = native; token1 price in native = 1/p0.
+    usd = bal0 * usdPerNative + bal1 * (1 / p0) * usdPerNative
+  } else {
+    // token1 = native; token0 price in native = p0.
+    usd = bal1 * usdPerNative + bal0 * p0 * usdPerNative
+  }
+  return Number.isFinite(usd) && usd >= 0 ? usd : undefined
+}
+
+/**
+ * 24h v3 USD volume = the native-leg swap flow (Σ|nativeAmount| over now-24h) × usdPerNative. Requires a
+ * native side + anchor. Real zero (pool exists, no swaps) returns 0; undefined when unanchorable.
+ */
+export function getV3PoolVolumeUsd24h(db: SqliteDatabase, chainId: number, pool: string): number | undefined {
+  const usdPerNative = getUsdPerNative(db, chainId)
+  if (usdPerNative === undefined) {
+    return undefined
+  }
+  const chain = getChain(chainId)
+  const meta = getV3PoolRow(db, chainId, pool)
+  if (!chain || !meta) {
+    return undefined
+  }
+  const wnative = chain.wrappedNative.address.toLowerCase()
+  const t0IsNative = isNativeSideAddr(meta.token0, wnative)
+  const t1IsNative = isNativeSideAddr(meta.token1, wnative)
+  if (!t0IsNative && !t1IsNative) {
+    return undefined
+  }
+  const since = Math.floor(Date.now() / 1000) - SECONDS_PER_DAY
+  const rows = db
+    .prepare(`SELECT amount0, amount1 FROM v3_swap_events WHERE chainId=? AND pool=? AND timestamp >= ?`)
+    .all(chainId, pool, since) as Array<{ amount0: string; amount1: string }>
+  let native = BigNumber.from(0)
+  for (const r of rows) {
+    native = native.add(BigNumber.from(t0IsNative ? r.amount0 : r.amount1).abs())
+  }
+  const nativeDec = t0IsNative ? meta.decimals0 : meta.decimals1
+  const nativeHuman = Number(ethers.utils.formatUnits(native, nativeDec))
+  return nativeHuman * usdPerNative
+}
+
+/** v3 native-denominated price history (token0-in-token1 close per bucket) from swap sqrtPrices. */
+export function getV3PriceHistory(
+  db: SqliteDatabase,
+  chainId: number,
+  pool: string,
+  sinceTs: number,
+  bucketSec: number,
+): PricePoint[] {
+  const meta = getV3PoolRow(db, chainId, pool)
+  if (!meta || !(bucketSec > 0)) {
+    return []
+  }
+  const rows = db
+    .prepare(
+      `SELECT sqrtPriceX96, timestamp FROM v3_swap_events
+         WHERE chainId=? AND pool=? AND timestamp >= ?
+         ORDER BY blockNumber ASC, logIndex ASC`,
+    )
+    .all(chainId, pool, sinceTs) as Array<{ sqrtPriceX96: string; timestamp: number }>
+  const byBucket = new Map<number, number>()
+  for (const r of rows) {
+    const p = priceFromSqrtX96(r.sqrtPriceX96, meta.decimals0, meta.decimals1)
+    if (p === undefined) {
+      continue
+    }
+    const bucket = Math.floor(r.timestamp / bucketSec) * bucketSec
+    byBucket.set(bucket, p)
+  }
+  return Array.from(byBucket.entries())
+    .map(([t, price]) => ({ t, price }))
+    .sort((a, b) => a.t - b.t)
+}
+
+/**
+ * v3 24h price change (token0-in-token1) as a FRACTION: now (latest slot0) vs the last swap price at/or-
+ * before the 24h-ago mark. undefined without a pre-window baseline swap or current state (never faked).
+ */
+export function getV3PriceChange24hNative(db: SqliteDatabase, chainId: number, pool: string): number | undefined {
+  const meta = getV3PoolRow(db, chainId, pool)
+  const state = getV3PoolState(db, chainId, pool)
+  if (!meta || !state) {
+    return undefined
+  }
+  const priceNow = priceFromSqrtX96(state.sqrtPriceX96, meta.decimals0, meta.decimals1)
+  if (priceNow === undefined) {
+    return undefined
+  }
+  const cutoff = Math.floor(Date.now() / 1000) - SECONDS_PER_DAY
+  const then = db
+    .prepare(
+      `SELECT sqrtPriceX96 FROM v3_swap_events WHERE chainId=? AND pool=? AND timestamp <= ?
+         ORDER BY timestamp DESC, blockNumber DESC, logIndex DESC LIMIT 1`,
+    )
+    .get(chainId, pool, cutoff) as { sqrtPriceX96: string } | undefined
+  if (!then) {
+    return undefined
+  }
+  const priceThen = priceFromSqrtX96(then.sqrtPriceX96, meta.decimals0, meta.decimals1)
+  if (priceThen === undefined || !(priceThen > 0)) {
+    return undefined
+  }
+  return (priceNow - priceThen) / priceThen
+}
+
+// ---------- v4 (singleton; poolId) ----------
+
+/** Latest v4 spot price both directions from the pool-state sqrtPriceX96 snapshot. */
+export function getV4SpotPriceNative(db: SqliteDatabase, chainId: number, poolId: string): SpotPriceNative | undefined {
+  const meta = getV4PoolRow(db, chainId, poolId)
+  const state = getV4PoolState(db, chainId, poolId)
+  if (!meta || !state) {
+    return undefined
+  }
+  const p0 = priceFromSqrtX96(state.sqrtPriceX96, meta.decimals0, meta.decimals1)
+  if (p0 === undefined || !(p0 > 0)) {
+    return undefined
+  }
+  return { priceToken0InToken1: p0, priceToken1InToken0: 1 / p0 }
+}
+
+/**
+ * v4 pool USD TVL from the accumulated per-pool token amounts (v4_pool_state.tvl{0,1}Human — the
+ * PoolManager is a singleton with no per-pool balanceOf, so these are accumulated from ModifyLiquidity
+ * via tick-math in the ingest layer). Both sides valued: native via anchor, other via sqrtPrice × anchor.
+ */
+export function getV4PoolTvlUsd(db: SqliteDatabase, chainId: number, poolId: string): number | undefined {
+  const usdPerNative = getUsdPerNative(db, chainId)
+  if (usdPerNative === undefined) {
+    return undefined
+  }
+  const chain = getChain(chainId)
+  const meta = getV4PoolRow(db, chainId, poolId)
+  const state = getV4PoolState(db, chainId, poolId)
+  if (!chain || !meta || !state) {
+    return undefined
+  }
+  const wnative = chain.wrappedNative.address.toLowerCase()
+  const t0IsNative = isNativeSideAddr(meta.currency0, wnative)
+  const t1IsNative = isNativeSideAddr(meta.currency1, wnative)
+  if (!t0IsNative && !t1IsNative) {
+    return undefined
+  }
+  const bal0 = Number(state.tvl0Human)
+  const bal1 = Number(state.tvl1Human)
+  if (!Number.isFinite(bal0) || !Number.isFinite(bal1)) {
+    return undefined
+  }
+  const p0 = priceFromSqrtX96(state.sqrtPriceX96, meta.decimals0, meta.decimals1)
+  let usd: number
+  if (p0 === undefined || !(p0 > 0)) {
+    usd = (t0IsNative ? bal0 : bal1) * usdPerNative
+  } else if (t0IsNative) {
+    usd = bal0 * usdPerNative + bal1 * (1 / p0) * usdPerNative
+  } else {
+    usd = bal1 * usdPerNative + bal0 * p0 * usdPerNative
+  }
+  return Number.isFinite(usd) && usd >= 0 ? usd : undefined
+}
+
+/** 24h v4 USD volume = native-leg swap flow × usdPerNative. Real zero when no swaps; undefined if unanchorable. */
+export function getV4PoolVolumeUsd24h(db: SqliteDatabase, chainId: number, poolId: string): number | undefined {
+  const usdPerNative = getUsdPerNative(db, chainId)
+  if (usdPerNative === undefined) {
+    return undefined
+  }
+  const chain = getChain(chainId)
+  const meta = getV4PoolRow(db, chainId, poolId)
+  if (!chain || !meta) {
+    return undefined
+  }
+  const wnative = chain.wrappedNative.address.toLowerCase()
+  const t0IsNative = isNativeSideAddr(meta.currency0, wnative)
+  const t1IsNative = isNativeSideAddr(meta.currency1, wnative)
+  if (!t0IsNative && !t1IsNative) {
+    return undefined
+  }
+  const since = Math.floor(Date.now() / 1000) - SECONDS_PER_DAY
+  const rows = db
+    .prepare(`SELECT amount0, amount1 FROM v4_swap_events WHERE chainId=? AND poolId=? AND timestamp >= ?`)
+    .all(chainId, poolId, since) as Array<{ amount0: string; amount1: string }>
+  let native = BigNumber.from(0)
+  for (const r of rows) {
+    native = native.add(BigNumber.from(t0IsNative ? r.amount0 : r.amount1).abs())
+  }
+  const nativeDec = t0IsNative ? meta.decimals0 : meta.decimals1
+  const nativeHuman = Number(ethers.utils.formatUnits(native, nativeDec))
+  return nativeHuman * usdPerNative
+}
+
+/** v4 native-denominated price history (token0-in-token1 close per bucket) from swap sqrtPrices. */
+export function getV4PriceHistory(
+  db: SqliteDatabase,
+  chainId: number,
+  poolId: string,
+  sinceTs: number,
+  bucketSec: number,
+): PricePoint[] {
+  const meta = getV4PoolRow(db, chainId, poolId)
+  if (!meta || !(bucketSec > 0)) {
+    return []
+  }
+  const rows = db
+    .prepare(
+      `SELECT sqrtPriceX96, timestamp FROM v4_swap_events
+         WHERE chainId=? AND poolId=? AND timestamp >= ?
+         ORDER BY blockNumber ASC, logIndex ASC`,
+    )
+    .all(chainId, poolId, sinceTs) as Array<{ sqrtPriceX96: string; timestamp: number }>
+  const byBucket = new Map<number, number>()
+  for (const r of rows) {
+    const p = priceFromSqrtX96(r.sqrtPriceX96, meta.decimals0, meta.decimals1)
+    if (p === undefined) {
+      continue
+    }
+    const bucket = Math.floor(r.timestamp / bucketSec) * bucketSec
+    byBucket.set(bucket, p)
+  }
+  return Array.from(byBucket.entries())
+    .map(([t, price]) => ({ t, price }))
+    .sort((a, b) => a.t - b.t)
+}
+
+/** v4 24h price change (token0-in-token1) fraction: latest state vs last swap ≤ cutoff. undefined if no baseline. */
+export function getV4PriceChange24hNative(db: SqliteDatabase, chainId: number, poolId: string): number | undefined {
+  const meta = getV4PoolRow(db, chainId, poolId)
+  const state = getV4PoolState(db, chainId, poolId)
+  if (!meta || !state) {
+    return undefined
+  }
+  const priceNow = priceFromSqrtX96(state.sqrtPriceX96, meta.decimals0, meta.decimals1)
+  if (priceNow === undefined) {
+    return undefined
+  }
+  const cutoff = Math.floor(Date.now() / 1000) - SECONDS_PER_DAY
+  const then = db
+    .prepare(
+      `SELECT sqrtPriceX96 FROM v4_swap_events WHERE chainId=? AND poolId=? AND timestamp <= ?
+         ORDER BY timestamp DESC, blockNumber DESC, logIndex DESC LIMIT 1`,
+    )
+    .get(chainId, poolId, cutoff) as { sqrtPriceX96: string } | undefined
+  if (!then) {
+    return undefined
+  }
+  const priceThen = priceFromSqrtX96(then.sqrtPriceX96, meta.decimals0, meta.decimals1)
+  if (priceThen === undefined || !(priceThen > 0)) {
+    return undefined
+  }
+  return (priceNow - priceThen) / priceThen
 }
