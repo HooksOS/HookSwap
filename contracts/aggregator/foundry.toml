@@ -1,0 +1,43 @@
+[profile.default]
+src = "src"
+out = "out"
+# `lib` is a symlink to ../perps/lib so we reuse the already-installed
+# OpenZeppelin v5.0.2 + forge-std (no extra network install). If you check
+# this project out standalone, install deps into ./lib instead:
+#   forge install OpenZeppelin/openzeppelin-contracts@v5.0.2 --no-commit
+#   forge install foundry-rs/forge-std --no-commit
+libs = ["lib"]
+script = "script"
+test = "test"
+solc = "0.8.28"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+evm_version = "cancun"
+
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/",
+]
+
+[rpc_endpoints]
+# Sepolia FIRST — the canonical HookSwap validation chain (chainId 11155111).
+# The fork test defaults to the public RPC below; override with SEPOLIA_RPC_URL.
+sepolia = "${SEPOLIA_RPC_URL}"
+robinhood = "${ROBINHOOD_RPC_URL}"
+megaeth = "${MEGAETH_RPC_URL}"
+ink = "${INK_RPC_URL}"
+xlayer = "${XLAYER_RPC_URL}"
+hyperevm = "${HYPEREVM_RPC_URL}"
+tempo = "${TEMPO_RPC_URL}"
+
+[etherscan]
+sepolia = { key = "${ETHERSCAN_API_KEY}", url = "https://api-sepolia.etherscan.io/api" }
+
+[fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = true
+int_types = "long"
+quote_style = "double"
+number_underscore = "preserve"
