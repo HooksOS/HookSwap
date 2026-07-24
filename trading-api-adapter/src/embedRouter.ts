@@ -198,7 +198,16 @@ export class EmbedRoutingProvider implements RoutingProvider {
     // Split the requested protocols: v2/v3 go to the in-process SOR (AlphaRouter); v4 uses the
     // direct on-chain single-hop V4Quoter path. Both run independently; we return the better quote.
     const v2v3Protocols = params.protocols.filter((p): p is 'v2' | 'v3' => p === 'v2' || p === 'v3')
-    const wantsV4 = params.protocols.includes('v4') && Boolean(chain.v4Quoter)
+    // Only quote v4 on chains where we can also EMIT executable v4 swap calldata. On
+    // V4_SWAP_CALLDATA_UNVERIFIED_CHAINS (e.g. Robinhood 4663, whose v4 UR is a non-standard
+    // minHopPriceX36 fork) the v4 SWAP path returns no methodParameters — so if a v4 quote were
+    // allowed to WIN pickBetterQuote, /v1/quote would surface a price the /v1/swap path cannot
+    // execute (NO_ROUTE_FOUND) → the interface shows a price but MIN RECEIVED 0 / "swap may fail".
+    // Quoting a route we cannot execute is worse than not quoting it, so gate v4 off entirely here.
+    const wantsV4 =
+      params.protocols.includes('v4') &&
+      Boolean(chain.v4Quoter) &&
+      !V4_SWAP_CALLDATA_UNVERIFIED_CHAINS.has(chain.chainId)
 
     const [v2v3Result, v4Result] = await Promise.all([
       v2v3Protocols.length ? this.quoteV2V3(params, v2v3Protocols) : Promise.resolve(undefined),
