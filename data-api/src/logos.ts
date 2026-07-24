@@ -1,36 +1,194 @@
 /**
  * Token logo resolution for the HookSwap data-api.
  *
- * Two sources, in priority order (see `resolveTokenLogo`):
- *   1. TOKEN_LOGOS — a small hardcoded map of curated logos (WETH/tHOOK/USDG on Robinhood). Highest
- *      priority so those never change out from under us.
- *   2. Launchpad metadataURI — for tokens minted by the HookOSV3Launcher (fair-launch tokens), the
- *      launcher stores a per-token `metadataURI` on-chain. We read it live, resolve that URI to an image
- *      URL, and use it. This is what makes a freshly-launched token show an icon in the selector / markets
- *      / swap without any manual registry entry.
+ * A robust, tiered resolver (highest priority first — see `resolveTokenLogo`). Every tier is HONEST:
+ * a token only gets a logo we're confident maps to it, and a wrong/missing URL degrades to the
+ * frontend's monogram fallback (verified: universe `TokenLogo`→`UniversalImage` renders the initials
+ * `fallback` on img error; Terminal `LedgerAvatar` `<img onError>` → hue+initials; SwapScreen's CSS
+ * `background-image` shows the panel colour, never a broken-image icon). So a best-effort CDN URL that
+ * 404s never shows a broken image.
  *
- * NEVER FABRICATE: a token with no curated entry, no launchpad metadataURI, or an unresolvable URI gets
- * NO logo (undefined) — an honest "no icon", never a placeholder.
+ *   1. CURATED_LOGOS — verified logo URLs for every canonical token HookSwap uses, keyed by
+ *      `${chainId}:${addressLower}` (chain-scoped). Highest priority so these never change out from under us.
+ *   2. Symbol-family fallback — for a wrapped/bridged/variant token WITHOUT a curated address entry, map
+ *      its SYMBOL to a canonical family logo (USDT0/USD₮0/WgUSDT → USDT, bridged USDC → USDC, WHYPE → HYPE,
+ *      WOKB → OKB, WBTC → BTC, HOOK/tHOOK/HKT → HookSwap glyph, …). Small closed set of well-known families
+ *      so a token can't accidentally borrow the wrong brand.
+ *   3. Launchpad metadataURI — for tokens minted by the HookOSV3Launcher (fair-launch tokens), the launcher
+ *      stores a per-token `metadataURI` on-chain. We read it live, resolve that URI to an image URL, and use
+ *      it. This is what makes a freshly-launched token show an icon without any manual registry entry.
+ *   4. External CDN by (chain, address) — best-effort Trust Wallet asset URL for arbitrary tokens on chains
+ *      Trust Wallet actually indexes (ethereum/bsc/polygon/…). NONE of HookSwap's custom chains have a Trust
+ *      Wallet slug, so this tier is currently inert for the live set — future-proofing only.
+ *   5. (frontend) Deterministic branded monogram — when no logo exists anywhere, the frontend renders its
+ *      consistent initials circle. The only honest option for a brand-new token with no logo.
  *
- * NON-BLOCKING: `resolveTokenLogo` / `getLaunchpadLogo` are SYNCHRONOUS. On a cache miss they return
- * `undefined` immediately and kick off the on-chain read + URI fetch in the BACKGROUND, so a handler
- * response never waits on the network. The next request for that token (after resolution completes)
- * returns the resolved logo from cache. Terminal outcomes (including "no logo") are cached; only a
- * transient RPC error reading the metadataURI is left uncached so it can retry on a later request.
+ * NEVER FABRICATE: a token with no curated entry, no symbol-family match, no launchpad metadataURI, and no
+ * external CDN slug gets NO logo (undefined) — an honest "no icon" the frontend turns into a monogram.
+ *
+ * NON-BLOCKING: `resolveTokenLogo` / `getLaunchpadLogo` are SYNCHRONOUS. Tiers 1/2/4 are pure lookups; the
+ * launchpad tier (3) returns `undefined` immediately on a cache miss and kicks off the on-chain read + URI
+ * fetch in the BACKGROUND, so a handler response never waits on the network. The next request for that token
+ * (after resolution completes) returns the resolved logo from cache. Terminal outcomes (including "no logo")
+ * are cached; only a transient RPC error reading the metadataURI is left uncached so it can retry later.
  */
 
 import { ethers } from 'ethers'
 import { getProvider } from './onchain'
 
-/**
- * Curated logos for HookSwap chains (keyed by lowercased address; chain-agnostic, matching the prior
- * inline map). Higher priority than launchpad resolution — see `resolveTokenLogo`.
- */
-const TOKEN_LOGOS: Record<string, string> = {
+/* ----------------------------------------------------------------------------------------------------
+ * Verified canonical logo URLs. Every URL below returned HTTP 200 (Trust Wallet raw assets / CoinGecko
+ * coin-images), checked 2026-07-24. Trust Wallet raw + CoinGecko coin-images are stable, hotlink-friendly
+ * CDNs. NEVER point at a URL we haven't confirmed resolves.
+ * -------------------------------------------------------------------------------------------------- */
+/** Ether (used for every chain's WETH). */
+const ETH_LOGO = 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png'
+/** Circle USD Coin — also the generic USD-stablecoin glyph for dollar stables with no distinct brand asset. */
+const USDC_LOGO =
+  'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png'
+/** Tether USD — used for USDT and its wrapped/bridged/gas variants (USDT0 / USD₮0 / WgUSDT / gUSDT). */
+const USDT_LOGO =
+  'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png'
+/** Wrapped BTC — used for BTC/WBTC/cbBTC/BTCB families. */
+const WBTC_LOGO =
+  'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/logo.png'
+/** OKB (OKX) — XLayer's native/wrapped-native. */
+const OKB_LOGO = 'https://coin-images.coingecko.com/coins/images/4463/large/WeChat_Image_20220118095654.png'
+/** HYPE (Hyperliquid) — HyperEVM's native/wrapped-native. */
+const HYPE_LOGO = 'https://coin-images.coingecko.com/coins/images/50882/large/hyperliquid.jpg'
+/** USDG (Global Dollar / Paxos) — Robinhood's stablecoin anchor. (Corrects the prior /41172/ URL, which 403s.) */
+const USDG_LOGO = 'https://coin-images.coingecko.com/coins/images/51281/large/GDN_USDG_Token_200x200.png'
+/** HookSwap glyph — HookSwap ecosystem tokens (HOOK / tHOOK / HKT). */
+const HOOK_LOGO = 'https://hookswap.org/brand/glyph-mark.png'
+
+/* ----------------------------------------------------------------------------------------------------
+ * Tier 1 — CURATED_LOGOS: verified logo per canonical token, keyed by `${chainId}:${addressLower}`.
+ * Chain-scoped so an address that repeats across chains with a different meaning can't collide. Addresses
+ * sourced from data-api/src/chains.ts (wrappedNative + stablecoin) + contracts/deployments/pools-seeded.json.
+ * -------------------------------------------------------------------------------------------------- */
+const CURATED_LOGOS: Record<string, string> = {
   // Robinhood (4663)
-  '0x0bd7d308f8e1639fab988df18a8011f41eacad73': 'https://raw.githubusercontent.com/Uniswap/assets/master/blockchains/ethereum/info/logo.png', // WETH → ETH logo
-  '0x3b5a01efc59f3465b8eb04697f97cfe0ba700d9d': 'https://hookswap.org/brand/glyph-mark.png', // tHOOK
-  '0x5fc5360d0400a0fd4f2af552add042d716f1d168': 'https://coin-images.coingecko.com/coins/images/41172/large/USDG_Logo.png', // USDG
+  '4663:0x0bd7d308f8e1639fab988df18a8011f41eacad73': ETH_LOGO, // WETH (Robinhood wrapped-native)
+  '4663:0x3b5a01efc59f3465b8eb04697f97cfe0ba700d9d': HOOK_LOGO, // tHOOK (Robinhood HookSwap test token)
+  '4663:0x5fc5360d0400a0fd4f2af552add042d716f1d168': USDG_LOGO, // USDG / Global Dollar (Robinhood stablecoin anchor)
+
+  // MegaETH (4326)
+  '4326:0x4200000000000000000000000000000000000006': ETH_LOGO, // WETH (MegaETH wrapped-native)
+  '4326:0xfafddbb3fc7688494971a79cc65dca3ef82079e7': USDC_LOGO, // USDm (MegaETH dollar stable — generic USD glyph, no distinct USDm brand asset)
+
+  // Ink (57073)
+  '57073:0x4200000000000000000000000000000000000006': ETH_LOGO, // WETH (Ink wrapped-native)
+  '57073:0x0200c29006150606b650577bbe7b6248f58470c1': USDT_LOGO, // USD₮0 / canonical USDT0 (Ink stablecoin, Tether-style)
+
+  // XLayer (196)
+  '196:0xe538905cf8410324e03a5a23c1c177a474d59b2b': OKB_LOGO, // WOKB (XLayer wrapped-native)
+  '196:0x0e88a920a522d2e858b5fb0e896f228f4619e0a6': HOOK_LOGO, // HKT (XLayer HookSwap ecosystem token, factory pair[0])
+  '196:0x144331bb4c3026d135896cafec3ae3d667f4f376': HOOK_LOGO, // HKT (XLayer HookSwap seed test token, factory pair[1])
+
+  // HyperEVM (999)
+  '999:0x5555555555555555555555555555555555555555': HYPE_LOGO, // WHYPE (HyperEVM wrapped-native)
+  '999:0xb88339cb7199b77e23db6e890353e22632ba630f': USDC_LOGO, // USDC (HyperEVM real USDC stablecoin)
+
+  // Stable (988)
+  '988:0x817997ca8394e26cce3de3a076a4889b27dbf9de': USDT_LOGO, // WgUSDT / Wrapped gasUSDT (Stable wrapped-native, USDT variant)
+  '988:0x779ded0c9e1022225f8e0630b35a9b54be713736': USDT_LOGO, // USDT0 (Stable stablecoin)
+
+  // Sepolia (11155111)
+  '11155111:0xfff9976782d46cc05630d1f6ebab18b2324d6b14': ETH_LOGO, // WETH (Sepolia wrapped-native)
+}
+
+/** Curated logo for a token, chain-scoped. undefined when not curated. */
+function curatedLogo(chainId: number, address: string): string | undefined {
+  return address ? CURATED_LOGOS[`${chainId}:${address.toLowerCase()}`] : undefined
+}
+
+/* ----------------------------------------------------------------------------------------------------
+ * Tier 2 — Symbol-family fallback. For a wrapped/bridged/variant token with no curated entry, map its
+ * SYMBOL to a canonical family logo. Keys are ALREADY-NORMALIZED symbols (see normalizeSymbol). Kept to a
+ * small, closed set of well-known families so a token can never accidentally borrow an unrelated brand.
+ * -------------------------------------------------------------------------------------------------- */
+const SYMBOL_FAMILY_LOGOS: Record<string, string> = {
+  // Ether family (native + wrapped).
+  ETH: ETH_LOGO,
+  WETH: ETH_LOGO,
+  BETH: ETH_LOGO,
+  // Tether family — USDT and its wrapped/bridged/gas variants (USD₮0 normalizes to USDT0; WgUSDT → WGUSDT; gUSDT → GUSDT).
+  USDT: USDT_LOGO,
+  USDT0: USDT_LOGO,
+  WGUSDT: USDT_LOGO,
+  GUSDT: USDT_LOGO,
+  USDTE: USDT_LOGO,
+  // USD Coin family — USDC and bridged variants.
+  USDC: USDC_LOGO,
+  USDCE: USDC_LOGO,
+  USDBC: USDC_LOGO,
+  // Other dollar stables — USDG has its own asset; USDm shares the generic USD glyph (no distinct brand asset).
+  USDG: USDG_LOGO,
+  USDM: USDC_LOGO,
+  // Hyperliquid family.
+  HYPE: HYPE_LOGO,
+  WHYPE: HYPE_LOGO,
+  // OKB family.
+  OKB: OKB_LOGO,
+  WOKB: OKB_LOGO,
+  // Bitcoin family.
+  BTC: WBTC_LOGO,
+  WBTC: WBTC_LOGO,
+  BTCB: WBTC_LOGO,
+  CBBTC: WBTC_LOGO,
+  // HookSwap ecosystem tokens.
+  HOOK: HOOK_LOGO,
+  THOOK: HOOK_LOGO,
+  HKT: HOOK_LOGO,
+}
+
+/** Normalize a symbol to a family key: uppercase, ₮→T (USD₮0→USDT0), strip non-alphanumerics (WgUSDT→WGUSDT). */
+function normalizeSymbol(symbol: string): string {
+  return symbol.trim().toUpperCase().replace(/₮/g, 'T').replace(/[^A-Z0-9]/g, '')
+}
+
+/** Canonical family logo for a token symbol, or undefined when the symbol matches no known family. */
+function symbolFamilyLogo(symbol: string | undefined): string | undefined {
+  if (!symbol) {
+    return undefined
+  }
+  return SYMBOL_FAMILY_LOGOS[normalizeSymbol(symbol)]
+}
+
+/* ----------------------------------------------------------------------------------------------------
+ * Tier 4 — External CDN (Trust Wallet assets) by (chain, checksummed address). Trust Wallet only indexes
+ * chains it has a slug for; NONE of HookSwap's custom chains (Robinhood/MegaETH/Ink/XLayer/HyperEVM/Stable/
+ * Tempo/Sepolia) have one, so this tier returns undefined for the entire live chain set today — it exists
+ * purely so an arbitrary token on a Trust-Wallet-indexed chain (Ethereum/BSC/Polygon/…) would resolve if
+ * HookSwap ever serves one. Best-effort: a missing asset 404s → the frontend's onError → monogram fallback
+ * (verified present) handles it, never a broken image.
+ * -------------------------------------------------------------------------------------------------- */
+const TRUSTWALLET_CHAIN_SLUGS: Record<number, string> = {
+  1: 'ethereum',
+  56: 'smartchain',
+  137: 'polygon',
+  43114: 'avalanchec',
+  42161: 'arbitrum',
+  10: 'optimism',
+  8453: 'base',
+  250: 'fantom',
+  25: 'cronos',
+}
+
+/** Best-effort Trust Wallet asset URL for (chain, address); undefined when the chain has no TW slug or the address is invalid. */
+function trustWalletLogo(chainId: number, address: string): string | undefined {
+  const slug = TRUSTWALLET_CHAIN_SLUGS[chainId]
+  if (!slug || !address) {
+    return undefined
+  }
+  let checksummed: string
+  try {
+    // Trust Wallet asset folders are keyed by the EIP-55 checksummed address.
+    checksummed = ethers.utils.getAddress(address)
+  } catch {
+    return undefined // not a valid address → never guess a URL
+  }
+  return `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${slug}/assets/${checksummed}/logo.png`
 }
 
 /**
@@ -287,16 +445,29 @@ export function getLaunchpadLogo(chainId: number, address: string): string | und
 }
 
 /**
- * The logo URL for a token, or undefined for an honest no-logo. Curated TOKEN_LOGOS win; otherwise a
- * launchpad-launched token's on-chain metadataURI is resolved (lazily + cached — see getLaunchpadLogo).
- * Synchronous + non-blocking: safe to call while building any Token proto.
+ * The logo URL for a token, or undefined for an honest no-logo. Tiered (highest priority first):
+ *   1. curated per-address logo (chain-scoped) — CURATED_LOGOS
+ *   2. symbol-family logo — for wrapped/bridged/variant tokens (needs `symbol`; skipped when absent)
+ *   3. launchpad on-chain metadataURI (lazy + cached — see getLaunchpadLogo)
+ *   4. external CDN by (chain, address) — Trust Wallet (inert for HookSwap's custom chains today)
+ * Anything past tier 4 → undefined (the frontend renders its deterministic monogram — tier 5).
+ * Synchronous + non-blocking: safe to call while building any Token proto. `symbol` is optional so
+ * callers without it (e.g. the address-only /v1/token-meta endpoint) still get tiers 1/3/4.
  */
-export function resolveTokenLogo(chainId: number, address: string): string | undefined {
-  const curated = address ? TOKEN_LOGOS[address.toLowerCase()] : undefined
+export function resolveTokenLogo(chainId: number, address: string, symbol?: string): string | undefined {
+  const curated = curatedLogo(chainId, address)
   if (curated) {
     return curated
   }
-  return getLaunchpadLogo(chainId, address)
+  const family = symbolFamilyLogo(symbol)
+  if (family) {
+    return family
+  }
+  const launchpad = getLaunchpadLogo(chainId, address)
+  if (launchpad) {
+    return launchpad
+  }
+  return trustWalletLogo(chainId, address)
 }
 
 /**

@@ -202,9 +202,10 @@ function resolveChainIds(requested: number[]): number[] {
 
 /** data.v1.Token for a wrapped-native or seeded ERC-20 (real metadata; ERC-20 type). */
 function toProtoErc20Token(meta: TokenMeta): Token {
-  // Curated logo (WETH/tHOOK/USDG) wins; else a launchpad-launched token's on-chain metadataURI is
-  // resolved lazily in the background and cached (undefined until resolved — see logos.ts). Never blocks.
-  const logoUrl = resolveTokenLogo(meta.chainId, meta.address)
+  // Tiered logo (curated address → symbol-family → launchpad metadataURI → external CDN; see logos.ts).
+  // Passing the symbol lets a wrapped/bridged/variant token (USDT0/WgUSDT/WHYPE/…) resolve a real family
+  // logo even without a curated address entry. Launchpad resolution is lazy + cached; never blocks.
+  const logoUrl = resolveTokenLogo(meta.chainId, meta.address, meta.symbol)
   return new Token({
     chainId: meta.chainId,
     address: meta.address,

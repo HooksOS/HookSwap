@@ -145,10 +145,11 @@ function toSearchToken(c: TokenCandidate): SearchToken {
     symbol: c.symbol,
     name: c.name,
     standard: c.standard,
-    // logoUrl: curated (WETH/tHOOK/USDG) or a launchpad-launched token's on-chain metadataURI, resolved
-    // lazily + cached (undefined until resolved — see logos.ts). safetyLevel / feeData intentionally unset
-    // (no registry/oracle on these chains) — the interface renders honest defaults, never fabricated data.
-    logoUrl: resolveTokenLogo(c.chainId, c.address),
+    // logoUrl: tiered — curated address → symbol-family (USDT0/WgUSDT/WHYPE/… → canonical logo) → launchpad
+    // metadataURI (lazy + cached) → external CDN (see logos.ts). Passing the symbol lets variant tokens
+    // resolve a real logo without a curated entry. safetyLevel / feeData intentionally unset (no registry/
+    // oracle on these chains) — the interface renders honest defaults, never fabricated data.
+    logoUrl: resolveTokenLogo(c.chainId, c.address, c.symbol),
   })
 }
 
