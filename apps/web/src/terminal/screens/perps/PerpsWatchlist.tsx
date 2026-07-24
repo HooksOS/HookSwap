@@ -1,5 +1,6 @@
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { EMPTY } from '~/terminal/screens/perps/perpsCatalog'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
 
 const MONO = terminalFonts.mono
@@ -20,6 +21,7 @@ export function PerpsWatchlist({
   selected?: string
   onSelect: (market: PerpMarketView) => void
 }): JSX.Element {
+  const isMobile = useIsMobileViewport()
   return (
     <div style={{ fontFamily: MONO }}>
       {markets.map((m) => {
@@ -35,8 +37,11 @@ export function PerpsWatchlist({
             style={{
               display: 'flex',
               width: '100%',
+              alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '8px 12px',
+              // Mobile: ≥44px tap target (native card-row feel); dense on desktop.
+              padding: isMobile ? '11px 14px' : '8px 12px',
+              minHeight: isMobile ? 48 : undefined,
               borderBottom: `1px solid ${terminalColors.line3}`,
               cursor: 'pointer',
               textAlign: 'left',

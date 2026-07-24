@@ -28,8 +28,15 @@ const SANS = terminalFonts.sans
 
 type Lifecycle = 'cliff' | 'vesting' | 'complete'
 
+/**
+ * There is no `warnBorder` token (green owns `greenBorder`; warn/red do not), so
+ * the cliff pill's hairline is mixed from `warn` into `warnBg` — theme-aware, and
+ * a near-match for the former hardcoded #EAD9A8 in light mode.
+ */
+const WARN_BORDER = `color-mix(in srgb, ${terminalColors.warn} 28%, ${terminalColors.warnBg})`
+
 const STATUS_META: Record<Lifecycle, { label: string; color: string; bg: string; border: string }> = {
-  cliff: { label: 'In cliff', color: terminalColors.warn, bg: terminalColors.warnBg, border: '#EAD9A8' },
+  cliff: { label: 'In cliff', color: terminalColors.warn, bg: terminalColors.warnBg, border: WARN_BORDER },
   vesting: { label: 'Vesting', color: terminalColors.greenDeep, bg: terminalColors.greenBg, border: terminalColors.greenBorder },
   complete: { label: 'Complete', color: terminalColors.ink3, bg: terminalColors.panel2, border: terminalColors.line },
 }

@@ -188,8 +188,14 @@ function buildRows(
     const chainId: UniverseChainId | undefined =
       chainOverrides?.get(pool.id.toLowerCase()) ??
       supportedChainIdFromGQLChain(pool.token0?.chain as GraphQLApi.Chain)
-    // Unwrap WETH → ETH for display (matches the legacy Pools table). Metric lookup
-    // uses the ORIGINAL token so the wrapped-native address still resolves.
+    // Unwrap WETH → ETH ONLY for the logo currency (matches the legacy Pools table).
+    // The wrapped-native unwrap is UNSAFE for the DISPLAY LABEL on HookSwap's custom
+    // chains: chains whose backendChain is `UnknownChain` (Stable/HyperEVM/Ink) can't be
+    // recovered from the token's gql chain string, so `gqlToCurrency` re-resolves the
+    // unwrapped native to the WRONG chain — landing on the chain whose native symbol is
+    // "USDT0" (Stable) and mislabelling WHYPE/WETH as "USDT0". So the LABEL below uses the
+    // pool's REAL on-chain token symbol (from the data-api / verified seed map), never the
+    // unwrapped-currency symbol. Metric lookup uses the ORIGINAL token so its address resolves.
     const displayToken0 = chainId !== undefined && pool.token0 ? unwrapToken(chainId, pool.token0) : pool.token0
     const displayToken1 = chainId !== undefined && pool.token1 ? unwrapToken(chainId, pool.token1) : pool.token1
     const currency0 = displayToken0 ? gqlToCurrency(displayToken0) : undefined
@@ -213,8 +219,11 @@ function buildRows(
       detailPath: chainId !== undefined && pool.id ? `/markets/${chainId}-${pool.id}` : undefined,
       currency0,
       currency1,
-      symbol0: currency0?.symbol ?? pool.token0?.symbol ?? '—',
-      symbol1: currency1?.symbol ?? pool.token1?.symbol ?? '—',
+      // Prefer the pool's REAL token symbol (authoritative — on-chain symbol() served by
+      // the data-api, or the verified seed map) over the unwrapped-currency symbol, which
+      // mislabels the wrapped-native side as "USDT0" on UnknownChain-backed chains.
+      symbol0: pool.token0?.symbol || currency0?.symbol || '—',
+      symbol1: pool.token1?.symbol || currency1?.symbol || '—',
       chainLabel: chainId !== undefined ? getChainLabel(chainId) : undefined,
       price: metric?.price,
       change1d: metric?.change1d,
@@ -495,14 +504,31 @@ function MarketsScreenBody(): JSX.Element {
   // The fallback then contributes only pools the backend omits (Stable 988, HyperEVM
   // 999). Finally hide test/seed tokens (tHOOK etc.) so only real assets surface.
   const topPools = useMemo(() => {
-    const seen = new Set<string>()
+    const seenAddr = new Set<string>()
+    // Secondary "same-look" dedup: the data-api can serve two DISTINCT pool addresses that
+    // render identically (e.g. XLayer has two different "HKT" token contracts — both
+    // on-chain symbol HKT / name "HookSwap Test" — each in its own WOKB pool). Those have
+    // different addresses so the address dedup keeps both, surfacing a visually-duplicate
+    // row. Collapse by chain + ordered symbol pair + fee + protocol (order-independent), so
+    // a pool that LOOKS the same never appears twice. This only merges symbol-colliding
+    // pools: real v2 pairs are unique per token-pair and v3 fee tiers stay distinct (fee is
+    // in the key). Backend rows (TVL-desc) come first, so the higher-TVL copy wins.
+    const seenLook = new Set<string>()
     const merged: PoolStat[] = []
     for (const pool of [...(rawPools ?? []), ...seededPools]) {
       const addr = pool.id.toLowerCase()
-      if (seen.has(addr)) {
+      if (seenAddr.has(addr)) {
         continue
       }
-      seen.add(addr)
+      const s0 = (pool.token0?.symbol ?? '').toUpperCase()
+      const s1 = (pool.token1?.symbol ?? '').toUpperCase()
+      const pair = s0 < s1 ? `${s0}|${s1}` : `${s1}|${s0}`
+      const lookKey = `${pool.token0?.chain ?? pool.chain ?? ''}|${pair}|${pool.feeTier?.feeAmount ?? ''}|${pool.protocolVersion ?? ''}`
+      if (seenLook.has(lookKey)) {
+        continue
+      }
+      seenAddr.add(addr)
+      seenLook.add(lookKey)
       const hasTvl = pool.totalLiquidity?.value !== undefined && pool.totalLiquidity.value > 0
       const onchainTvl = seededTvl.get(addr)
       if (!hasTvl && onchainTvl !== undefined) {

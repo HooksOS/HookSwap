@@ -1006,11 +1006,14 @@ function MarketDetailScreenBody(): JSX.Element {
             }
             size={15}
           />
-          <div style={{ display: 'flex', gap: 9 }}>
+          {/* Mobile: CTAs go full-width and grow to equal ≥44px tap targets. */}
+          <div style={{ display: 'flex', gap: 9, width: isMobile ? '100%' : undefined }}>
             <button
               type="button"
               onClick={() => navigate(swapPath)}
               style={{
+                flex: isMobile ? 1 : undefined,
+                minHeight: isMobile ? 44 : undefined,
                 background: terminalColors.brandGreen,
                 color: terminalColors.btnInk,
                 fontFamily: SANS,
@@ -1028,6 +1031,8 @@ function MarketDetailScreenBody(): JSX.Element {
               type="button"
               onClick={() => navigate(poolsPath)}
               style={{
+                flex: isMobile ? 1 : undefined,
+                minHeight: isMobile ? 44 : undefined,
                 background: terminalColors.bg,
                 border: `1px solid ${terminalColors.line}`,
                 color: terminalColors.ink,

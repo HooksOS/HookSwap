@@ -1,5 +1,6 @@
 import { ReactNode, useMemo, useState } from 'react'
 import type { Address } from '~/chains'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { EMPTY } from '~/terminal/screens/perps/perpsCatalog'
 import { CollateralDrawer } from '~/terminal/screens/perps/CollateralDrawer'
@@ -47,6 +48,7 @@ export function OrderTicket({
   const [size, setSize] = useState('')
   const [limitPrice, setLimitPrice] = useState('')
   const [collateralOpen, setCollateralOpen] = useState(false)
+  const isMobile = useIsMobileViewport()
 
   const placeOrder = usePlaceOrder({ market, trader, chainId })
   const base = market?.base ?? 'BASE'
@@ -129,7 +131,9 @@ export function OrderTicket({
                 fontFamily: MONO,
                 fontSize: 12,
                 fontWeight: 600,
+                // Mobile: ≥44px tap target.
                 padding: 8,
+                minHeight: isMobile ? 44 : undefined,
                 borderRadius: 6,
                 border: 'none',
                 cursor: 'pointer',
@@ -158,7 +162,9 @@ export function OrderTicket({
                 flex: 1,
                 fontFamily: MONO,
                 fontSize: 11,
+                // Mobile: ≥44px tap target.
                 padding: 6,
+                minHeight: isMobile ? 44 : undefined,
                 borderRadius: 6,
                 border: 'none',
                 cursor: 'pointer',
@@ -275,8 +281,21 @@ export function OrderTicket({
           <span>Leverage</span>
           <b style={{ color: accent, fontSize: 13 }}>{effLev}×</b>
         </div>
-        <div style={{ position: 'relative', height: 14 }}>
-          <div style={{ position: 'absolute', top: 5, left: 0, right: 0, height: 5, background: terminalColors.panel2, borderRadius: 3 }}>
+        {/* Mobile: taller container so the (transparent, inset) range input is an easy
+            drag target; the visible 5px track stays vertically centered regardless. */}
+        <div style={{ position: 'relative', height: isMobile ? 32 : 14 }}>
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              left: 0,
+              right: 0,
+              height: 5,
+              background: terminalColors.panel2,
+              borderRadius: 3,
+            }}
+          >
             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: accent, borderRadius: 3 }} />
             <div
               style={{
@@ -286,7 +305,9 @@ export function OrderTicket({
                 width: 14,
                 height: 14,
                 borderRadius: '50%',
-                background: '#fff',
+                // Card surface, not literal white — in dark mode a white knob would
+                // read as a hole punched in the ticket. `bg` is #ffffff in light.
+                background: terminalColors.bg,
                 border: `2px solid ${accent}`,
                 transform: 'translate(-50%,-50%)',
               }}

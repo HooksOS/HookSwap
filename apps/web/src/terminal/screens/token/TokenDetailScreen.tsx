@@ -51,11 +51,14 @@ import { useTokenTransactions } from '~/appGraphql/data/useTokenTransactions'
 import { DoubleCurrencyLogo } from '~/components/Logo/DoubleLogo'
 import { ExploreTablesFilterStoreContextProvider } from '~/features/Explore/state/exploreTablesFilterStore'
 import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens'
+import { useTokenMeta } from '~/terminal/screens/token/useTokenMeta'
 import { useBackendSortedTopPools } from '~/features/Explore/state/topPools/useBackendSortedTopPools'
 import { serializeSwapAddressesToURLParameters } from '~/pages/Swap/Swap/state/tradeQueryParams'
 import { ExplorerAddress, shortAddr } from '~/terminal/components/ExplorerAddress'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { LedgerAvatar, resolveLedgerLogo } from '~/terminal/components/LedgerAvatar'
+import { LedgerTvlChart, type TvlPoint } from '~/terminal/components/LedgerTvlChart'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import type { PoolStat } from '~/types/explore'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 
@@ -317,74 +320,94 @@ function Kpi({ label, value, valueColor }: { label: string; value: string; value
   )
 }
 
-/** Real 1-day price-history area chart (line + gradient fill). */
-function PriceAreaChart({ closes }: { closes: readonly number[] }): JSX.Element {
-  const W = 720
-  const H = 220
-  const paths = useMemo(() => {
-    if (closes.length < 2) {
-      return undefined
-    }
-    const min = Math.min(...closes)
-    const max = Math.max(...closes)
-    const span = max - min || 1
-    const top = 14
-    const bottom = H - 14
-    const pts = closes.map((value, index) => {
-      const x = (index / (closes.length - 1)) * W
-      const y = bottom - ((value - min) / span) * (bottom - top)
-      return { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 }
-    })
-    const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-    const area = `M${pts[0].x},${H} L${line.slice(1)} L${pts[pts.length - 1].x},${H} Z`
-    return { line, area }
-  }, [closes])
+/**
+ * Compact Buy / Sell trade card (main-column ticket).
+ *
+ * The swap ENGINE is not rebuilt here — this ticket owns the Buy/Sell intent and deep-links
+ * into the existing Swap screen pre-filled with this token (same serializer the hero / Markets
+ * CTAs use), where the live quote, price impact and slippage are shown before confirming. It
+ * shows the real market price only; it never fabricates a quote. Green = buy, red = sell.
+ */
+function TradeCard({
+  symbol,
+  price,
+  chainLabel,
+  onBuy,
+  onSell,
+}: {
+  symbol: string
+  price: string
+  chainLabel: string
+  onBuy: () => void
+  onSell: () => void
+}): JSX.Element {
+  const [side, setSide] = useState<'buy' | 'sell'>('buy')
+  const isBuy = side === 'buy'
+  const accent = isBuy ? terminalColors.greenUp : terminalColors.redDown
 
   return (
-    <div
-      style={{
-        position: 'relative',
-        minHeight: 200,
-        height: 200,
-        border: `1px solid ${terminalColors.line2}`,
-        borderRadius: 12,
-        overflow: 'hidden',
-        background: terminalColors.panel,
-      }}
-    >
-      <div
+    <InstrumentPanel title={`Trade ${symbol}`} meta={[chainLabel]} style={{ overflow: 'hidden' }}>
+      {/* Buy / Sell segmented control */}
+      <div style={{ display: 'flex', gap: 6, background: terminalColors.panel2, borderRadius: 10, padding: 4 }}>
+        {(['buy', 'sell'] as const).map((s) => {
+          const active = s === side
+          const c = s === 'buy' ? terminalColors.greenUp : terminalColors.redDown
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSide(s)}
+              style={{
+                flex: 1,
+                fontFamily: SANS,
+                fontSize: 12.5,
+                fontWeight: 600,
+                textTransform: 'capitalize',
+                padding: '9px 0',
+                borderRadius: 8,
+                cursor: 'pointer',
+                border: `1px solid ${active ? c : 'transparent'}`,
+                background: active ? terminalColors.bg : 'transparent',
+                color: active ? c : terminalColors.ink3,
+              }}
+            >
+              {s}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Market price (real feed value — no fabricated quote) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 16 }}>
+        <span style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3 }}>Market price</span>
+        <span style={{ fontFamily: MONO, fontSize: 15, fontWeight: 600, color: terminalColors.ink }}>{price}</span>
+      </div>
+
+      <button
+        type="button"
+        onClick={isBuy ? onBuy : onSell}
         style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundImage: `repeating-linear-gradient(0deg,transparent 0 39px,${terminalColors.line3} 39px 40px), repeating-linear-gradient(90deg,transparent 0 63px,${terminalColors.line3} 63px 64px)`,
+          width: '100%',
+          marginTop: 16,
+          fontFamily: SANS,
+          fontSize: 13.5,
+          fontWeight: 600,
+          color: terminalColors.btnInk,
+          background: accent,
+          border: 'none',
+          borderRadius: 10,
+          padding: '12px 16px',
+          cursor: 'pointer',
         }}
-      />
-      {paths ? (
-        <svg
-          width="100%"
-          height="100%"
-          viewBox={`0 0 ${W} ${H}`}
-          preserveAspectRatio="none"
-          style={{ position: 'absolute', inset: 0 }}
-          aria-hidden="true"
-        >
-          <defs>
-            <linearGradient id="td-area-grad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor={terminalColors.brandGreen} stopOpacity={0.2} />
-              <stop offset="1" stopColor={terminalColors.brandGreen} stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <path d={paths.area} fill="url(#td-area-grad)" />
-          <path d={paths.line} fill="none" stroke={terminalColors.greenUp} strokeWidth={2.2} />
-        </svg>
-      ) : (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontFamily: MONO, fontSize: 12, color: terminalColors.faint }}>
-            No price history yet — builds as trades occur.
-          </span>
-        </div>
-      )}
-    </div>
+      >
+        {isBuy ? `Buy ${symbol}` : `Sell ${symbol}`}
+      </button>
+
+      <p style={{ fontFamily: SANS, fontSize: 11.5, lineHeight: 1.5, color: terminalColors.faint, margin: '12px 0 0' }}>
+        Opens the HookSwap swap ticket pre-filled with {symbol}. The live quote, price impact and slippage are shown
+        there before you confirm.
+      </p>
+    </InstrumentPanel>
   )
 }
 
@@ -393,6 +416,7 @@ function PriceAreaChart({ closes }: { closes: readonly number[] }): JSX.Element 
 function TokenDetailScreenBody(): JSX.Element {
   const params = useParams<{ chainId: string; address: string }>()
   const navigate = useNavigate()
+  const isMobile = useIsMobileViewport()
   const { convertFiatAmountFormatted } = useLocalizationContext()
 
   const parsed = useMemo(() => parseParams(params.chainId, params.address), [params.chainId, params.address])
@@ -445,13 +469,25 @@ function TokenDetailScreenBody(): JSX.Element {
     chainId: chainId ?? UniverseChainId.Mainnet,
   })
 
+  // Socials/description from the token's on-chain metadataURI JSON (data-api /v1/token-meta). Optional —
+  // absent for tokens without launchpad JSON metadata; never fabricated.
+  const { data: tokenMeta } = useTokenMeta(chainId, address)
+
   const stats = token?.stats
   const symbol = token?.symbol || '—'
   const name = token?.name || ''
-  const logoUrl = token?.logoUrl || resolveLedgerLogo(chainId, address)
+  const logoUrl = token?.logoUrl || tokenMeta?.logoUrl || resolveLedgerLogo(chainId, address)
   const initials = (symbol || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || '?'
 
-  const closes = useMemo(() => (stats?.priceHistory1d ?? []).map((p) => p.value).filter((v) => Number.isFinite(v)), [stats])
+  // Real 1-day price series → the shared canvas chart (theme-correct via resolveTerminalColor,
+  // redraws on `hookswap-theme-change`). Unpriced/NaN points are dropped, never zero-filled.
+  const pricePoints = useMemo<TvlPoint[]>(
+    () =>
+      (stats?.priceHistory1d ?? [])
+        .filter((p) => Number.isFinite(p.value))
+        .map((p) => ({ label: new Date(Number(p.timestamp) * 1000).toISOString(), value: p.value })),
+    [stats],
+  )
 
   const activityRows = useMemo(
     () => (chainId !== undefined && address ? buildActivityRows(rawTxns, chainId, address, symbol) : []),
@@ -577,6 +613,26 @@ function TokenDetailScreenBody(): JSX.Element {
                 <div style={{ marginTop: 7 }}>
                   <ExplorerAddress address={address} chainId={chainId} type={ExplorerDataType.TOKEN} short={false} fontSize={12} />
                 </div>
+                {/* Socials — only rendered for the links the token's metadata actually carries. */}
+                {tokenMeta && (tokenMeta.website || tokenMeta.twitter || tokenMeta.telegram) ? (
+                  <div style={{ marginTop: 9, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                    {tokenMeta.website ? (
+                      <a href={tokenMeta.website} target="_blank" rel="noopener noreferrer" style={socialLinkStyle}>
+                        Website ↗
+                      </a>
+                    ) : null}
+                    {tokenMeta.twitter ? (
+                      <a href={tokenMeta.twitter} target="_blank" rel="noopener noreferrer" style={socialLinkStyle}>
+                        Twitter / X ↗
+                      </a>
+                    ) : null}
+                    {tokenMeta.telegram ? (
+                      <a href={tokenMeta.telegram} target="_blank" rel="noopener noreferrer" style={socialLinkStyle}>
+                        Telegram ↗
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
               {/* Price + 24h */}
               <div style={{ textAlign: 'right', minWidth: 140 }}>
@@ -589,18 +645,31 @@ function TokenDetailScreenBody(): JSX.Element {
               </div>
             </div>
 
-            {/* actions */}
+            {/* actions — trading lives in the main-column trade card; the hero owns sharing */}
             <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>
               <button type="button" onClick={() => navigate(swapLink.buy)} style={{ ...primaryBtnStyle, flex: '1 1 140px' }}>
                 Buy {symbol}
               </button>
-              <button type="button" onClick={() => navigate(swapLink.sell)} style={{ ...secondaryBtnStyle, flex: '1 1 140px' }}>
-                Sell {symbol}
-              </button>
-              <button type="button" onClick={onCopy} style={{ ...secondaryBtnStyle, flex: '0 1 160px' }}>
+              <button type="button" onClick={onCopy} style={{ ...secondaryBtnStyle, flex: '0 1 180px' }}>
                 {copied ? '✓ Link copied' : 'Copy share link'}
               </button>
             </div>
+
+            {/* Project description from the token's metadata JSON — only when present. */}
+            {tokenMeta?.description ? (
+              <p
+                style={{
+                  fontFamily: SANS,
+                  fontSize: 13.5,
+                  lineHeight: 1.55,
+                  color: terminalColors.ink2,
+                  margin: '18px 0 0',
+                  maxWidth: 760,
+                }}
+              >
+                {tokenMeta.description}
+              </p>
+            ) : null}
           </div>
         </InstrumentPanel>
 
@@ -613,19 +682,54 @@ function TokenDetailScreenBody(): JSX.Element {
           <Kpi label="FDV" value={fiatStats(stats?.fdv)} />
         </div>
 
-        {/* ---------------------------------------------- price chart */}
-        <InstrumentPanel live title={`${symbol} price`} meta={['1D']} style={{ overflow: 'hidden' }}>
-          <PriceAreaChart closes={closes} />
-        </InstrumentPanel>
+        {/* ---------------------------------------------- main: price chart + trade card */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: 18,
+            alignItems: 'stretch',
+          }}
+        >
+          <InstrumentPanel
+            live
+            title={`${symbol} price`}
+            meta={['1D']}
+            style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden' }}
+          >
+            <LedgerTvlChart
+              points={pricePoints}
+              height={220}
+              emptyText="No price history yet — builds as trades occur."
+            />
+          </InstrumentPanel>
+          <div style={{ flex: isMobile ? '1 1 auto' : '0 0 320px', minWidth: 0 }}>
+            <TradeCard
+              symbol={symbol}
+              price={price}
+              chainLabel={getChainLabel(chainId as UniverseChainId)}
+              onBuy={() => navigate(swapLink.buy)}
+              onSell={() => navigate(swapLink.sell)}
+            />
+          </div>
+        </div>
 
         {/* ---------------------------------------------- pools + activity */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            flexWrap: isMobile ? 'nowrap' : 'wrap',
+            gap: 18,
+            alignItems: 'flex-start',
+          }}
+        >
           {/* Pools list */}
           <InstrumentPanel
             flush
             title="Pools"
             meta={[symbol]}
-            style={{ flex: '1 1 380px', minWidth: 300, overflow: 'hidden' }}
+            style={isMobile ? { width: '100%', overflow: 'hidden' } : { flex: '1 1 380px', minWidth: 300, overflow: 'hidden' }}
           >
             <PoolList
               rows={poolRows}
@@ -641,7 +745,7 @@ function TokenDetailScreenBody(): JSX.Element {
             live
             title="Recent activity"
             meta={[symbol]}
-            style={{ flex: '1 1 380px', minWidth: 300, overflow: 'hidden' }}
+            style={isMobile ? { width: '100%', overflow: 'hidden' } : { flex: '1 1 380px', minWidth: 300, overflow: 'hidden' }}
           >
             <ActivityList rows={activityRows} loading={txLoading && activityRows.length === 0} chainId={chainId} />
           </InstrumentPanel>
@@ -865,6 +969,15 @@ const secondaryBtnStyle: React.CSSProperties = {
   borderRadius: 10,
   padding: '11px 16px',
   cursor: 'pointer',
+}
+
+/** Inline social link (Website / Twitter / Telegram) in the token identity block. */
+const socialLinkStyle: React.CSSProperties = {
+  fontFamily: SANS,
+  fontSize: 12.5,
+  fontWeight: 600,
+  color: terminalColors.greenDeep,
+  textDecoration: 'none',
 }
 
 /**

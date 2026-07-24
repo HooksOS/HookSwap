@@ -615,18 +615,38 @@ function LaunchCard({ launch, onCopy, copied }: { launch: Launch; onCopy: () => 
         </div>
 
         {/* ---------- actions ---------- */}
+        {/* Primary CTA funnels the visitor into the in-app token page (live chart + Buy/Sell
+            deep-links into Swap), not the raw explorer — a share card should let people trade. */}
         <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+          <Link
+            to={`/token/${launch.chainId}/${launch.token.addr}`}
+            style={{
+              flex: '2 1 200px',
+              textAlign: 'center',
+              fontFamily: SANS,
+              fontSize: 13,
+              fontWeight: 700,
+              color: terminalColors.btnInk,
+              background: terminalColors.brandGreen,
+              border: 'none',
+              borderRadius: 10,
+              padding: '12px 16px',
+              textDecoration: 'none',
+            }}
+          >
+            {`Trade ${launch.token.symbol || 'token'} →`}
+          </Link>
           <button
             type="button"
             onClick={onCopy}
             style={{
-              flex: '1 1 160px',
+              flex: '1 1 140px',
               fontFamily: SANS,
               fontSize: 13,
               fontWeight: 600,
-              color: terminalColors.btnInk,
-              background: terminalColors.brandGreen,
-              border: 'none',
+              color: terminalColors.ink2,
+              background: terminalColors.bg,
+              border: `1px solid ${terminalColors.line}`,
               borderRadius: 10,
               padding: '12px 16px',
               cursor: 'pointer',
@@ -634,29 +654,19 @@ function LaunchCard({ launch, onCopy, copied }: { launch: Launch; onCopy: () => 
           >
             {copied ? '✓ Link copied' : 'Copy share link'}
           </button>
-          {tokenUrl ? (
+        </div>
+        {tokenUrl ? (
+          <div style={{ textAlign: 'center', marginTop: 10 }}>
             <a
               href={tokenUrl}
               target="_blank"
               rel="noopener noreferrer"
-              style={{
-                flex: '1 1 160px',
-                textAlign: 'center',
-                fontFamily: SANS,
-                fontSize: 13,
-                fontWeight: 600,
-                color: terminalColors.ink2,
-                background: terminalColors.bg,
-                border: `1px solid ${terminalColors.line}`,
-                borderRadius: 10,
-                padding: '12px 16px',
-                textDecoration: 'none',
-              }}
+              style={{ fontFamily: SANS, fontSize: 12, fontWeight: 600, color: terminalColors.ink3, textDecoration: 'none' }}
             >
-              View token ↗
+              View token on explorer ↗
             </a>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
         <div style={{ textAlign: 'center' }}>
           <ExploreFooter />

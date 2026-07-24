@@ -4,9 +4,9 @@ import { LeftRail, LeftRailProps } from '~/terminal/components/LeftRail'
 import { TopBar, TopBarProps } from '~/terminal/components/TopBar'
 import { TopNav } from '~/terminal/components/TopNav'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
-import { terminalColors } from '~/terminal/theme/tokens'
+import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import '~/terminal/theme/terminal.css'
-import '~/terminal/theme/theme' // boot: apply stored/default (dark) theme pre-paint
+import { useTerminalTheme } from '~/terminal/theme/theme' // boot: apply stored/default (dark) theme pre-paint
 
 export interface TerminalShellProps {
   /** Navigation configuration (active screen, nav handler, live wallet stats). */
@@ -37,6 +37,8 @@ export interface TerminalShellProps {
 export function TerminalShell({ rail, topBar, subBar, children }: TerminalShellProps): JSX.Element {
   const isMobile = useIsMobileViewport()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // Theme toggle is in the desktop TopNav; on mobile it lives at the foot of the nav drawer.
+  const { theme, toggle } = useTerminalTheme()
 
   if (isMobile) {
     // In the mobile drawer, tapping a nav item navigates AND closes the drawer.
@@ -51,7 +53,18 @@ export function TerminalShell({ rail, topBar, subBar, children }: TerminalShellP
     return (
       <div
         className="tm-root"
-        style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: terminalColors.bgApp }}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: '100vh',
+          background: terminalColors.bgApp,
+          // Clear the notch / status bar in a standalone PWA so the TopBar isn't hidden
+          // under it (0 in a normal browser tab). Side insets protect the top chrome +
+          // in-flow content from a landscape notch; the fixed bottom bar handles its own.
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          paddingLeft: 'env(safe-area-inset-left, 0px)',
+          paddingRight: 'env(safe-area-inset-right, 0px)',
+        }}
       >
         <TopBar {...topBar} isMobile onMenuClick={() => setDrawerOpen(true)} />
         {subBar}
@@ -92,10 +105,40 @@ export function TerminalShell({ rail, topBar, subBar, children }: TerminalShellP
                 overflowY: 'auto',
                 background: terminalColors.bg,
                 boxShadow: '2px 0 28px -6px rgba(11,15,20,.28)',
+                // The drawer is `position: fixed`, so the root's safe-area padding doesn't
+                // reach it — inset it from the notch/status bar (top) and a landscape
+                // left-notch (left) itself so its nav never hides under either.
+                paddingTop: 'env(safe-area-inset-top, 0px)',
+                paddingLeft: 'env(safe-area-inset-left, 0px)',
                 paddingBottom: 'env(safe-area-inset-bottom, 0px)',
               }}
             >
               <LeftRail {...drawerRail} collapsed={false} hideCollapseToggle />
+              {/* Theme toggle — the desktop TopNav's sun/moon isn't rendered on mobile, so surface it here. */}
+              <button
+                type="button"
+                onClick={toggle}
+                aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  width: 'calc(100% - 24px)',
+                  margin: '8px 12px 16px',
+                  padding: '11px 14px',
+                  background: terminalColors.bg,
+                  border: `1px solid ${terminalColors.line}`,
+                  borderRadius: 10,
+                  cursor: 'pointer',
+                  fontFamily: terminalFonts.sans,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: terminalColors.ink2,
+                }}
+              >
+                <span aria-hidden style={{ fontSize: 15, lineHeight: 1 }}>{theme === 'dark' ? '☀️' : '🌙'}</span>
+                {theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+              </button>
             </div>
           </>
         ) : null}

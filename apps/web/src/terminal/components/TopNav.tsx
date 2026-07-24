@@ -58,6 +58,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Widget builder', path: '/widget', navId: 'widget-builder' },
     ],
   },
+  { label: 'Bridge', path: '/bridge', navId: 'bridge', activeIds: ['bridge'] },
   { label: 'Markets', path: '/markets', navId: 'markets', activeIds: ['markets'] },
   {
     label: 'Perps',

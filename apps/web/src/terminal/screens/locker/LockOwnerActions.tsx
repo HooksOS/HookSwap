@@ -35,6 +35,13 @@ import type { EVMUniverseChainId } from 'uniswap/src/features/chains/types'
 const MONO = terminalFonts.mono
 const SANS = terminalFonts.sans
 
+/**
+ * No `redBorder` token exists (green owns `greenBorder`; red does not), so the tx
+ * error banner's hairline is mixed from `redDown` into `redBg` — theme-aware, and
+ * a near-match for the former hardcoded #E4C7C4 in light mode.
+ */
+const RED_BORDER = `color-mix(in srgb, ${terminalColors.redDown} 22%, ${terminalColors.redBg})`
+
 /** unix seconds → "Aug 20, 2026 03:14 PM". */
 function fmtDateTime(unixSec: number): string {
   if (!Number.isFinite(unixSec) || unixSec <= 0) {
@@ -442,7 +449,7 @@ export function LockOwnerActions({ lock, onChanged }: { lock: Lock; onChanged: (
             marginTop: 12,
             padding: '10px 13px',
             borderRadius: 11,
-            border: `1px solid ${txError ? '#E4C7C4' : terminalColors.greenBorder}`,
+            border: `1px solid ${txError ? RED_BORDER : terminalColors.greenBorder}`,
             background: txError ? terminalColors.redBg : terminalColors.greenBg,
             fontFamily: SANS,
             fontSize: 12.5,

@@ -10,7 +10,7 @@
  *   • Result — parsed from the launch tx's PoolSeeded event by the SDK.
  *   • My launches + pending fees — from the FeeVault; honest empty states.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { getChainLabel } from 'uniswap/src/features/chains/utils'
 import { ExplorerDataType } from 'uniswap/src/utils/linking'
@@ -18,6 +18,7 @@ import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
 import { StatCard } from '~/terminal/components/StatCard'
 import {
   fmtWei,
+  onlyDecimal,
   onlyDigits,
   onlySignedDigits,
   FieldLabel,
@@ -43,16 +44,89 @@ import {
   type LaunchConfigInput,
 } from '~/terminal/launchpad/useLaunch'
 import { terminalColors } from '~/terminal/theme/tokens'
-import type { Address } from '~/chains'
+import { formatUnits, parseEther, type Address } from '~/chains'
 
 /**
  * Contract-valid pool defaults so the default (non-advanced) form submits.
- *   • sqrtPriceX96 = 2^96 → a 1:1 initial price.
- *   • ticks ±887220 → the full usable range at tickSpacing 60.
+ *   • sqrtPriceX96 = 2^96 → advisory only (the launcher ignores it; price derives from tickLower).
+ *   • ticks ±887220 → the full usable range at tickSpacing 60 → a fair launch that opens at a very
+ *     low price and rises as people buy. Proven, contract-valid geometry — kept as the safe default.
+ * The beginner flow never touches these; power users override them in the Advanced panel.
  */
 const DEFAULT_SQRT_PRICE_X96 = '79228162514264337593543950336'
 const DEFAULT_TICK_LOWER = '-887220'
 const DEFAULT_TICK_UPPER = '887220'
+
+/** Fixed token decimals for a HookOS-launched token (the launcher mints an 18-dec ERC-20). */
+const TOKEN_DECIMALS = 18n
+
+/** Format a plain integer token-count string with thousands separators for display. */
+function fmtCount(count: string): string {
+  if (count === '') {
+    return '—'
+  }
+  // Group digits without going through Number() (supply can exceed 2^53).
+  return count.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+
+/** The friendly socials/description fields that get assembled into the on-chain metadata JSON. */
+interface TokenMeta {
+  image: string
+  description: string
+  website: string
+  twitter: string
+  telegram: string
+}
+
+const EMPTY_META: TokenMeta = { image: '', description: '', website: '', twitter: '', telegram: '' }
+
+/** UTF-8-safe base64 (btoa alone breaks on non-Latin1 chars in a description). */
+function utf8ToBase64(s: string): string {
+  return btoa(encodeURIComponent(s).replace(/%([0-9A-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16))))
+}
+
+/**
+ * Assemble the optional socials/description fields (+ name/symbol) into the flat token-metadata JSON
+ * the data-api parses, returned as a `data:application/json;base64,…` URI. Empty fields are omitted —
+ * nothing is fabricated. Returns '' when the creator supplied no image/description/socials at all
+ * (name+symbol alone aren't worth a metadata URI — they're already on-chain token fields).
+ */
+function buildMetadataUri(name: string, symbol: string, meta: TokenMeta): string {
+  const obj: Record<string, string> = {}
+  const n = name.trim()
+  const s = symbol.trim()
+  const image = meta.image.trim()
+  const description = meta.description.trim()
+  const website = meta.website.trim()
+  const twitter = meta.twitter.trim()
+  const telegram = meta.telegram.trim()
+  const hasContent = image !== '' || description !== '' || website !== '' || twitter !== '' || telegram !== ''
+  if (!hasContent) {
+    return ''
+  }
+  if (n !== '') {
+    obj.name = n
+  }
+  if (s !== '') {
+    obj.symbol = s
+  }
+  if (image !== '') {
+    obj.image = image
+  }
+  if (description !== '') {
+    obj.description = description
+  }
+  if (website !== '') {
+    obj.website = website
+  }
+  if (twitter !== '') {
+    obj.twitter = twitter
+  }
+  if (telegram !== '') {
+    obj.telegram = telegram
+  }
+  return `data:application/json;base64,${utf8ToBase64(JSON.stringify(obj))}`
+}
 
 const EMPTY_INPUT: LaunchConfigInput = {
   name: '',
@@ -168,9 +242,87 @@ export function FairLaunchV3Engine({
 
   const [input, setInput] = useState<LaunchConfigInput>(EMPTY_INPUT)
   const [advanced, setAdvanced] = useState(false)
+  const [meta, setMeta] = useState<TokenMeta>(EMPTY_META)
+  // When a power user pastes a raw metadataURI in Advanced, it takes over from the friendly builder.
+  const [rawMetaOverride, setRawMetaOverride] = useState(false)
 
   const set = <K extends keyof LaunchConfigInput>(key: K, value: LaunchConfigInput[K]): void => {
     setInput((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const setMetaField = (key: keyof TokenMeta, value: string): void => {
+    setMeta((prev) => ({ ...prev, [key]: value }))
+  }
+
+  // Keep input.metadataURI in sync with the friendly socials fields (unless overridden by a raw paste).
+  // The on-chain launch tuple is unchanged — metadataURI is just now assembled instead of hand-typed.
+  useEffect(() => {
+    if (rawMetaOverride) {
+      return
+    }
+    setInput((prev) => {
+      const next = buildMetadataUri(prev.name, prev.symbol, meta)
+      return next === prev.metadataURI ? prev : { ...prev, metadataURI: next }
+    })
+  }, [meta, input.name, input.symbol, rawMetaOverride])
+
+  /* ------------------------------------------------------------------ beginner ⇄ raw views
+   * The scary on-chain fields stay in `input` as raw strings (unchanged, still validated by
+   * buildParams). The primary flow just presents friendly VIEWS over them:
+   *   • Total supply — whole token count; the 18 decimals are appended under the hood.
+   *   • Buy at launch — ETH; converted to wei under the hood (+ a >0 min-out so the SDK accepts it).
+   * No on-chain logic changes: the same LaunchParams tuple is sent either way. */
+
+  /** input.totalSupply (raw 18-dec wei) → whole-token count for the friendly field. */
+  const supplyTokens = ((): string => {
+    const raw = input.totalSupply.trim()
+    if (raw === '' || !/^\d+$/.test(raw)) {
+      return ''
+    }
+    try {
+      return (BigInt(raw) / 10n ** TOKEN_DECIMALS).toString()
+    } catch {
+      return ''
+    }
+  })()
+
+  /** Whole-token count → raw 18-dec wei stored in input.totalSupply. */
+  const setSupplyTokens = (v: string): void => {
+    const count = onlyDigits(v)
+    set('totalSupply', count === '' ? '' : (BigInt(count) * 10n ** TOKEN_DECIMALS).toString())
+  }
+
+  /** input.initialBuyEth (raw wei) → human ETH for the friendly field. */
+  const buyEth = ((): string => {
+    const w = input.initialBuyEth.trim()
+    if (w === '' || w === '0' || !/^\d+$/.test(w)) {
+      return ''
+    }
+    try {
+      return formatUnits(BigInt(w), 18)
+    } catch {
+      return ''
+    }
+  })()
+
+  /** Human ETH → raw wei; also seeds a >0 min-out (SDK rejects a 0-slippage dev buy). */
+  const setBuyEth = (v: string): void => {
+    const s = onlyDecimal(v)
+    let wei = '0'
+    if (s !== '' && s !== '.') {
+      try {
+        wei = parseEther(s).toString()
+      } catch {
+        wei = '0'
+      }
+    }
+    setInput((prev) => ({
+      ...prev,
+      initialBuyEth: wei,
+      // Same-tx atomic self-buy → no front-running possible; a min-out of 1 wei just satisfies the
+      // launcher's "never 0-slippage" guard. A power user can tighten it in the Advanced panel.
+      initialBuyMinOut: wei === '0' ? '0' : prev.initialBuyMinOut !== '' && prev.initialBuyMinOut !== '0' ? prev.initialBuyMinOut : '1',
+    }))
   }
 
   const launchState = useLaunch({ chainId, owner, input })
@@ -189,6 +341,8 @@ export function FairLaunchV3Engine({
     if (launchState.isDone) {
       launchState.reset()
       setInput(EMPTY_INPUT)
+      setMeta(EMPTY_META)
+      setRawMetaOverride(false)
       return
     }
     void launchState.launch()
@@ -233,7 +387,7 @@ export function FairLaunchV3Engine({
   })()
 
   const symbolValue = input.symbol.trim() !== '' ? input.symbol.trim().toUpperCase() : '—'
-  const supplyValue = input.totalSupply.trim() !== '' ? input.totalSupply.trim() : '—'
+  const supplyValue = fmtCount(supplyTokens)
   const dexLabel = input.dex === String(V3Dex.HookSwap) ? 'HookSwap' : 'Uniswap V3'
 
   return (
@@ -241,7 +395,7 @@ export function FairLaunchV3Engine({
       {/* Stat tiles */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
         <StatCard size="lg" label="Symbol" value={symbolValue} />
-        <StatCard size="lg" label="Supply (raw)" value={supplyValue} />
+        <StatCard size="lg" label="Supply" value={supplyValue} />
         <StatCard size="lg" label="Launch fee" value={deployed ? feeLabel : '—'} />
         <StatCard size="lg" label="DEX" value={deployed ? dexLabel : '—'} />
       </div>
@@ -254,6 +408,10 @@ export function FairLaunchV3Engine({
                 <NotDeployedNote chainLabel={chainLabel} />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <Notice tone="muted">
+                    Create your token, seed its liquidity pool, and lock the LP — all in one transaction. It opens as a
+                    fair launch (price starts low and rises as people buy), and the trading fees stay yours to claim.
+                  </Notice>
                   <div>
                     <FieldLabel>Name</FieldLabel>
                     <TextField value={input.name} onChange={(v) => set('name', v)} placeholder="My Token" maxLength={64} />
@@ -269,24 +427,53 @@ export function FairLaunchV3Engine({
                     />
                   </div>
                   <div>
-                    <FieldLabel>Metadata URI</FieldLabel>
+                    <FieldLabel>Total supply</FieldLabel>
                     <TextField
-                      value={input.metadataURI}
-                      onChange={(v) => set('metadataURI', v)}
-                      placeholder="ipfs://… or https://…"
-                      mono
-                    />
-                  </div>
-                  <div>
-                    <FieldLabel>Token supply (raw base units)</FieldLabel>
-                    <TextField
-                      value={input.totalSupply}
-                      onChange={(v) => set('totalSupply', onlyDigits(v))}
-                      placeholder="1000000000000000000000000"
+                      value={supplyTokens}
+                      onChange={setSupplyTokens}
+                      placeholder="1,000,000"
                       mono
                       inputMode="numeric"
                     />
+                    <div style={{ fontFamily: SANS, fontSize: 10.5, color: terminalColors.faint, marginTop: 5, lineHeight: 1.5 }}>
+                      Whole number of tokens. Decimals are handled for you. All of it seeds the pool — no team allocation.
+                    </div>
                   </div>
+
+                  {!rawMetaOverride ? (
+                    <>
+                      <StepLabel index="—" label="Socials & description (optional)" />
+                      <div>
+                        <FieldLabel>Logo image URL</FieldLabel>
+                        <TextField value={meta.image} onChange={(v) => setMetaField('image', v)} placeholder="https://… or ipfs://… (PNG/SVG)" mono />
+                      </div>
+                      <div>
+                        <FieldLabel>Description</FieldLabel>
+                        <TextField value={meta.description} onChange={(v) => setMetaField('description', v)} placeholder="One line about your token" maxLength={280} />
+                      </div>
+                      <div>
+                        <FieldLabel>Website</FieldLabel>
+                        <TextField value={meta.website} onChange={(v) => setMetaField('website', v)} placeholder="https://yourtoken.xyz" mono />
+                      </div>
+                      <div style={{ display: 'flex', gap: 12 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <FieldLabel>Twitter / X</FieldLabel>
+                          <TextField value={meta.twitter} onChange={(v) => setMetaField('twitter', v)} placeholder="@handle or url" mono />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <FieldLabel>Telegram</FieldLabel>
+                          <TextField value={meta.telegram} onChange={(v) => setMetaField('telegram', v)} placeholder="@handle or url" mono />
+                        </div>
+                      </div>
+                      <div style={{ fontFamily: SANS, fontSize: 10.5, color: terminalColors.faint, lineHeight: 1.5 }}>
+                        These show on your token&apos;s page. All optional — leave any blank. Saved on-chain in the token metadata.
+                      </div>
+                    </>
+                  ) : (
+                    <Notice tone="muted">
+                      Using a custom metadata URI from the Advanced panel. Clear it there to edit these fields instead.
+                    </Notice>
+                  )}
                 </div>
               )}
             </Panel>
@@ -347,6 +534,13 @@ export function FairLaunchV3Engine({
                       onChange={(v) => set('lockOnHookSwap', v === 'true')}
                     />
                   </div>
+                  <div>
+                    <FieldLabel>Buy at launch (optional, ETH)</FieldLabel>
+                    <TextField value={buyEth} onChange={setBuyEth} placeholder="0.0" mono inputMode="decimal" />
+                    <div style={{ fontFamily: SANS, fontSize: 10.5, color: terminalColors.faint, marginTop: 5, lineHeight: 1.5 }}>
+                      Optionally buy some of your own token in the same transaction. This ETH is added to the total cost.
+                    </div>
+                  </div>
                 </div>
                 <Notice tone="muted">
                   Pool is single-sided (100% your token), paired against{' '}
@@ -363,12 +557,29 @@ export function FairLaunchV3Engine({
                   onClick={() => setAdvanced((a) => !a)}
                   style={{ cursor: 'pointer', fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', color: terminalColors.ink3Alt }}
                 >
-                  {advanced ? '− ADVANCED' : '+ ADVANCED (price, salt, initial buy)'}
+                  {advanced ? '− ADVANCED' : '+ ADVANCED (metadata, price, salt, initial buy)'}
                 </div>
 
                 {advanced ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
-                    <StepLabel index="03" label="Price & range" />
+                    <StepLabel index="02b" label="Metadata URI override" note="Overrides the friendly Socials fields." />
+                    <div>
+                      <FieldLabel>Metadata URI</FieldLabel>
+                      <TextField
+                        value={rawMetaOverride ? input.metadataURI : ''}
+                        onChange={(v) => {
+                          setRawMetaOverride(v.trim() !== '')
+                          set('metadataURI', v)
+                        }}
+                        placeholder="ipfs://… or https://… or data:application/json;… (optional)"
+                        mono
+                      />
+                      <div style={{ fontFamily: SANS, fontSize: 10.5, color: terminalColors.faint, marginTop: 5, lineHeight: 1.5 }}>
+                        Advanced: paste a raw metadata URI to bypass the Socials fields. Leave blank to use those instead.
+                      </div>
+                    </div>
+
+                    <StepLabel index="03" label="Price & range" note="Defaults to a full-range fair launch. sqrtPriceX96 is advisory — the pool price is set by tickLower." />
                     <div>
                       <FieldLabel>Initial price (sqrtPriceX96)</FieldLabel>
                       <TextField
@@ -402,7 +613,7 @@ export function FairLaunchV3Engine({
                       <PrimaryButton label="Randomize salt" onClick={() => set('salt', randomSalt())} variant="outline" />
                     </div>
                     <div>
-                      <FieldLabel>Initial buy amount (ETH, in wei)</FieldLabel>
+                      <FieldLabel>Initial buy amount (raw wei)</FieldLabel>
                       <TextField value={input.initialBuyEth} onChange={(v) => set('initialBuyEth', onlyDigits(v))} placeholder="0" mono inputMode="numeric" />
                     </div>
                     <div style={{ display: 'flex', gap: 12 }}>
@@ -427,7 +638,8 @@ export function FairLaunchV3Engine({
             <Panel title="Review" corners>
               <SummaryRow label="Name" value={input.name.trim() !== '' ? input.name.trim() : '—'} />
               <SummaryRow label="Symbol" value={symbolValue} />
-              <SummaryRow label="Supply (raw)" value={supplyValue} />
+              <SummaryRow label="Supply" value={supplyValue} />
+              {buyEth !== '' ? <SummaryRow label="Buy at launch" value={`${buyEth} ETH`} /> : null}
               <SummaryRow label="DEX" value={deployed ? dexLabel : '—'} />
               <SummaryRow label="Launch fee" value={deployed ? feeLabel : '—'} />
               <SummaryRow

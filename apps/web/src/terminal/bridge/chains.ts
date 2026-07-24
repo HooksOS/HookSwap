@@ -13,7 +13,13 @@
  * users can bridge INTO HookSwap chains easily.
  */
 import { useEffect, useMemo, useState } from 'react'
-import { fetchRelayChains, type RelayChain } from '~/terminal/bridge/relayClient'
+import { RELAY_NATIVE_ADDRESS } from '~/terminal/bridge/addresses'
+import {
+  fetchRelayChains,
+  fetchRelayCurrencies,
+  type RelayChain,
+  type RelayCurrencyMeta,
+} from '~/terminal/bridge/relayClient'
 
 /**
  * HookSwap's own chains, pinned to the top of the chain selectors (in this
@@ -150,4 +156,94 @@ export function useBridgeChains(): UseBridgeChains {
     }),
     [ordered, loading, error, map],
   )
+}
+
+/* ---------------------------------------------------- per-chain currency logos */
+
+// GET /chains lists a chain's native + featured ERC-20s but WITHOUT logos
+// (`metadata` is null there — verified live). POST /currencies/v2 returns the same
+// tokens WITH `metadata.logoURI` (verified: native + top ERC-20s, incl. logos), so we
+// use it as the token-selector's default list and as an address→logo lookup to give the
+// selected token its real icon. Cached per chain for the browser session.
+const currencyCache = new Map<number, RelayCurrencyMeta[]>()
+const currencyInflight = new Map<number, Promise<RelayCurrencyMeta[]>>()
+
+async function loadCurrenciesOnce(chainId: number): Promise<RelayCurrencyMeta[]> {
+  const cached = currencyCache.get(chainId)
+  if (cached) {
+    return cached
+  }
+  let p = currencyInflight.get(chainId)
+  if (!p) {
+    // No search term ⇒ Relay returns the chain's default/top verified tokens (with logos).
+    p = fetchRelayCurrencies(chainId)
+      .then((list) => {
+        currencyCache.set(chainId, list)
+        return list
+      })
+      .finally(() => {
+        currencyInflight.delete(chainId)
+      })
+    currencyInflight.set(chainId, p)
+  }
+  return p
+}
+
+export interface UseChainCurrencies {
+  /** The chain's default verified tokens (native + top ERC-20s), each carrying a logo. */
+  currencies: RelayCurrencyMeta[]
+  /** Lowercased token address (native ⇒ zero address) → `metadata.logoURI`. */
+  logoByAddress: Map<string, string>
+}
+
+/**
+ * The default token list for a chain, fetched from Relay /currencies/v2 (which — unlike
+ * /chains — includes `metadata.logoURI`). Returns both the list (for the token selector)
+ * and an address→logo map (to give the currently-selected token its real icon). Cached
+ * per chain; empty (graceful) for chains Relay doesn't serve.
+ */
+export function useChainCurrencies(chainId?: number): UseChainCurrencies {
+  const [currencies, setCurrencies] = useState<RelayCurrencyMeta[]>(
+    chainId !== undefined ? currencyCache.get(chainId) ?? [] : [],
+  )
+
+  useEffect(() => {
+    if (chainId === undefined) {
+      setCurrencies([])
+      return
+    }
+    const cached = currencyCache.get(chainId)
+    if (cached) {
+      setCurrencies(cached)
+      return
+    }
+    let active = true
+    loadCurrenciesOnce(chainId)
+      .then((list) => {
+        if (active) {
+          setCurrencies(list)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setCurrencies([])
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [chainId])
+
+  const logoByAddress = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of currencies) {
+      const logo = c.metadata?.logoURI
+      if (logo) {
+        m.set((c.address ?? RELAY_NATIVE_ADDRESS).toLowerCase(), logo)
+      }
+    }
+    return m
+  }, [currencies])
+
+  return useMemo(() => ({ currencies, logoByAddress }), [currencies, logoByAddress])
 }

@@ -44,6 +44,8 @@ import { useAccount } from '~/hooks/useAccount'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { NotificationRow, type NotificationCategory } from '~/terminal/components/NotificationRow'
 import { StatCard } from '~/terminal/components/StatCard'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
+import { ActivityCardRow, ActivityCardSkeleton, type ActivityTone } from '~/terminal/screens/activity/ActivityCardRow'
 import '~/terminal/theme/terminal.css'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
 import { formatRelativeTime } from '~/terminal/utils/time'
@@ -109,10 +111,36 @@ function statusDetail(status: TransactionStatus): string {
   }
 }
 
+/** Colour bucket for the mobile card's Status stat (same real `TransactionStatus`). */
+function statusTone(status: TransactionStatus): ActivityTone {
+  switch (status) {
+    case TransactionStatus.Success:
+      return 'ok'
+    case TransactionStatus.Failed:
+    case TransactionStatus.Canceled:
+      return 'bad'
+    default:
+      return 'pending'
+  }
+}
+
+/** Truncated tx hash for the mobile card (mono). No hash yet → undefined → honest "—". */
+function shortHash(hash: string | undefined): string | undefined {
+  if (!hash || hash.length < 12) {
+    return hash || undefined
+  }
+  return `${hash.slice(0, 6)}…${hash.slice(-4)}`
+}
+
 interface ActivityRow {
   id: string
   title: string
   detail: string
+  /** Same live status/chain as `detail`, split out so the mobile card can label them. */
+  status: string
+  statusTone: ActivityTone
+  chainLabel: string
+  hashShort?: string
   timestamp: string
   category: NotificationCategory
   badge: string
@@ -280,6 +308,7 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
 export function ActivityScreen(): JSX.Element {
   const { t } = useTranslation()
+  const isMobile = useIsMobileViewport()
   const account = useAccount()
   const accountDrawer = useAccountDrawer()
   const address = account.address
@@ -316,11 +345,17 @@ export function ActivityScreen(): JSX.Element {
       }
       const tx = entry as TransactionDetails
       const cat = categorize(tx.typeInfo.type)
+      const status = statusDetail(tx.status)
+      const chainLabel = getChainLabel(tx.chainId)
       out.push({
         id: tx.id,
         title: getTransactionSummaryTitle(tx, t) ?? 'Transaction',
         // Status + network (data spans all 6 HookSwap chains) so each row shows which chain it's on.
-        detail: `${statusDetail(tx.status)} · ${getChainLabel(tx.chainId)}`,
+        detail: `${status} · ${chainLabel}`,
+        status,
+        statusTone: statusTone(tx.status),
+        chainLabel,
+        hashShort: shortHash(tx.hash),
         timestamp: formatRelativeTime(tx.addedTime),
         category: cat.category,
         badge: cat.badge,
@@ -418,8 +453,8 @@ export function ActivityScreen(): JSX.Element {
         </InstrumentPanel>
       </div>
 
-      {/* Filter chips */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 14 }}>
+      {/* Filter chips — wrap on mobile so all 5 stay tappable without sideways scroll. */}
+      <div style={{ display: 'flex', gap: isMobile ? 6 : 4, flexWrap: isMobile ? 'wrap' : 'nowrap', marginBottom: 14 }}>
         {FILTER_CHIPS.map((chip) => (
           <FilterChip key={chip.id} label={chip.label} active={filter === chip.id} onClick={() => setFilter(chip.id)} />
         ))}
@@ -435,31 +470,49 @@ export function ActivityScreen(): JSX.Element {
         style={{ overflow: 'hidden' }}
       >
         {loadingFeed ? (
-          <FeedSkeleton />
+          isMobile ? <ActivityCardSkeleton /> : <FeedSkeleton />
         ) : activity.error ? (
           // Honest failed-to-load state (distinct from a successful-but-empty feed), with a Retry.
           <FeedError onRetry={() => activity.refetch()} />
         ) : filteredRows && filteredRows.length > 0 ? (
-          // Bounded scroll region (~8–9 rows) so a long history scrolls INSIDE the
+          // Desktop: bounded scroll region (~8–9 rows) so a long history scrolls INSIDE the
           // card instead of making the page endlessly tall. No pagination controls.
-          <div style={{ maxHeight: 560, overflowY: 'auto' }}>
-            {filteredRows.map((row, index) => (
-              <NotificationRow
-                key={row.id}
-                unread={row.unread}
-                category={row.category}
-                badgeLabel={row.badge}
-                title={row.title}
-                detail={row.detail}
-                timestamp={row.timestamp}
-                divider={index < filteredRows.length - 1}
-                action={
-                  row.explorerUrl
-                    ? { label: 'View', onClick: () => window.open(row.explorerUrl, '_blank', 'noopener,noreferrer') }
-                    : undefined
-                }
-              />
-            ))}
+          // Mobile: the feed flows with the page (a nested scroll box fights native scrolling).
+          <div style={isMobile ? undefined : { maxHeight: 560, overflowY: 'auto' }}>
+            {filteredRows.map((row, index) =>
+              isMobile ? (
+                <ActivityCardRow
+                  key={row.id}
+                  unread={row.unread}
+                  category={row.category}
+                  badgeLabel={row.badge}
+                  title={row.title}
+                  status={row.status}
+                  statusTone={row.statusTone}
+                  chainLabel={row.chainLabel}
+                  timestamp={row.timestamp}
+                  hashShort={row.hashShort}
+                  explorerUrl={row.explorerUrl}
+                  divider={index < filteredRows.length - 1}
+                />
+              ) : (
+                <NotificationRow
+                  key={row.id}
+                  unread={row.unread}
+                  category={row.category}
+                  badgeLabel={row.badge}
+                  title={row.title}
+                  detail={row.detail}
+                  timestamp={row.timestamp}
+                  divider={index < filteredRows.length - 1}
+                  action={
+                    row.explorerUrl
+                      ? { label: 'View', onClick: () => window.open(row.explorerUrl, '_blank', 'noopener,noreferrer') }
+                      : undefined
+                  }
+                />
+              ),
+            )}
           </div>
         ) : (
           <FeedMessage>

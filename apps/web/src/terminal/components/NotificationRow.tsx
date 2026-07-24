@@ -10,16 +10,27 @@ export interface NotificationBadgeStyle {
 }
 
 /**
- * Category tile styles, verbatim from the B13 prototype `notifications` data.
- * `range` (#C4712A), `alert` bg (#EAF2FE) and `governance` bg (#F0ECFF) are
- * prototype-only values not present in tokens.ts (see TERMINAL-DESIGN.md §6).
+ * Category tile styles from the B13 prototype `notifications` data.
+ *
+ * `alert` / `governance` have no dedicated tinted-surface token (unlike
+ * green/warn, which own `greenBg`/`warnBg`), so their tile fill is mixed from
+ * the matching accent token via `color-mix`. That keeps the tint theme-aware —
+ * a raw rgba() would freeze the LIGHT accent hue into dark mode.
  */
 export const notificationCategoryBadges: Record<NotificationCategory, NotificationBadgeStyle> = {
   fees: { label: 'FEES', color: terminalColors.greenDeep, background: terminalColors.greenBg },
   range: { label: 'RANGE', color: terminalColors.warn, background: terminalColors.warnBg },
   swap: { label: 'SWAP', color: terminalColors.ink2, background: terminalColors.panel2 },
-  alert: { label: 'ALERT', color: terminalColors.accentBlue, background: 'rgba(46,124,246,0.14)' },
-  governance: { label: 'GOV', color: terminalColors.accentPurple, background: 'rgba(138,107,255,0.16)' },
+  alert: {
+    label: 'ALERT',
+    color: terminalColors.accentBlue,
+    background: `color-mix(in srgb, ${terminalColors.accentBlue} 14%, transparent)`,
+  },
+  governance: {
+    label: 'GOV',
+    color: terminalColors.accentPurple,
+    background: `color-mix(in srgb, ${terminalColors.accentPurple} 16%, transparent)`,
+  },
 }
 
 export interface NotificationAction {

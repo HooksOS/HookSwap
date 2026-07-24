@@ -25,6 +25,25 @@ export interface TvlPoint {
   value: number
 }
 
+/**
+ * Apply an alpha to a resolved token colour for `<canvas>` use.
+ *
+ * Canvas cannot parse `var(--t-*)` or `color-mix()`, so the theme-aware washes
+ * (area gradient, line glow, endpoint halo) are built from the ALREADY-resolved
+ * hex returned by `resolveTerminalColor`. A 6-digit hex gains an 8-digit alpha
+ * suffix; anything else is passed through unchanged so an unexpected colour
+ * format degrades to fully opaque rather than to an unpaintable string.
+ */
+function canvasAlpha(color: string, alpha: number): string {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) {
+    return color
+  }
+  const a = Math.round(Math.min(Math.max(alpha, 0), 1) * 255)
+    .toString(16)
+    .padStart(2, '0')
+  return `${color}${a}`
+}
+
 /** Compact legend value formatter for the stacked (per-chain) mode. */
 function fmtStackValue(v: number, mode: LedgerStack['mode']): string {
   const compact = new Intl.NumberFormat('en-US', {
@@ -191,10 +210,11 @@ export function LedgerTvlChart({
       const px = (i: number): number => (n === 1 ? width / 2 : (i / (n - 1)) * width)
       const py = (v: number): number => height - pad - ((v - min) / (max - min || 1)) * (height - pad * 2)
 
-      // Area fill — vertical green gradient fading to transparent.
+      // Area fill — vertical green gradient fading to transparent (theme-aware:
+      // washes of the resolved brand green, not a frozen light-mode green).
       const grad = ctx.createLinearGradient(0, 0, 0, height)
-      grad.addColorStop(0, 'rgba(23,179,87,0.28)')
-      grad.addColorStop(1, 'rgba(23,179,87,0.02)')
+      grad.addColorStop(0, canvasAlpha(cGreen, 0.28))
+      grad.addColorStop(1, canvasAlpha(cGreen, 0.02))
       ctx.beginPath()
       ctx.moveTo(px(0), py(series[0].value))
       for (let i = 1; i < n; i++) {
@@ -208,7 +228,7 @@ export function LedgerTvlChart({
 
       // Glow + line stroke.
       ctx.save()
-      ctx.shadowColor = 'rgba(12,138,66,0.45)'
+      ctx.shadowColor = canvasAlpha(cGreen, 0.45)
       ctx.shadowBlur = 10
       ctx.beginPath()
       ctx.moveTo(px(0), py(series[0].value))
@@ -226,7 +246,7 @@ export function LedgerTvlChart({
       const ey = py(series[n - 1].value)
       ctx.beginPath()
       ctx.arc(ex, ey, 6, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(23,179,87,0.18)'
+      ctx.fillStyle = canvasAlpha(cGreen, 0.18)
       ctx.fill()
       ctx.beginPath()
       ctx.arc(ex, ey, 3.2, 0, Math.PI * 2)

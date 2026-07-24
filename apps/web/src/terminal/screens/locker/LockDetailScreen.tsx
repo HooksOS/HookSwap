@@ -174,6 +174,13 @@ function Avatar({
   )
 }
 
+/**
+ * No `warnBorder` token exists (green owns `greenBorder`; warn/red do not), so the
+ * unlockable pill's hairline is mixed from `warn` into `warnBg` — theme-aware, and
+ * a near-match for the former hardcoded #EAD9A8 in light mode.
+ */
+const WARN_BORDER = `color-mix(in srgb, ${terminalColors.warn} 28%, ${terminalColors.warnBg})`
+
 function StatusPill({ status }: { status: Lock['status'] }): JSX.Element {
   const locked = status === 'locked'
   return (
@@ -188,7 +195,7 @@ function StatusPill({ status }: { status: Lock['status'] }): JSX.Element {
         letterSpacing: '0.02em',
         color: locked ? terminalColors.greenDeep : terminalColors.warn,
         background: locked ? terminalColors.greenBg : terminalColors.warnBg,
-        border: `1px solid ${locked ? terminalColors.greenBorder : '#EAD9A8'}`,
+        border: `1px solid ${locked ? terminalColors.greenBorder : WARN_BORDER}`,
         padding: '4px 11px',
         borderRadius: 999,
         whiteSpace: 'nowrap',

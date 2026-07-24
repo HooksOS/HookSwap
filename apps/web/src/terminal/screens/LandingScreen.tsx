@@ -1530,7 +1530,11 @@ function LandingScreenBody(): JSX.Element {
                           fontFamily: MONO,
                           fontSize: 9.5,
                           fontWeight: 600,
-                          color: '#fff',
+                          // `btnInk` = the ink that sits on a filled accent chip (white in
+                          // light, near-black in dark). `b.color` is a token fill that goes
+                          // BRIGHT in dark (e.g. `ink` = #e8ece2), so a hardcoded white code
+                          // would be invisible there.
+                          color: terminalColors.btnInk,
                           letterSpacing: '0.02em',
                         }}
                       >

@@ -18,7 +18,7 @@ import { useBalance } from 'wagmi'
 import { useAccountDrawer } from '~/components/AccountDrawer/MiniPortfolio/hooks'
 import { useAccount } from '~/hooks/useAccount'
 import { RELAY_NATIVE_ADDRESS } from '~/terminal/bridge/addresses'
-import { chainLabel, isHookSwapChain, useBridgeChains } from '~/terminal/bridge/chains'
+import { chainLabel, isHookSwapChain, useBridgeChains, useChainCurrencies } from '~/terminal/bridge/chains'
 import {
   fetchRelayCurrencies,
   type RelayChain,
@@ -76,11 +76,73 @@ function formatSeconds(sec?: number): string {
   return `~${Math.round(sec / 60)} min`
 }
 
+/* ------------------------------------------------------------- theme + icons */
+
+/**
+ * True when the Terminal is on its DARK palette. Theme is driven by `data-theme` on
+ * <html> (DARK is the default — bare `:root` / `data-theme='dark'`; light is
+ * `data-theme='light'`). Reactive to the theme toggle via a MutationObserver.
+ */
+function useIsDarkTerminal(): boolean {
+  const [dark, setDark] = useState(() =>
+    typeof document !== 'undefined' ? document.documentElement.getAttribute('data-theme') !== 'light' : true,
+  )
+  useEffect(() => {
+    const el = document.documentElement
+    const update = (): void => setDark(el.getAttribute('data-theme') !== 'light')
+    update()
+    const obs = new MutationObserver(update)
+    obs.observe(el, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => obs.disconnect()
+  }, [])
+  return dark
+}
+
+/**
+ * Ordered chain-icon URL candidates. Relay serves per-theme variants
+ * (`…/icons/<id>/light.png` for light backgrounds, `…/dark.png` for dark — both verified
+ * live). On the dark Terminal the "light" variant (a dark glyph) is near-invisible, so we
+ * prefer the dark variant, then fall back to the provided icon, then `logoUrl` — the
+ * `<img>` onError walks this list, and only a genuinely icon-less chain shows the dot.
+ */
+function chainIconCandidates(chain: RelayChain | undefined, isDark: boolean): string[] {
+  const base = chain?.iconUrl ?? chain?.logoUrl
+  const out: string[] = []
+  if (base && isDark && /\/light\.(png|svg|webp|jpg|jpeg)(\?|$)/i.test(base)) {
+    out.push(base.replace(/\/light\.(png|svg|webp|jpg|jpeg)/i, '/dark.$1'))
+  }
+  if (base) {
+    out.push(base)
+  }
+  if (chain?.logoUrl && chain.logoUrl !== base) {
+    out.push(chain.logoUrl)
+  }
+  return out
+}
+
 /* --------------------------------------------------------------- token logo */
 
-function TokenLogo({ currency, size = 20 }: { currency?: RelayCurrencyMeta; size?: number }): JSX.Element {
-  const url = currency?.metadata?.logoURI
+/**
+ * A token's icon. Uses the currency's own `metadata.logoURI` when present, else resolves
+ * it by address from the chain's currency list (the selected token often originates from
+ * GET /chains, which ships no logos — the map is built from /currencies/v2). Falls back to
+ * a neutral dot only when no logo exists anywhere.
+ */
+function TokenLogo({
+  currency,
+  size = 20,
+  logoByAddress,
+}: {
+  currency?: RelayCurrencyMeta
+  size?: number
+  logoByAddress?: Map<string, string>
+}): JSX.Element {
+  const url =
+    currency?.metadata?.logoURI ??
+    logoByAddress?.get((currency?.address ?? RELAY_NATIVE_ADDRESS).toLowerCase())
   const [broken, setBroken] = useState(false)
+  // Reset the broken flag when the resolved URL changes (selecting a different token).
+  useEffect(() => setBroken(false), [url])
   if (url && !broken) {
     return (
       <img
@@ -100,24 +162,30 @@ function TokenLogo({ currency, size = 20 }: { currency?: RelayCurrencyMeta; size
         height: size,
         borderRadius: '50%',
         flexShrink: 0,
-        background: 'linear-gradient(135deg,#8A92FF,#5B6BFF)',
+        // Theme-aware neutral placeholder (matches ChainLogo's fallback) — a frozen
+        // hardcoded gradient would keep one hue in both palettes.
+        background: terminalColors.panel2,
+        border: `1px solid ${terminalColors.line}`,
         display: 'inline-block',
       }}
     />
   )
 }
 
-function ChainLogo({ chain, size = 18 }: { chain?: RelayChain; size?: number }): JSX.Element {
-  const url = chain?.iconUrl ?? chain?.logoUrl
-  const [broken, setBroken] = useState(false)
-  if (url && !broken) {
+function ChainLogo({ chain, size = 18, isDark }: { chain?: RelayChain; size?: number; isDark: boolean }): JSX.Element {
+  const candidates = useMemo(() => chainIconCandidates(chain, isDark), [chain, isDark])
+  const [idx, setIdx] = useState(0)
+  // Restart from the best candidate whenever the chain / theme changes.
+  useEffect(() => setIdx(0), [candidates.join('|')])
+  const url = candidates[idx]
+  if (url) {
     return (
       <img
         src={url}
         alt={chain ? chainLabel(chain) : ''}
         width={size}
         height={size}
-        onError={() => setBroken(true)}
+        onError={() => setIdx((i) => i + 1)}
         style={{ borderRadius: '50%', display: 'block', flexShrink: 0, objectFit: 'cover' }}
       />
     )
@@ -152,6 +220,7 @@ function ChainSelect({
 }): JSX.Element {
   const [open, setOpen] = useState(false)
   const [term, setTerm] = useState('')
+  const isDark = useIsDarkTerminal()
   const selected = chains.find((c) => c.id === selectedId)
   const filtered = term
     ? chains.filter((c) => chainLabel(c).toLowerCase().includes(term.toLowerCase()) || String(c.id).includes(term))
@@ -174,7 +243,7 @@ function ChainSelect({
           cursor: 'pointer',
         }}
       >
-        <ChainLogo chain={selected} size={18} />
+        <ChainLogo chain={selected} size={18} isDark={isDark} />
         <span style={{ flex: 1, textAlign: 'left', fontFamily: SANS, fontSize: 13, fontWeight: 600, color: terminalColors.ink }}>
           {selected ? chainLabel(selected) : label}
         </span>
@@ -264,7 +333,7 @@ function ChainSelect({
                     background: c.id === selectedId ? terminalColors.panel : 'transparent',
                   }}
                 >
-                  <ChainLogo chain={c} size={18} />
+                  <ChainLogo chain={c} size={18} isDark={isDark} />
                   <span style={{ flex: 1, fontFamily: SANS, fontSize: 13, color: terminalColors.ink }}>
                     {chainLabel(c)}
                   </span>
@@ -300,7 +369,13 @@ function TokenSelect({
   const [results, setResults] = useState<RelayCurrencyMeta[] | undefined>(undefined)
   const [searching, setSearching] = useState(false)
 
-  const base = useMemo(() => baseTokensOf(chain), [chain])
+  // Default token list WITH logos (from /currencies/v2). Falls back to the /chains
+  // native + featured ERC-20s (logo-less) for chains Relay's currency search doesn't serve.
+  const { currencies, logoByAddress } = useChainCurrencies(chain?.id)
+  const base = useMemo(
+    () => (currencies.length > 0 ? currencies : baseTokensOf(chain)),
+    [currencies, chain],
+  )
 
   // Live token search against Relay /currencies/v2 (debounced).
   useEffect(() => {
@@ -354,7 +429,7 @@ function TokenSelect({
           opacity: chain ? 1 : 0.6,
         }}
       >
-        <TokenLogo currency={selected} size={20} />
+        <TokenLogo currency={selected} size={20} logoByAddress={logoByAddress} />
         <span style={{ fontFamily: MONO, fontWeight: 600, fontSize: 13, color: terminalColors.ink }}>
           {selected?.symbol ?? 'Token'}
         </span>
@@ -432,7 +507,7 @@ function TokenSelect({
                     background: 'transparent',
                   }}
                 >
-                  <TokenLogo currency={c} size={22} />
+                  <TokenLogo currency={c} size={22} logoByAddress={logoByAddress} />
                   <span style={{ minWidth: 0 }}>
                     <span style={{ display: 'block', fontFamily: MONO, fontSize: 13, fontWeight: 600, color: terminalColors.ink }}>
                       {c.symbol ?? '—'}

@@ -85,10 +85,11 @@ function VersionBadge({ version }: { version: ProtocolVersion }): JSX.Element {
         fontSize: 11,
         fontWeight: 600,
         color: isV3 ? terminalColors.accentIndigo : terminalColors.ink2,
-        // Translucent tints derived from accentIndigo (#4B5CF0 → rgb(75,92,240)); no
-        // alpha token exists for these, so the rgba is the token colour at low opacity.
-        background: isV3 ? 'rgba(75,92,240,0.10)' : terminalColors.panel2,
-        border: `1px solid ${isV3 ? 'rgba(75,92,240,0.22)' : terminalColors.line}`,
+        // Translucent tints of accentIndigo. No alpha token exists, so they are mixed
+        // from the token itself via color-mix — which keeps them theme-aware (a raw
+        // rgba() would freeze the LIGHT indigo #4B5CF0 into dark mode).
+        background: isV3 ? `color-mix(in srgb, ${terminalColors.accentIndigo} 10%, transparent)` : terminalColors.panel2,
+        border: `1px solid ${isV3 ? `color-mix(in srgb, ${terminalColors.accentIndigo} 22%, transparent)` : terminalColors.line}`,
         padding: '2px 8px',
         borderRadius: 999,
         whiteSpace: 'nowrap',

@@ -20,6 +20,16 @@
  *     No fake pool stats. The new pool auto-appears in Markets via the data-api factory
  *     enumeration once seeded (no extra wiring here).
  *   • Approve → Create — REAL writes (wagmi), gated behind the required ERC-20 allowance.
+ *
+ * MOBILE (< 900px, `useIsMobileViewport`) — presentation only, same data + same flow:
+ *   • The two desktop columns stack into one full-width column (Pair → notices →
+ *     Deposit → Summary), so nothing has to be scrolled sideways.
+ *   • Order Summary switches from label/value rows to the roomy label→value chip grid
+ *     used by the Farms / Locker Ledger mobile cards (`MobileStat`), one card row per
+ *     pool fact. Unpriceable values stay an honest "—".
+ *   • Touch sizing: 44px+ tap targets (token select, dropdown options, primary CTA) and
+ *     16px input text so iOS Safari doesn't auto-zoom the form on focus.
+ *   • No sticky CTA — `TerminalShell` already pins a bottom tab bar on mobile.
  */
 import { PositionStatus, ProtocolVersion } from '@uniswap/client-data-api/dist/data/v1/poolTypes_pb'
 import { CurrencyAmount, Token, type Currency } from '@uniswap/sdk-core'
@@ -46,6 +56,7 @@ import { shortAddr } from '~/terminal/components/ExplorerAddress'
 import { AddLiquidityModal } from '~/terminal/pools/AddLiquidityModal'
 import { getPoolAddresses } from '~/terminal/pools/addresses'
 import { useCreateV2Pool } from '~/terminal/pools/useCreateV2Pool'
+import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { Eyebrow, InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { terminalColors, terminalFonts, terminalType } from '~/terminal/theme/tokens'
 import { assume0xAddress } from '~/utils/wagmi'
@@ -160,11 +171,14 @@ function TokenSelect({
   options,
   onChange,
   loading,
+  mobile = false,
 }: {
   value?: TokenOption
   options: TokenOption[]
   onChange: (token: TokenOption) => void
   loading: boolean
+  /** Roomier trigger + option rows (44px+ tap targets) and 16px text on mobile. */
+  mobile?: boolean
 }): JSX.Element {
   const [open, setOpen] = useState(false)
   return (
@@ -177,20 +191,30 @@ function TokenSelect({
           width: '100%',
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
-          padding: '9px 11px',
-          borderRadius: 10,
+          gap: mobile ? 10 : 8,
+          padding: mobile ? '13px 14px' : '9px 11px',
+          minHeight: mobile ? 48 : undefined,
+          borderRadius: mobile ? 12 : 10,
           border: `1px solid ${terminalColors.line}`,
           background: terminalColors.bg,
           cursor: loading ? 'default' : 'pointer',
           boxSizing: 'border-box',
         }}
       >
-        <TokenCircle token={value} size={20} />
-        <span style={{ fontFamily: SANS, fontSize: 13.5, fontWeight: 600, color: terminalColors.ink, flex: 1, textAlign: 'left' }}>
+        <TokenCircle token={value} size={mobile ? 24 : 20} />
+        <span
+          style={{
+            fontFamily: SANS,
+            fontSize: mobile ? 16 : 13.5,
+            fontWeight: 600,
+            color: terminalColors.ink,
+            flex: 1,
+            textAlign: 'left',
+          }}
+        >
           {value?.symbol ?? (loading ? 'Loading…' : 'Select')}
         </span>
-        <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.ink3Alt }}>▾</span>
+        <span style={{ fontFamily: MONO, fontSize: mobile ? 13 : 11, color: terminalColors.ink3Alt }}>▾</span>
       </button>
       {open ? (
         <>
@@ -201,11 +225,13 @@ function TokenSelect({
               top: 'calc(100% + 4px)',
               left: 0,
               right: 0,
-              maxHeight: 260,
+              maxHeight: mobile ? 340 : 260,
               overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              overscrollBehavior: 'contain',
               background: terminalColors.bg,
               border: `1px solid ${terminalColors.line}`,
-              borderRadius: 10,
+              borderRadius: mobile ? 12 : 10,
               boxShadow: '0 12px 30px -12px rgba(11,15,20,.28)',
               zIndex: 11,
               padding: 4,
@@ -223,20 +249,32 @@ function TokenSelect({
                   width: '100%',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 8,
-                  padding: '8px 10px',
-                  borderRadius: 8,
+                  gap: mobile ? 10 : 8,
+                  padding: mobile ? '12px 12px' : '8px 10px',
+                  minHeight: mobile ? 48 : undefined,
+                  borderRadius: mobile ? 10 : 8,
                   border: 'none',
                   background: value?.symbol === token.symbol ? terminalColors.panel : 'transparent',
                   cursor: 'pointer',
                 }}
               >
-                <TokenCircle token={token} size={20} />
-                <span style={{ fontFamily: SANS, fontSize: 13, fontWeight: 600, color: terminalColors.ink, flex: 1, textAlign: 'left' }}>
+                <TokenCircle token={token} size={mobile ? 24 : 20} />
+                <span
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: mobile ? 15 : 13,
+                    fontWeight: 600,
+                    color: terminalColors.ink,
+                    flex: 1,
+                    textAlign: 'left',
+                  }}
+                >
                   {token.symbol}
                 </span>
                 {token.price !== undefined ? (
-                  <span style={{ fontFamily: MONO, fontSize: 11.5, color: terminalColors.ink3Alt }}>${fmtPrice(token.price)}</span>
+                  <span style={{ fontFamily: MONO, fontSize: mobile ? 13 : 11.5, color: terminalColors.ink3Alt }}>
+                    ${fmtPrice(token.price)}
+                  </span>
                 ) : null}
               </button>
             ))}
@@ -256,6 +294,59 @@ function SummaryRow({ label, value, valueColor }: { label: string; value: string
       <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 500, color: valueColor ?? terminalColors.ink }}>{value}</span>
     </div>
   )
+}
+
+/**
+ * Mobile card-row stat chip — the same label→value chip the Farms / Locker Ledger mobile
+ * cards use. Values are passed through verbatim (an honest "—" stays "—").
+ */
+function MobileStat({ label, value, valueColor }: { label: string; value: string; valueColor?: string }): JSX.Element {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        padding: '8px 10px',
+        borderRadius: 9,
+        border: `1px solid ${terminalColors.line}`,
+        background: terminalColors.panel,
+        minWidth: 0,
+      }}
+    >
+      <span
+        style={{
+          fontFamily: SANS,
+          fontSize: 10,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          color: terminalColors.faint,
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          fontFamily: MONO,
+          fontSize: 13.5,
+          fontWeight: 600,
+          letterSpacing: '-0.02em',
+          color: valueColor ?? terminalColors.ink,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+const mobileStatGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
+  gap: 8,
 }
 
 function Panel({ children, padding = 18 }: { children: React.ReactNode; padding?: number }): JSX.Element {
@@ -310,27 +401,32 @@ function DepositField({
   onChange,
   usd,
   balanceLabel,
+  mobile = false,
 }: {
   token?: TokenOption
   amount: string
   onChange: (v: string) => void
   usd?: string
   balanceLabel?: string
+  /** Roomier padding + larger numeral on mobile. */
+  mobile?: boolean
 }): JSX.Element {
   return (
     <div
       style={{
         border: `1px solid ${terminalColors.line}`,
-        borderRadius: 11,
+        borderRadius: mobile ? 13 : 11,
         background: terminalColors.bg,
-        padding: '11px 12px',
+        padding: mobile ? '14px 14px' : '11px 12px',
         boxSizing: 'border-box',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: mobile ? 8 : 6 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <TokenCircle token={token} size={20} />
-          <span style={{ fontFamily: SANS, fontSize: 13, fontWeight: 600, color: terminalColors.ink }}>{token?.symbol ?? '—'}</span>
+          <TokenCircle token={token} size={mobile ? 24 : 20} />
+          <span style={{ fontFamily: SANS, fontSize: mobile ? 14.5 : 13, fontWeight: 600, color: terminalColors.ink }}>
+            {token?.symbol ?? '—'}
+          </span>
         </span>
         {balanceLabel ? (
           <span style={{ fontFamily: MONO, fontSize: 10.5, color: terminalColors.faint }}>{balanceLabel}</span>
@@ -349,13 +445,15 @@ function DepositField({
             outline: 'none',
             background: 'transparent',
             fontFamily: MONO,
-            fontSize: 20,
+            fontSize: mobile ? 24 : 20,
             fontWeight: 600,
             color: terminalColors.ink,
             padding: 0,
           }}
         />
-        {usd ? <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.ink3Alt, flexShrink: 0 }}>{usd}</span> : null}
+        {usd ? (
+          <span style={{ fontFamily: MONO, fontSize: mobile ? 12 : 11, color: terminalColors.ink3Alt, flexShrink: 0 }}>{usd}</span>
+        ) : null}
       </div>
     </div>
   )
@@ -364,6 +462,7 @@ function DepositField({
 /* ------------------------------------------------------------------ the screen */
 
 function PoolsScreenBody(): JSX.Element {
+  const isMobile = useIsMobileViewport()
   const account = useAccount()
   const accountDrawer = useAccountDrawer()
   const { convertFiatAmountFormatted } = useLocalizationContext()
@@ -670,11 +769,11 @@ function PoolsScreenBody(): JSX.Element {
       <div style={{ marginBottom: 8 }}>
         <Eyebrow>Launch · seed liquidity</Eyebrow>
       </div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: isMobile ? 8 : 12, flexWrap: 'wrap', marginBottom: 6 }}>
         <h1
           style={{
             fontFamily: DISPLAY,
-            fontSize: terminalType.sectionTitle.size,
+            fontSize: isMobile ? terminalType.sectionTitleSm.size : terminalType.sectionTitle.size,
             fontWeight: terminalType.sectionTitle.weight,
             letterSpacing: terminalType.sectionTitle.ls,
             color: terminalColors.ink,
@@ -698,23 +797,56 @@ function PoolsScreenBody(): JSX.Element {
           v2 · full range · {V2_FEE_LABEL}
         </span>
       </div>
-      <div style={{ fontFamily: SANS, fontSize: 13, color: terminalColors.ink2, marginBottom: 18, maxWidth: 560, lineHeight: 1.5 }}>
+      <div
+        style={{
+          fontFamily: SANS,
+          fontSize: isMobile ? 13.5 : 13,
+          color: terminalColors.ink2,
+          marginBottom: isMobile ? 16 : 18,
+          maxWidth: 560,
+          lineHeight: 1.55,
+        }}
+      >
         Create a v2 pool for your token and seed it with the first liquidity — right here, no
         deploy needed. Your deposit ratio sets the opening price.
       </div>
 
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      {/* Mobile stacks the two desktop columns into one full-width column (no sideways
+          scrolling); desktop keeps the wrapping two-column layout exactly as before. */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: isMobile ? 'column' : 'row',
+          gap: isMobile ? 14 : 20,
+          alignItems: isMobile ? 'stretch' : 'flex-start',
+          flexWrap: 'wrap',
+        }}
+      >
         {/* Left: pair */}
-        <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div
+          style={{
+            flex: isMobile ? '1 1 auto' : '1 1 320px',
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: isMobile ? 14 : 16,
+          }}
+        >
           <InstrumentPanel
             title="01 · Pair"
             meta={chainReady ? undefined : ['not available']}
-            bodyStyle={{ padding: 18 }}
+            bodyStyle={{ padding: isMobile ? 14 : 18 }}
           >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 14 : 12 }}>
               <div>
                 <FieldLabel>Base token</FieldLabel>
-                <TokenSelect value={resolvedBase} options={options} onChange={setBase} loading={tokensLoading} />
+                <TokenSelect
+                  value={resolvedBase}
+                  options={options}
+                  onChange={setBase}
+                  loading={tokensLoading}
+                  mobile={isMobile}
+                />
                 {baseIsNative && wrappedNative ? (
                   <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.faint, marginTop: 5 }}>
                     Native {resolvedBase?.symbol} is wrapped to {wrappedNative.symbol} for the pool.
@@ -728,15 +860,19 @@ function PoolsScreenBody(): JSX.Element {
                   onChange={(e) => setProjectAddr(e.target.value.trim())}
                   placeholder="0x…"
                   spellCheck={false}
+                  autoCapitalize="none"
+                  autoCorrect="off"
                   style={{
                     width: '100%',
                     boxSizing: 'border-box',
                     border: `1px solid ${terminalColors.line}`,
-                    borderRadius: 11,
+                    borderRadius: isMobile ? 12 : 11,
                     background: terminalColors.bg,
-                    padding: '10px 12px',
+                    padding: isMobile ? '13px 14px' : '10px 12px',
+                    minHeight: isMobile ? 48 : undefined,
                     fontFamily: MONO,
-                    fontSize: 13.5,
+                    // 16px on mobile: below that iOS Safari auto-zooms the page on focus.
+                    fontSize: isMobile ? 16 : 13.5,
                     fontWeight: 500,
                     color: terminalColors.ink,
                     outline: 'none',
@@ -765,7 +901,7 @@ function PoolsScreenBody(): JSX.Element {
 
           {/* First-LP / existing-pool / opening-price notices */}
           {chainReady && projectResolved ? (
-            <Panel>
+            <Panel padding={isMobile ? 14 : 18}>
               {create.existingLiquidity ? (
                 <Notice tone="green">
                   This pair already has a live pool. Use{' '}
@@ -803,44 +939,82 @@ function PoolsScreenBody(): JSX.Element {
         </div>
 
         {/* Right: deposit + create */}
-        <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <InstrumentPanel title="02 · Deposit" bodyStyle={{ padding: 18 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <DepositField token={resolvedBase} amount={baseAmount} onChange={setBaseAmount} usd={baseUsd} />
+        <div
+          style={{
+            flex: isMobile ? '1 1 auto' : '1 1 320px',
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: isMobile ? 14 : 16,
+          }}
+        >
+          <InstrumentPanel title="02 · Deposit" bodyStyle={{ padding: isMobile ? 14 : 18 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 10 }}>
+              <DepositField
+                token={resolvedBase}
+                amount={baseAmount}
+                onChange={setBaseAmount}
+                usd={baseUsd}
+                mobile={isMobile}
+              />
               <DepositField
                 token={projectOption}
                 amount={projectAmount}
                 onChange={setProjectAmount}
                 balanceLabel={projectBalanceLabel}
+                mobile={isMobile}
               />
             </div>
           </InstrumentPanel>
 
-          <InstrumentPanel title="Order Summary" bodyStyle={{ padding: 18 }}>
-            <SummaryRow
-              label="Deposit value"
-              value={depositUsd > 0 ? convertFiatAmountFormatted(depositUsd, NumberType.PortfolioBalance) : '—'}
-              valueColor={depositUsd > 0 ? terminalColors.ink : terminalColors.faint}
-            />
-            <SummaryRow label="Fee tier" value={`${V2_FEE_LABEL} (v2)`} />
-            <SummaryRow label="Range" value="Full range" />
-            <SummaryRow label="Network" value={chainReady && chainId ? getChainLabel(chainId) : 'Not available'} />
+          <InstrumentPanel title="Order Summary" bodyStyle={{ padding: isMobile ? 14 : 18 }}>
+            {isMobile ? (
+              // Mobile card row — same four live facts as the desktop rows, as roomy
+              // label→value chips. `depositUsd` is only priceable when the base token
+              // carries a live price, otherwise an honest "—".
+              <div style={mobileStatGridStyle}>
+                <MobileStat
+                  label="Deposit value"
+                  value={depositUsd > 0 ? convertFiatAmountFormatted(depositUsd, NumberType.PortfolioBalance) : '—'}
+                  valueColor={depositUsd > 0 ? terminalColors.ink : terminalColors.faint}
+                />
+                <MobileStat label="Fee tier" value={`${V2_FEE_LABEL} (v2)`} />
+                <MobileStat label="Range" value="Full range" valueColor={terminalColors.ink2} />
+                <MobileStat
+                  label="Network"
+                  value={chainReady && chainId ? getChainLabel(chainId) : 'Not available'}
+                  valueColor={chainReady ? terminalColors.ink2 : terminalColors.faint}
+                />
+              </div>
+            ) : (
+              <>
+                <SummaryRow
+                  label="Deposit value"
+                  value={depositUsd > 0 ? convertFiatAmountFormatted(depositUsd, NumberType.PortfolioBalance) : '—'}
+                  valueColor={depositUsd > 0 ? terminalColors.ink : terminalColors.faint}
+                />
+                <SummaryRow label="Fee tier" value={`${V2_FEE_LABEL} (v2)`} />
+                <SummaryRow label="Range" value="Full range" />
+                <SummaryRow label="Network" value={chainReady && chainId ? getChainLabel(chainId) : 'Not available'} />
+              </>
+            )}
 
             <button
               type="button"
               onClick={onPrimary}
               disabled={primaryDisabled}
               style={{
-                marginTop: 12,
+                marginTop: isMobile ? 14 : 12,
                 width: '100%',
                 fontFamily: SANS,
-                fontSize: 14,
+                fontSize: isMobile ? 15 : 14,
                 fontWeight: 600,
                 color: terminalColors.btnInk,
                 background: primaryDisabled ? terminalColors.line : terminalColors.brandGreen,
                 border: 'none',
-                padding: '12px 0',
-                borderRadius: 12,
+                padding: isMobile ? '15px 0' : '12px 0',
+                minHeight: isMobile ? 50 : undefined,
+                borderRadius: isMobile ? 14 : 12,
                 cursor: primaryDisabled ? 'default' : 'pointer',
               }}
             >
