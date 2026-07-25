@@ -7,7 +7,7 @@ import {
   DEFAULT_MS_BEFORE_WARNING,
   DEFAULT_NATIVE_ADDRESS_LEGACY,
   DEFAULT_RETRY_OPTIONS,
-  getQuicknodeEndpointUrl,
+  withAlchemyPrimary,
 } from 'uniswap/src/features/chains/evm/rpc'
 import { buildChainTokens } from 'uniswap/src/features/chains/evm/tokens'
 import { GENERIC_L2_GAS_CONFIG } from 'uniswap/src/features/chains/gasDefaults'
@@ -72,17 +72,17 @@ export const XLAYER_CHAIN_INFO = {
     // real public RPCs as Default so the public-RPC-only fall-through resolves to a
     // working endpoint. *.drpc.org is on the CSP allowlist so it leads.
     [RPCType.Public]: {
-      http: [
+      http: withAlchemyPrimary(UniverseChainId.XLayer, [
         'https://xlayer.drpc.org',
         'https://rpc.xlayer.tech',
         'https://xlayerrpc.okx.com',
         'https://196.rpc.thirdweb.com',
-      ],
+      ]),
     },
-    // Default feeds wallet-connector rpc maps (cookieless). Unkeyed, CSP-allowed
-    // public endpoints. Verified real public X Layer RPCs (each returns chainId
-    // 0xc4 / 196); *.drpc.org is on the CSP allowlist so it leads. rpc.xlayer.tech
-    // and xlayerrpc.okx.com are OKX's official endpoints.
+    // Default feeds third-party wallet-connector rpc maps (cookieless) — stays UNKEYED
+    // (see robinhood.ts). Verified real public X Layer RPCs (each returns chainId
+    // 0xc4 / 196); *.drpc.org is on the CSP allowlist so it leads, and rpc.xlayer.tech /
+    // xlayerrpc.okx.com are OKX's official endpoints.
     [RPCType.Default]: {
       http: [
         'https://xlayer.drpc.org',
@@ -91,7 +91,16 @@ export const XLAYER_CHAIN_INFO = {
         'https://196.rpc.thirdweb.com',
       ],
     },
-    [RPCType.Interface]: { http: [getQuicknodeEndpointUrl(UniverseChainId.XLayer)] },
+    // Was a QuickNode URL built from an unset placeholder token — repointed to the
+    // same Alchemy-first list so the Interface slot resolves to a working endpoint.
+    [RPCType.Interface]: {
+      http: withAlchemyPrimary(UniverseChainId.XLayer, [
+        'https://xlayer.drpc.org',
+        'https://rpc.xlayer.tech',
+        'https://xlayerrpc.okx.com',
+        'https://196.rpc.thirdweb.com',
+      ]),
+    },
   },
   tokens,
   statusPage: undefined,

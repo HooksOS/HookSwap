@@ -4,7 +4,11 @@ import { SwapConfigKey } from '@universe/gating'
 import { USDT0_LOGO } from 'ui/src/assets'
 import { ALL_APPS_CHAIN_SUPPORTED_APPS } from 'uniswap/src/features/chains/chainAppSupport'
 import { CHAIN_ID_TO_URL_PARAM } from 'uniswap/src/features/chains/chainUrlParam'
-import { DEFAULT_MS_BEFORE_WARNING, DEFAULT_NATIVE_ADDRESS } from 'uniswap/src/features/chains/evm/rpc'
+import {
+  DEFAULT_MS_BEFORE_WARNING,
+  DEFAULT_NATIVE_ADDRESS,
+  withAlchemyPrimary,
+} from 'uniswap/src/features/chains/evm/rpc'
 import { buildChainTokens } from 'uniswap/src/features/chains/evm/tokens'
 import {
   GqlChainId,
@@ -82,10 +86,28 @@ export const STABLE_CHAIN_INFO = {
   // (serves eth_call + fast fresh-tx receipts — the only one reliable for writes);
   // rpc.stable.xyz is the official endpoint but flaky (503s/timeouts); stable.drpc.org
   // (dRPC) is a read-only fallback (free tier blocks eth_call).
+  // Keyed Alchemy (stable-mainnet) leads when ALCHEMY_API_KEY is set — verified live
+  // 2026-07-25, eth_chainId returns 0x3dc / 988. Public endpoints stay as fallbacks;
+  // rpc.stable.xyz caps at 1,000 req/10s per IP.
   rpcUrls: {
-    [RPCType.Default]: { http: ['https://stable-mainnet.rpc.sentio.xyz', 'https://rpc.stable.xyz', 'https://stable.drpc.org'] },
-    [RPCType.Public]: { http: ['https://stable-mainnet.rpc.sentio.xyz', 'https://rpc.stable.xyz', 'https://stable.drpc.org'] },
-    [RPCType.Interface]: { http: ['https://stable-mainnet.rpc.sentio.xyz', 'https://rpc.stable.xyz', 'https://stable.drpc.org'] },
+    // Default feeds third-party wallet-connector rpc maps — stays UNKEYED (see robinhood.ts).
+    [RPCType.Default]: {
+      http: ['https://stable-mainnet.rpc.sentio.xyz', 'https://rpc.stable.xyz', 'https://stable.drpc.org'],
+    },
+    [RPCType.Public]: {
+      http: withAlchemyPrimary(UniverseChainId.Stable, [
+        'https://stable-mainnet.rpc.sentio.xyz',
+        'https://rpc.stable.xyz',
+        'https://stable.drpc.org',
+      ]),
+    },
+    [RPCType.Interface]: {
+      http: withAlchemyPrimary(UniverseChainId.Stable, [
+        'https://stable-mainnet.rpc.sentio.xyz',
+        'https://rpc.stable.xyz',
+        'https://stable.drpc.org',
+      ]),
+    },
   },
   supportedURVersions: [TradingApi.UniversalRouterVersion._2_0],
   // No DEX contracts deployed on 988 → do not advertise v4 routing.

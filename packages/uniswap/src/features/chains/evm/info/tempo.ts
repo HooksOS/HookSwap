@@ -6,7 +6,7 @@ import { ALL_APPS_CHAIN_SUPPORTED_APPS } from 'uniswap/src/features/chains/chain
 import {
   DEFAULT_MS_BEFORE_WARNING,
   DEFAULT_NATIVE_ADDRESS,
-  getQuicknodeEndpointUrl,
+  withAlchemyPrimary,
 } from 'uniswap/src/features/chains/evm/rpc'
 import { buildChainTokens } from 'uniswap/src/features/chains/evm/tokens'
 import { NetworkLayer, RPCType, UniverseChainId, UniverseChainInfo } from 'uniswap/src/features/chains/types'
@@ -70,11 +70,18 @@ export const TEMPO_CHAIN_INFO = {
     // providers/unirpcOnlyChains.ts PUBLIC_RPC_ONLY_CHAINS). Point Public at the
     // real Tempo-operated public endpoints so the public-RPC-only fall-through
     // resolves to a working endpoint instead of the gateway.
-    [RPCType.Public]: { http: ['https://rpc.tempo.xyz', 'https://rpc.mainnet.tempo.xyz'] },
-    // Verified real public Tempo RPCs (each returns chainId 0x1079 / 4217).
-    // Only two public endpoints exist; both are Tempo-operated.
+    [RPCType.Public]: {
+      http: withAlchemyPrimary(UniverseChainId.Tempo, ['https://rpc.tempo.xyz', 'https://rpc.mainnet.tempo.xyz']),
+    },
+    // Default feeds third-party wallet-connector rpc maps — stays UNKEYED (see
+    // robinhood.ts). Verified real public Tempo RPCs (each returns chainId 0x1079 /
+    // 4217); both are Tempo-operated and they are the only public endpoints that exist.
     [RPCType.Default]: { http: ['https://rpc.tempo.xyz', 'https://rpc.mainnet.tempo.xyz'] },
-    [RPCType.Interface]: { http: [getQuicknodeEndpointUrl(UniverseChainId.Tempo)] },
+    // Was a QuickNode URL built from an unset placeholder token — repointed to the
+    // same Alchemy-first list so the Interface slot resolves to a working endpoint.
+    [RPCType.Interface]: {
+      http: withAlchemyPrimary(UniverseChainId.Tempo, ['https://rpc.tempo.xyz', 'https://rpc.mainnet.tempo.xyz']),
+    },
   },
 
   blockPerMainnetEpochForChainId: 1,

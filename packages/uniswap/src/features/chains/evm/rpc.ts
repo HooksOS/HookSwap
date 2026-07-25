@@ -105,6 +105,44 @@ export function getQuicknodeEndpointUrl(chainId: UniverseChainId): string {
   return `https://${config.quicknodeEndpointName}${quicknodeChainId ? `.${quicknodeChainId}` : ''}.quiknode.pro/${config.quicknodeEndpointToken}${getQuicknodeChainIdPathSuffix(chainId)}`
 }
 
+// HookSwap uses ONE Alchemy API key across every chain (Alchemy keys are enabled
+// for all networks by default — see the Networks tab to scope a key). Slugs below
+// are Alchemy's own network subdomains, verified against alchemy.com/rpc/<chain>.
+// The key ships in the client bundle like every other browser RPC token, so lock
+// it to the hookswap.org domains in the Alchemy dashboard.
+const ALCHEMY_CHAIN_SLUGS: Partial<Record<UniverseChainId, string>> = {
+  [UniverseChainId.Robinhood]: 'robinhood-mainnet',
+  [UniverseChainId.HyperEvm]: 'hyperliquid-mainnet',
+  [UniverseChainId.Ink]: 'ink-mainnet',
+  [UniverseChainId.MegaETH]: 'megaeth-mainnet',
+  [UniverseChainId.XLayer]: 'xlayer-mainnet',
+  [UniverseChainId.Tempo]: 'tempo-mainnet',
+  [UniverseChainId.Stable]: 'stable-mainnet',
+  [UniverseChainId.Sepolia]: 'eth-sepolia',
+  [UniverseChainId.Mainnet]: 'eth-mainnet',
+}
+
+// `.env` ships a literal placeholder and `.env.defaults` ships 'stored-in-.env.local';
+// both are non-empty, so `??` in BaseConfig will NOT fall through them. Treat them as unset.
+const PLACEHOLDER_ALCHEMY_KEYS = new Set(['', 'alchemy_api_key', 'stored-in-.env.local'])
+
+export function getAlchemyEndpointUrl(chainId: UniverseChainId): string | undefined {
+  const slug = ALCHEMY_CHAIN_SLUGS[chainId]
+  const key = config.alchemyApiKey
+  if (!slug || !key || PLACEHOLDER_ALCHEMY_KEYS.has(key)) {
+    return undefined
+  }
+  return `https://${slug}.g.alchemy.com/v2/${key}`
+}
+
+// Puts the keyed Alchemy endpoint first and keeps the public RPCs as fallbacks.
+// Without a key configured the list is unchanged, so builds without ALCHEMY_API_KEY
+// behave exactly as they do today.
+export function withAlchemyPrimary(chainId: UniverseChainId, publicHttp: string[]): string[] {
+  const alchemyUrl = getAlchemyEndpointUrl(chainId)
+  return alchemyUrl ? [alchemyUrl, ...publicHttp] : publicHttp
+}
+
 // Direct UniRPC gateway URL for a chain — mirrors the resolver's `/rpc/{chainId}`
 // construction. Used by chains UniRPC supports so their chain-info RPCs route
 // through UniRPC instead of QuickNode, on web and wallet.

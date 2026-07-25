@@ -3,7 +3,11 @@ import { GraphQLApi, TradingApi } from '@universe/api'
 import { ETH_LOGO, MEGAETH_LOGO } from 'ui/src/assets'
 import { ALL_APPS_CHAIN_SUPPORTED_APPS } from 'uniswap/src/features/chains/chainAppSupport'
 import { CHAIN_ID_TO_URL_PARAM } from 'uniswap/src/features/chains/chainUrlParam'
-import { DEFAULT_MS_BEFORE_WARNING, DEFAULT_NATIVE_ADDRESS_LEGACY } from 'uniswap/src/features/chains/evm/rpc'
+import {
+  DEFAULT_MS_BEFORE_WARNING,
+  DEFAULT_NATIVE_ADDRESS_LEGACY,
+  withAlchemyPrimary,
+} from 'uniswap/src/features/chains/evm/rpc'
 import { buildChainTokens } from 'uniswap/src/features/chains/evm/tokens'
 import { GENERIC_L2_GAS_CONFIG } from 'uniswap/src/features/chains/gasDefaults'
 import {
@@ -66,6 +70,9 @@ export const MEGAETH_CHAIN_INFO = {
   // ("Failed to load") despite the contracts/RPC working fine directly. Fix: real
   // public RPC on every RPCType slot, mirroring the already-correct ink.ts pattern.
   rpcUrls: {
+    // Keyed Alchemy (megaeth-mainnet) leads when ALCHEMY_API_KEY is set; verified
+    // public MegaETH RPCs (chainId 0x10e6 / 4326) stay as fallbacks.
+    // Default feeds third-party wallet-connector rpc maps — stays UNKEYED (see robinhood.ts).
     [RPCType.Default]: {
       http: [
         'https://mainnet.megaeth.com/rpc',
@@ -74,18 +81,18 @@ export const MEGAETH_CHAIN_INFO = {
       ],
     },
     [RPCType.Public]: {
-      http: [
+      http: withAlchemyPrimary(UniverseChainId.MegaETH, [
         'https://mainnet.megaeth.com/rpc',
         'https://megaeth.drpc.org',
         'https://megaeth.blockscout.com/api/eth-rpc',
-      ],
+      ]),
     },
     [RPCType.Interface]: {
-      http: [
+      http: withAlchemyPrimary(UniverseChainId.MegaETH, [
         'https://mainnet.megaeth.com/rpc',
         'https://megaeth.drpc.org',
         'https://megaeth.blockscout.com/api/eth-rpc',
-      ],
+      ]),
     },
   },
   statusPage: 'https://uptime.megaeth.com/',

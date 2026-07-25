@@ -3,7 +3,11 @@ import { GraphQLApi, TradingApi } from '@universe/api'
 import { ETH_LOGO, ROBINHOOD_LOGO } from 'ui/src/assets'
 import { ALL_APPS_CHAIN_SUPPORTED_APPS } from 'uniswap/src/features/chains/chainAppSupport'
 import { CHAIN_ID_TO_URL_PARAM } from 'uniswap/src/features/chains/chainUrlParam'
-import { DEFAULT_MS_BEFORE_WARNING, DEFAULT_NATIVE_ADDRESS_LEGACY } from 'uniswap/src/features/chains/evm/rpc'
+import {
+  DEFAULT_MS_BEFORE_WARNING,
+  DEFAULT_NATIVE_ADDRESS_LEGACY,
+  withAlchemyPrimary,
+} from 'uniswap/src/features/chains/evm/rpc'
 import { buildChainTokens } from 'uniswap/src/features/chains/evm/tokens'
 import { GENERIC_L2_GAS_CONFIG } from 'uniswap/src/features/chains/gasDefaults'
 import {
@@ -69,29 +73,33 @@ export const ROBINHOOD_CHAIN_INFO = {
   // — this silently broke Locker/Referrals ("Failed to load") despite the contracts
   // and RPC working fine directly (verified via `cast call`). Fix: real public RPC on
   // every RPCType slot, mirroring the already-correct ink.ts/hyperevm.ts pattern.
-  // Primary = QuickNode dedicated endpoint for chainId 4663 (verified: eth_chainId
-  // returns 0x1237, and it reflects the request Origin in Access-Control-Allow-Origin
-  // — browser-safe from hookswap.org; the auth token is public in the client bundle,
-  // so restrict the QuickNode endpoint to the hookswap.org domain). Then the two public
-  // RPCs as fallback (both return 4663 with permissive CORS). Ordered so wagmi's
+  // Primary = the keyed Alchemy endpoint when ALCHEMY_API_KEY is set (Robinhood is
+  // Alchemy-native: robinhood-mainnet.g.alchemy.com), then the two public RPCs as
+  // fallback (both return 4663 with permissive CORS). Ordered so wagmi's
   // `orderedTransportUrls(chain)` → viem `fallback(...)` fails over to the official RPC,
-  // then the Blockscout eth-rpc proxy, if QuickNode is down. (The ethers balance path
-  // via rpcUrlSelector uses http[0] — QuickNode — as its single endpoint.)
+  // then the Blockscout eth-rpc proxy. The ethers balance path via rpcUrlSelector uses
+  // http[0] only — so with a key set, that single endpoint is Alchemy. NOTE: the public
+  // RH RPC rate-limits under adapter load and the Blockscout proxy 429s on ~18/20
+  // sequential requests (measured 2026-07-25), which is why the keyed primary matters.
   rpcUrls: {
+    // Default feeds third-party wallet-connector rpc maps (WalletConnect/Binance read
+    // default.http[0] from a cookieless in-page client), so it stays UNKEYED — a keyed
+    // Alchemy URL would both leak the key into third-party traffic and hard-fail for
+    // those clients once the key is domain-restricted to hookswap.org.
     [RPCType.Default]: {
-      http: [        'https://rpc.mainnet.chain.robinhood.com/',
-        'https://robinhoodchain.blockscout.com/api/eth-rpc',
-      ],
+      http: ['https://rpc.mainnet.chain.robinhood.com/', 'https://robinhoodchain.blockscout.com/api/eth-rpc'],
     },
     [RPCType.Public]: {
-      http: [        'https://rpc.mainnet.chain.robinhood.com/',
+      http: withAlchemyPrimary(UniverseChainId.Robinhood, [
+        'https://rpc.mainnet.chain.robinhood.com/',
         'https://robinhoodchain.blockscout.com/api/eth-rpc',
-      ],
+      ]),
     },
     [RPCType.Interface]: {
-      http: [        'https://rpc.mainnet.chain.robinhood.com/',
+      http: withAlchemyPrimary(UniverseChainId.Robinhood, [
+        'https://rpc.mainnet.chain.robinhood.com/',
         'https://robinhoodchain.blockscout.com/api/eth-rpc',
-      ],
+      ]),
     },
   },
   supportedURVersions: [TradingApi.UniversalRouterVersion._2_0, TradingApi.UniversalRouterVersion._2_1_1],
