@@ -264,6 +264,32 @@ export const CHAINS: Record<number, ChainConfig> = {
     stablecoin: { address: '0x779Ded0c9e1022225f8E0630b35a9b54bE713736', symbol: 'USDT0', decimals: 6 },
   },
 
+  // ---- Tempo (4217) ----
+  // Was MISSING here while locker-indexer DID index Tempo — the two services had
+  // mirror-image gaps (locker-indexer lacked Stable 988). Addresses from
+  // contracts/deployments/tempo.json, matching trading-api-adapter/src/chains.ts.
+  4217: {
+    chainId: 4217,
+    name: 'tempo',
+    rpcEnvVar: 'WEB3_RPC_4217',
+    publicRpc: 'https://rpc.tempo.xyz',
+    // Gas is paid in pathUSD (an ERC-20), which is why the interface leaves
+    // tempo.ts wrappedNativeCurrency = null.
+    nativeSymbol: 'pathUSD',
+    nativeDecimals: 18,
+    // Not a "wrapped native" in the usual sense — this WETH9 is the constructor arg
+    // the routers/periphery were deployed against. It is the correct pool counter-asset
+    // to enumerate against, but note NO USD anchor is configured below: there is no
+    // verified stablecoin pool on Tempo yet, so token prices honestly return undefined
+    // rather than being derived from an unproven pair.
+    wrappedNative: { address: '0xBbBcC62853a5fA27b93d6Bab3E6F7ce841E25Df2', symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
+    v2Factory: '0xE8526A0429aeC9a5253ac854F8b6dC964E677EE4',
+    v3Factory: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
+    // Canonical Uniswap v4 PoolManager (matches trading-api-adapter chains.ts).
+    v4PoolManager: '0x33620f62c5b9b2086dd6b62f4a297a9f30347029',
+    // TODO(v3DeployBlock): v3 factory deploy block not recorded in contracts/deployments/tempo.json.
+  },
+
   // ---- Sepolia (11155111) — canonical Uniswap stack (testing). ----
   11155111: {
     chainId: 11155111,

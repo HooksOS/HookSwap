@@ -110,6 +110,20 @@ const CHAINS: Record<number, ChainCfg> = {
     v2Factory: '0xB92598Fa464B96FEC394a17A269Ad18060Ec60B2',
     v3Factory: '0x45DB3eaE624dBcA631A9C6C1406DA0B8F6Fb275A',
   },
+  // Stable (988) — the SECOND chain that can produce real USD prices. Its wrapped
+  // native IS a dollar stablecoin (WgUSDT, 18dp) and USDT0 (6dp) is the same dollar
+  // as a 6-decimal ERC-20, so the reserve anchor is a true USD anchor rather than a
+  // proxy. Addresses from contracts/deployments/stable.json; both token decimals
+  // read on-chain 2026-07-25 (WgUSDT=18, USDT0=6).
+  988: {
+    chainId: 988,
+    rpcEnvVar: 'WEB3_RPC_988',
+    publicRpc: 'https://stable-mainnet.rpc.sentio.xyz',
+    wrappedNative: { address: '0x817997ca8394e26cce3de3a076a4889b27dbf9de', decimals: 18 },
+    v2Factory: '0xBe3729d06E3A17F3c7c5ac394c7bCbe138B6EEFA',
+    v3Factory: '0xf486e625C892C0739A16A3A49B37fD52374B30CB',
+    stablecoin: { address: '0x779Ded0c9e1022225f8E0630b35a9b54bE713736', decimals: 6 },
+  },
   // Sepolia (11155111) — canonical Uniswap stack; no verified stablecoin anchor configured.
   11155111: {
     chainId: 11155111,

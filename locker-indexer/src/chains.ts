@@ -68,6 +68,17 @@ const DEFS: ChainDef[] = [
     rpcEnv: ["TEMPO_RPC_URL"],
   },
   {
+    // Stable (988) was missing here while data-api DID index it — the two services
+    // had mirror-image gaps (data-api lacked Tempo). Manager address from
+    // contracts/deployments/stable-lockers.json, verified on-chain 2026-07-25:
+    // eth_getCode returns 11673 bytes.
+    chainId: 988,
+    name: "Stable",
+    manager: "0x250c3448278f7b71e3e9b641f2efeb6074820e25",
+    defaultRpc: "https://stable-mainnet.rpc.sentio.xyz",
+    rpcEnv: ["STABLE_RPC_URL"],
+  },
+  {
     chainId: 11155111,
     name: "Sepolia",
     manager: "0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3",
