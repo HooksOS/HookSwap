@@ -17,7 +17,10 @@ import { ExplorerAddress, shortAddr } from '~/terminal/components/ExplorerAddres
 import { InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { StatCard } from '~/terminal/components/StatCard'
 import { SwitchChainButton } from '~/terminal/components/SwitchChainButton'
-import { useFarm, useFarmList } from '~/terminal/farms/useFarm'
+import { getChainLabel } from 'uniswap/src/features/chains/utils'
+import { useFarm } from '~/terminal/farms/useFarm'
+import { useFarmListAllChains } from '~/terminal/farms/useFarmListAllChains'
+import { ChainBadge } from '~/terminal/components/ChainBadge'
 import { terminalColors } from '~/terminal/theme/tokens'
 import {
   AprNote,
@@ -66,12 +69,30 @@ export function FarmsManage({
   unstakeAmount: string
   setUnstakeAmount: (v: string) => void
 }): JSX.Element {
-  const list = useFarmList({ chainId })
+  // MULTICHAIN: discovery spans every chain the farm factory is deployed on, so a
+  // user connected to one chain still sees (and can switch to) farms elsewhere.
+  // Writes remain on the selected farm's own chain — see the per-row switch prompt.
+  const list = useFarmListAllChains({ connectedChainId: chainId })
 
   if (!deployed) {
+    // MULTICHAIN: the connected chain has no factory, but the user may well have
+    // farms elsewhere. Previously this state said only "not deployed here", which
+    // reads as "you have no farms". Show where farms actually exist so the switch
+    // is an informed one — staking still requires being on that farm's chain.
+    const chainsWithFarms = Array.from(new Set((list.farms ?? []).map((f) => f.chainId)))
     return (
-      <InstrumentPanel title="FARMS" meta={['not deployed']}>
+      <InstrumentPanel title="FARMS" meta={['not deployed on this chain']}>
         <NotDeployedNote chainLabel={chainLabel} />
+        {chainsWithFarms.length > 0 ? (
+          <div style={{ marginTop: 12 }}>
+            <FieldLabel>Farms on other chains</FieldLabel>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+              {chainsWithFarms.map((cid) => (
+                <ChainBadge key={cid} chainId={cid} />
+              ))}
+            </div>
+          </div>
+        ) : null}
         {switchTarget !== undefined ? (
           <SwitchChainButton
             target={switchTarget}
@@ -81,6 +102,12 @@ export function FarmsManage({
       </InstrumentPanel>
     )
   }
+
+  // Which chain the currently-picked farm lives on (undefined for a hand-typed
+  // address that isn't in the discovered set).
+  const selectedFarmChainId = selectedFarm
+    ? list.farms?.find((f) => f.farm.toLowerCase() === selectedFarm.toLowerCase())?.chainId
+    : undefined
 
   const now = Math.floor(Date.now() / 1000)
   const periodFinish = farm.periodFinish !== undefined ? Number(farm.periodFinish) : undefined
@@ -138,7 +165,19 @@ export function FarmsManage({
           />
           {selectedFarm !== '' && !farm.validFarm ? <InlineError>Enter a valid farm contract address.</InlineError> : null}
 
-          {/* Discovery list — every farm the factory has deployed (allFarms). */}
+          {/* MULTICHAIN: the picked farm may live on a chain the wallet isn't on.
+              Reads/writes below are bound to the CONNECTED chain, so surface the
+              mismatch and offer the switch rather than letting stake/claim fail. */}
+          {selectedFarmChainId !== undefined && selectedFarmChainId !== chainId ? (
+            <div style={{ marginTop: 12 }}>
+              <SwitchChainButton
+                target={selectedFarmChainId}
+                note={`This farm is on ${getChainLabel(selectedFarmChainId)} — switch networks to stake, withdraw or claim it.`}
+              />
+            </div>
+          ) : null}
+
+          {/* Discovery list — every farm the factory has deployed (allFarms), all chains. */}
           <div style={{ marginTop: 14 }}>
             <FieldLabel>Deployed farms</FieldLabel>
             {list.isLoading || list.farms === undefined ? (
@@ -166,15 +205,15 @@ export function FarmsManage({
               </div>
             ) : list.farms.length === 0 ? (
               <div style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3Alt, lineHeight: 1.5 }}>
-                No farms have been created on {chainLabel} yet — make one from the Create tab.
+                No farms have been created on any HookSwap chain yet — make one from the Create tab.
               </div>
             ) : (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {list.farms.map((f) => {
+                {list.farms.map(({ chainId: farmChainId, farm: f }) => {
                   const active = f.toLowerCase() === selectedFarm.toLowerCase()
                   return (
                     <button
-                      key={f}
+                      key={`${farmChainId}-${f}`}
                       type="button"
                       onClick={() => setSelectedFarm(f)}
                       style={{
@@ -187,8 +226,12 @@ export function FarmsManage({
                         padding: '6px 11px',
                         borderRadius: 9,
                         cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 7,
                       }}
                     >
+                      <ChainBadge chainId={farmChainId} size="sm" showLabel={false} />
                       {shortAddr(f)}
                     </button>
                   )

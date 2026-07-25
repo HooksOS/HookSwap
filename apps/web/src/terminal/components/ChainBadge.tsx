@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { ChainLogo } from 'components/Logo/ChainLogo'
+import { ChainLogo } from '~/components/Logo/ChainLogo'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { getChainLabel } from 'uniswap/src/features/chains/utils'
 import type { UniverseChainId } from 'uniswap/src/features/chains/types'
