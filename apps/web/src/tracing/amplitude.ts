@@ -10,6 +10,15 @@ import store from '~/state'
 import { setOriginCountry } from '~/state/user/reducer'
 
 export function setupAmplitude() {
+  // HookSwap dedupe (2026-07): do NOT initialize Amplitude. The transport POSTs to
+  // Uniswap's hosted metrics proxy (metrics.interface.gateway.uniswap.org/v1/amplitude-proxy,
+  // via the amplitudeProxyUrl fallback) — a Uniswap backend, not a HookSwap service.
+  // Skipping init means no analytics transport is ever constructed, so nothing is sent
+  // to *.uniswap.org. In-app `analytics.sendEvent` calls become no-ops (never flushed).
+  if (!isE2eTestEnv()) {
+    return
+  }
+
   if (isTestEnv() && !isE2eTestEnv()) {
     // Want to skip Amplitude initialization in test envs
     // But not in playwright, since we have a Playwright fixture that intercepts Amplitude events

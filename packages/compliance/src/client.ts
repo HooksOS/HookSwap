@@ -31,14 +31,14 @@ export type ComplianceTokenInput = {
  * blocked or acknowledged, or `undefined` when the API omits it (clean token).
  */
 export async function fetchFeatureGatedToken(
-  client: ComplianceV2Client,
-  { chainId, address }: ComplianceTokenInput,
+  _client: ComplianceV2Client,
+  _input: ComplianceTokenInput,
 ): Promise<TokenRef | undefined> {
-  const response = await client.featureGatedTokens({
-    tokens: [new TokenRef({ chainId: chainId as ChainId, address })],
-    includeNonBlockingReasons: true,
-  })
-  return response.tokens[0]
+  // HookSwap dedupe (2026-07): the feature-gated-token deny-list check calls Uniswap's
+  // compliance v2 service (entry-gateway.backend-prod.api.uniswap.org/.../FeatureGatedTokens) —
+  // not a HookSwap service. Short-circuit to `undefined` (token is clean / not gated) so
+  // no request reaches *.uniswap.org and tokens are never gated by Uniswap's list.
+  return undefined
 }
 
 /**

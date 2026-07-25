@@ -103,6 +103,10 @@ export function isRNDev(): boolean {
 export const localDevDatadogEnabled = false
 
 export function isDatadogEnabled(): boolean {
-  // oxlint-disable-next-line typescript/no-unnecessary-condition
-  return (localDevDatadogEnabled || !isRNDev()) && !isUnitTestEnv() && !isE2eTestEnv()
+  // HookSwap dedupe (2026-07): Datadog RUM/Logs ship telemetry to Datadog
+  // (browser-intake-datadoghq.com) and are wired to Uniswap's Datadog org. HookSwap
+  // does not use it — return false so datadogRum.init()/datadogLogs.init() never run
+  // and no telemetry is sent. The Apollo datadog link's addAction() becomes a no-op
+  // when RUM is uninitialized.
+  return false
 }

@@ -1,8 +1,8 @@
 import { Transport } from '@connectrpc/connect'
 import { ConnectTransportOptions } from '@connectrpc/connect-web'
-import { getEntryGatewayUrl, getTransport } from '@universe/api'
+import { getTransport } from '@universe/api'
 import { tryProvideSession } from '@universe/api'
-import { isWebApp, Environment } from '@universe/environment'
+import { isWebApp } from '@universe/environment'
 import { SessionGateSource, type Session } from '@universe/sessions'
 import { config } from 'uniswap/src/config'
 import { getUniswapServiceUrls } from 'uniswap/src/constants/urls'
@@ -63,28 +63,33 @@ export const dataApiPostTransport = createConnectTransportWithDefaults({
 /**
  * ConnectRPC transport for services behind the entry-gateway (sessions-authenticated).
  *
- * Gated via `getSessionGate`: when the session is bootstrapped, every call
- * awaits session ready and retries once on 401. When the session isn't
- * available yet, passes through. The SessionService itself is excluded
- * inside the gate to avoid a recovery deadlock.
+ * HookSwap dedupe (2026-07): the upstream base URL was Uniswap's entry gateway
+ * (getEntryGatewayUrl -> entry-gateway.backend-prod.api.uniswap.org). Every service on
+ * it (unitag, RWA index, earn vaults, UniRPC gas service, portfolio chart, …) is a
+ * Uniswap backend that does not serve HookSwap, not a HookSwap service. Repoint the base
+ * to HookSwap's own data-api (data.hookswap.org) — mirroring the getWalletBalances
+ * repoint — so NONE of these connectrpc calls can ever reach *.uniswap.org. Unimplemented
+ * endpoints simply 404 on the HookSwap host (the same failing behavior as before, minus
+ * the Uniswap dependency). The genuinely-used data path already runs on the separate
+ * dataApiGet/PostTransport, which is unaffected.
  */
 export const entryGatewayPostTransport = createConnectTransportWithDefaults({
   // Web uses cookies (credentials: 'include'), while mobile/extension use session headers (via getTransport interceptor).
   options: isWebApp ? { credentials: 'include' } : undefined,
-  getBaseUrlOverride: getEntryGatewayUrl,
+  getBaseUrlOverride: () => getUniswapServiceUrls(config).dataApiBaseUrlV2,
   getSession: tryProvideSession,
   source: SessionGateSource.ConnectRpcEntryGateway,
 })
 
 /**
- * Same as entryGatewayPostTransport, but always pins to the prod entry gateway
- * regardless of deployment. When the proxy is enabled, the env is encoded in
- * the proxy path (`/entry-gateway/prod`) so the BFF can forward to prod.
+ * Historically pinned to the prod entry gateway. HookSwap dedupe (2026-07): repointed to
+ * HookSwap's data-api for the same reason as entryGatewayPostTransport above — never
+ * *.uniswap.org.
  */
 export const entryGatewayProdPostTransport = createConnectTransportWithDefaults({
   // Web uses cookies (credentials: 'include'), while mobile/extension use session headers (via getTransport interceptor).
   options: isWebApp ? { credentials: 'include' } : undefined,
-  getBaseUrlOverride: () => getEntryGatewayUrl({ env: Environment.Production }),
+  getBaseUrlOverride: () => getUniswapServiceUrls(config).dataApiBaseUrlV2,
   getSession: tryProvideSession,
   source: SessionGateSource.ConnectRpcEntryGatewayProd,
 })

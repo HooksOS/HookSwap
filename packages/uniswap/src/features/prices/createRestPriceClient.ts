@@ -1,54 +1,19 @@
-import { createPromiseClient } from '@connectrpc/connect'
-import { DataApiService } from '@uniswap/client-data-api/dist/data/v1/api_connect'
-import { getEntryGatewayUrl, getTransport } from '@universe/api'
 import type { RestPriceClient, TokenIdentifier, TokenPriceData } from '@universe/prices'
-import { createPriceKey } from '@universe/prices'
-
-// Route through the Entry Gateway because GetTokenPrices is only registered
-// there. Use default credentials so web proxy builds avoid wildcard-CORS
-// credential failures while native clients still attach session headers via
-// getTransport.
-const dataApiTransport = getTransport({
-  getBaseUrl: () => getEntryGatewayUrl(),
-})
-
-const dataApiClient = createPromiseClient(DataApiService, dataApiTransport)
 
 /**
- * Creates a RestPriceClient that uses DataApiService/GetTokenPrices.
+ * Creates a RestPriceClient.
  *
- * When preferQuotePrices is true, the backend returns TAPI quote prices.
- * Otherwise the request omits preferQuotePrices and the backend returns the
- * default remote price-service data.
+ * HookSwap dedupe (2026-07): the upstream implementation called
+ * DataApiService/GetTokenPrices, which is ONLY registered on Uniswap's entry gateway
+ * (entry-gateway.backend-prod.api.uniswap.org/.../DataApiService/GetTokenPrices) — a
+ * Uniswap backend, not a HookSwap service. It is stubbed to return an empty price map
+ * so no request is ever issued to *.uniswap.org. USD pricing across the HookSwap
+ * Terminal comes from HookSwap's own data-api (data.hookswap.org), not this client.
  */
-export function createRestPriceClient(options?: { preferQuotePrices?: boolean }): RestPriceClient {
-  const preferQuotePrices = options?.preferQuotePrices === true
-  const source: TokenPriceData['source'] = preferQuotePrices ? 'tapi_quote' : 'aurora_rest_fallback'
-
+export function createRestPriceClient(_options?: { preferQuotePrices?: boolean }): RestPriceClient {
   return {
-    async getTokenPrices(tokens: TokenIdentifier[]): Promise<Map<string, TokenPriceData>> {
-      const response = await dataApiClient.getTokenPrices({
-        tokens: tokens.map((t) => ({
-          chainId: t.chainId,
-          address: t.address.toLowerCase(),
-        })),
-        ...(preferQuotePrices ? { preferQuotePrices: true } : {}),
-      })
-
-      const result = new Map<string, TokenPriceData>()
-
-      for (const tp of response.tokenPrices) {
-        if (tp.priceUsd != null) {
-          const key = createPriceKey(tp.chainId, tp.address)
-          result.set(key, {
-            price: tp.priceUsd,
-            timestamp: tp.updatedAt ? new Date(tp.updatedAt).getTime() : Date.now(),
-            source,
-          })
-        }
-      }
-
-      return result
+    async getTokenPrices(_tokens: TokenIdentifier[]): Promise<Map<string, TokenPriceData>> {
+      return new Map<string, TokenPriceData>()
     },
   }
 }

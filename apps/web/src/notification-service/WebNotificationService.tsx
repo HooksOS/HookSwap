@@ -129,7 +129,13 @@ function provideWebNotificationService(ctx: {
 
   const telemetry = getNotificationTelemetry()
 
-  const dataSources: NotificationDataSource[] = [backendDataSource, bannersDataSource, systemAlertsDataSource]
+  // HookSwap dedupe (2026-07): `backendDataSource` polls Uniswap's notification service
+  // (entry-gateway.backend-prod.api.uniswap.org/.../GetNotifications) every 2 min — not
+  // a HookSwap service. Drop it from the active data sources so no request reaches
+  // *.uniswap.org. The local banner + system-alert sources (chain connectivity, bridging,
+  // outages) are kept since they are computed client-side.
+  void backendDataSource
+  const dataSources: NotificationDataSource[] = [bannersDataSource, systemAlertsDataSource]
 
   const notificationService = createNotificationService({
     dataSources,

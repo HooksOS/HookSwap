@@ -1,8 +1,9 @@
 import { getEntryGatewayUrl, provideDeviceIdService, provideSessionStorage } from '@universe/api'
 import { createRpcConfigResolver, createUniRpcConfigResolver, type RpcConfig } from '@universe/chains'
-import { isE2eTestEnv, isExtensionApp, REQUEST_SOURCE } from '@universe/environment'
+import { isExtensionApp, REQUEST_SOURCE } from '@universe/environment'
 import { FeatureFlags, getFeatureFlag, isStatsigClientRegistered } from '@universe/gating'
-import type { UniverseChainId } from 'uniswap/src/features/chains/types'
+import { getChainInfo } from 'uniswap/src/features/chains/chainInfo'
+import { RPCType, type UniverseChainId } from 'uniswap/src/features/chains/types'
 import { selectRpcUrl } from 'uniswap/src/features/providers/rpcUrlSelector'
 import { isPublicRpcOnlyChain, isUniRpcOnlyChain } from 'uniswap/src/features/providers/unirpcOnlyChains'
 
@@ -38,20 +39,44 @@ const SHARED_UNI_RPC_CONFIG = {
 
 const webResolveUniRpcConfig = createUniRpcConfigResolver({
   ...SHARED_UNI_RPC_CONFIG,
-  // Web app always routes through UniRPC; extension stays gated above.
-  // Playwright e2e runs are the exception: UniRPC requires a session the test
-  // environment can't establish (every /rpc/* call 401s), so let the resolver
-  // fall through to the legacy chain-info URLs, which point at local anvil in e2e.
-  // UniRPC-only chains intentionally follow this too — e2e has no gateway session
-  // for them either — so this overrides the shared chain-aware getter.
-  //
-  // Exception: public-RPC-only chains (e.g. Robinhood) — HookSwap has no UniRPC
-  // gateway auth for them, so this "always UniRPC on web" default 401s/CORS-fails
-  // every browser read (swap balances, Locker/Referrals). Skip UniRPC for them so
-  // the resolver falls through to the chain-info public RPC (like Ink/HyperEVM).
-  getFeatureFlag: (chainId: UniverseChainId) => !isE2eTestEnv() && !isPublicRpcOnlyChain(chainId),
+  // HookSwap dedupe (2026-07): the web app NEVER routes browser RPC through
+  // Uniswap's UniRPC entry gateway (entry-gateway.backend-prod.api.uniswap.org/rpc/*).
+  // HookSwap has no UniRPC gateway session at all, so every /rpc/* call CORS-fails
+  // (mainnet/BSC/Base/Arbitrum/etc. were all hitting the gateway because they were
+  // not in PUBLIC_RPC_ONLY_CHAINS). Returning false here forces EVERY chain onto the
+  // legacy chain-info path, and `selectHookSwapLegacyRpcUrl` (below) then guarantees
+  // that path never returns a gateway URL either. Result: zero requests to
+  // *.uniswap.org for on-chain reads.
+  getFeatureFlag: () => false,
   credentials: 'include',
 })
+
+// HookSwap dedupe: for canonical Uniswap chains (mainnet/base/bnb/arbitrum/optimism/
+// polygon/…) the chain-info `RPCType.Public` slot is literally the UniRPC gateway URL
+// (`getUniRpcEndpointUrl` -> `${entryGateway}/rpc/{id}`). So even with UniRPC disabled
+// above, the legacy fall-through would hand that gateway URL straight back — and
+// `asUniRpcConfig` would re-promote it to an authenticated UniRPC call. This wrapper
+// detects a gateway URL and substitutes the chain's real public endpoint (Default ->
+// PublicAlt -> Fallback -> Interface), so NO on-chain read ever reaches uniswap.org.
+// HookSwap's own chains already carry a real public RPC in their Public slot, so this
+// is a no-op for them.
+const GATEWAY_RPC_PREFIX = `${getEntryGatewayUrl()}/rpc/`
+
+const selectHookSwapLegacyRpcUrl = (chainId: UniverseChainId, rpcType: RPCType): RpcConfig | null => {
+  const config = selectRpcUrl(chainId, rpcType)
+  if (!config || !config.rpcUrl.startsWith(GATEWAY_RPC_PREFIX)) {
+    return config
+  }
+  const info = getChainInfo(chainId)
+  const candidates = [
+    ...(info.rpcUrls[RPCType.Default]?.http ?? []),
+    ...(info.rpcUrls[RPCType.PublicAlt]?.http ?? []),
+    ...(info.rpcUrls[RPCType.Fallback]?.http ?? []),
+    ...(info.rpcUrls[RPCType.Interface]?.http ?? []),
+  ]
+  const publicUrl = candidates.find((url) => url && !url.startsWith(GATEWAY_RPC_PREFIX))
+  return publicUrl ? { ...config, rpcUrl: publicUrl } : null
+}
 
 // Extension is header-based (can't share the web origin's cookie jar).
 const resolveExtensionUniRpcHeaders = async (): Promise<Record<string, string>> => {
@@ -85,6 +110,9 @@ const asUniRpcConfig = (config: RpcConfig): RpcConfig => {
 
 export const defaultResolveRpcConfig = createRpcConfigResolver({
   resolveUniRpcConfig: isExtensionApp ? extensionResolveUniRpcConfig : webResolveUniRpcConfig,
-  selectLegacyRpcUrl: selectRpcUrl,
+  // Extension keeps the raw selector (still session-gated via SHARED_UNI_RPC_CONFIG);
+  // the web app uses the gateway-stripping wrapper so no legacy fall-through can hit
+  // *.uniswap.org.
+  selectLegacyRpcUrl: isExtensionApp ? selectRpcUrl : selectHookSwapLegacyRpcUrl,
   asUniRpcConfig,
 })

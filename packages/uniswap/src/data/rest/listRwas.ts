@@ -18,9 +18,15 @@ export function useListRwasQuery({
   includeCommodities?: boolean
   enabled?: boolean
 }): UseQueryResult<ListRwasResponse, ConnectError> {
+  // HookSwap dedupe (2026-07): ListRwas queries Uniswap's DataApiService on the entry
+  // gateway (entry-gateway.backend-prod.api.uniswap.org/.../DataApiService/ListRwas) —
+  // not a HookSwap service, and HookSwap does not surface Uniswap's RWA index. Force the
+  // query disabled so it never fires to *.uniswap.org; consumers see an empty RWA list.
+  // `enabled` from the caller is intentionally ignored (kept for call-site compatibility).
+  void enabled
   return useQuery(listRwas, includeCommodities === undefined ? { chainIds } : { chainIds, includeCommodities }, {
     transport: entryGatewayProdPostTransport,
-    enabled: enabled && chainIds.length > 0,
+    enabled: false,
     staleTime: 5 * ONE_MINUTE_MS,
     gcTime: 30 * ONE_MINUTE_MS,
   })
