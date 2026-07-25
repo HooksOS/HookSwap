@@ -210,7 +210,7 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
  * liquidity being thin on some chains is a per-pair "No route" state, not a reason to
  * gate the chain.
  */
-function isChainDexLive(id: UniverseChainId): boolean {
+export function isChainDexLive(id: UniverseChainId): boolean {
   const swapRouter = (CHAIN_TO_ADDRESSES_MAP as Record<number, { swapRouter02Address?: string }>)[id]
     ?.swapRouter02Address
   return Boolean(swapRouter) && swapRouter !== ZERO_ADDRESS && !isTestnetChain(id)
