@@ -98,6 +98,14 @@ ingest: ## Build the RAG corpus from the repo (docs, CLAUDE.md, deployments, cha
 	@# rate-paced (3 RPM / 10K TPM) and takes ~9 min; adding billing makes it seconds.
 	$(or $(PYTHON),backend/.venv/bin/python) ingestion/ingest_docs.py
 
+.PHONY: serve
+serve: ## Run the RAG backend LOCALLY on 127.0.0.1:8000 (loopback only, never exposed)
+	@# Deliberately binds 127.0.0.1, not 0.0.0.0: this platform is INTERNAL-ONLY
+	@# (see CLAUDE.md) and must never be reachable from the network without an
+	@# explicit decision. Auth is enforced — set HOOKSWAP_AI_API_KEYS in backend/.env
+	@# and send `X-API-Key: <key>`; with no keys configured every request 401s.
+	cd backend && ./.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port $(or $(PORT),8000) --reload
+
 .PHONY: venv
 venv: ## Create the backend virtualenv used by `make ingest` (needs python3.11+)
 	$(or $(PY311),python3.11) -m venv backend/.venv
