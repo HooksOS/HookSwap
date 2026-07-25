@@ -271,7 +271,13 @@ async function cancelBotOrders(): Promise<void> {
 // Best-effort collateral top-up. NEVER throws — a failed deposit must not stop the
 // bot from cancelling stale orders and re-quoting. Deposits are wallet-aware: it
 // only deposits what the wallet can afford after a small gas reserve.
-const GAS_RESERVE = parseEther("0.0006");
+// Chain-dependent, so it MUST be configurable: 0.0006 ETH is a sane reserve on
+// Sepolia but ~40x more than needed on Robinhood, where gas is ~0.074 gwei (a
+// 200k-gas tx costs ~0.000015 ETH). Hardcoding it meant a bot funded with exactly
+// the reserve silently refused to deposit and quoted with zero collateral — every
+// order then bounced with "no deposited collateral", which looks like an engine
+// fault rather than a funding one.
+const GAS_RESERVE = parseEther(process.env.BOT_GAS_RESERVE_ETH || "0.0006");
 
 async function ensureCollateral(): Promise<void> {
   try {
