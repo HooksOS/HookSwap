@@ -39,9 +39,23 @@ function reqEnv(name: string): string {
 
 const CHAIN_ID = Number(process.env.PERPS_CHAIN_ID || 11155111);
 const ENGINE_URL = (process.env.ENGINE_URL || "https://perps.hookswap.org").replace(/\/+$/, "");
-const RPC_URL = (process.env.SEPOLIA_RPC_URL || "https://sepolia.drpc.org").trim();
+// Chain-generic. The bot is NOT Sepolia-specific — CHAIN_ID, MARKET and
+// CHAINLINK_FEED are all env-driven and the viem clients below are created with no
+// hardcoded `chain`, so the chain is inferred from whatever RPC is supplied. Reading
+// the RPC from a var literally named SEPOLIA_RPC_URL made the bot *look* single-chain
+// and was the only thing coupling it to Sepolia. PERPS_RPC_URL is the name to use;
+// PERPS_RPC_<chainId> lets one env file hold several chains, and SEPOLIA_RPC_URL is
+// still honoured last so existing deployments keep working.
+const RPC_URL = (
+  process.env.PERPS_RPC_URL ||
+  process.env[`PERPS_RPC_${CHAIN_ID}`] ||
+  process.env.SEPOLIA_RPC_URL ||
+  "https://sepolia.drpc.org"
+).trim();
 const MARKET = getAddress(reqEnv("MARKET") as `0x${string}`);
-// Chainlink ETH/USD on Sepolia (8-decimal answer).
+// Chainlink ETH/USD (8-decimal answer). Default is the SEPOLIA proxy; every other
+// chain MUST set CHAINLINK_FEED. Verified live 2026-07-25 — Robinhood (4663):
+// 0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9 ("ETH / USD", 8 dec).
 const CHAINLINK_FEED = getAddress(
   (process.env.CHAINLINK_FEED || "0x694AA1769357215DE4FAC081bf1f309aDC325306") as `0x${string}`,
 );
