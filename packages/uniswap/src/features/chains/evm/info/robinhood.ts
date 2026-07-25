@@ -79,23 +79,17 @@ export const ROBINHOOD_CHAIN_INFO = {
   // via rpcUrlSelector uses http[0] — QuickNode — as its single endpoint.)
   rpcUrls: {
     [RPCType.Default]: {
-      http: [
-        'https://late-fittest-putty.robinhood-mainnet.quiknode.pro/1b8b235edc8b92a9bcad773b0fcbbda6d537a583',
-        'https://rpc.mainnet.chain.robinhood.com/',
+      http: [        'https://rpc.mainnet.chain.robinhood.com/',
         'https://robinhoodchain.blockscout.com/api/eth-rpc',
       ],
     },
     [RPCType.Public]: {
-      http: [
-        'https://late-fittest-putty.robinhood-mainnet.quiknode.pro/1b8b235edc8b92a9bcad773b0fcbbda6d537a583',
-        'https://rpc.mainnet.chain.robinhood.com/',
+      http: [        'https://rpc.mainnet.chain.robinhood.com/',
         'https://robinhoodchain.blockscout.com/api/eth-rpc',
       ],
     },
     [RPCType.Interface]: {
-      http: [
-        'https://late-fittest-putty.robinhood-mainnet.quiknode.pro/1b8b235edc8b92a9bcad773b0fcbbda6d537a583',
-        'https://rpc.mainnet.chain.robinhood.com/',
+      http: [        'https://rpc.mainnet.chain.robinhood.com/',
         'https://robinhoodchain.blockscout.com/api/eth-rpc',
       ],
     },
