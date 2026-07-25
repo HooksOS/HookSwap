@@ -54,7 +54,9 @@ function isTerminalLayoutPath(pathname: string): boolean {
     // wrap them in a second one — doing so double-stacks the nav + TOKEN FEED strip.
     pathname.startsWith('/token/') ||
     pathname === '/vesting' ||
+    pathname.startsWith('/vesting/') ||
     pathname === '/farms' ||
+    pathname.startsWith('/farm/') ||
     pathname === '/airdrop' ||
     pathname === '/launch' ||
     pathname.startsWith('/launch/') ||
