@@ -27,6 +27,7 @@ import { handleProtocolStats } from './exploreStatsHandlers'
 import { resolveTokenLogo, resolveTokenSocials } from './logos'
 import { isSupportedChain } from './chains'
 import { getDb } from './indexer/schema'
+import { buildCandles, isTimeframe } from './indexer/candles'
 import {
   getLeaderboard,
   isUsdAnchored,
@@ -42,7 +43,15 @@ import {
  * `/health` branch in server.ts. None of these contains a `.vN.` dotted segment, so they are NEVER caught
  * by server.ts's `CONNECT_SERVICE_PATH_RE = /\/[\w.]+\.v\d+\.\w+\//` (which requires `<word>.v<digit>.<word>`).
  */
-const REST_ROUTE_SUFFIXES = ['/v1/pools', '/v1/tokens', '/v1/search', '/v1/stats', '/v1/leaderboard', '/v1/token-meta'] as const
+const REST_ROUTE_SUFFIXES = [
+  '/v1/pools',
+  '/v1/tokens',
+  '/v1/search',
+  '/v1/stats',
+  '/v1/leaderboard',
+  '/v1/token-meta',
+  '/v1/pool/candles',
+] as const
 
 /** Default page size for /v1/pools when `limit` is omitted (bounds the JSON payload). */
 const DEFAULT_POOLS_LIMIT = 100
@@ -240,6 +249,46 @@ export async function handleRestRequest(req: IncomingMessage, res: ServerRespons
           website: socials?.website,
           telegram: socials?.telegram,
         })
+        return true
+      }
+      case '/v1/pool/candles': {
+        // Native OHLC(V) candles for a single pool, built from the already-indexed Swap/Sync events.
+        // A pool is identified EITHER by its key (`pool` = v2/v3 address or v4 poolId) OR by its token
+        // pair (`tokenA` + `tokenB`, resolved to the most-active indexed pool). Only pools already in
+        // the DB (HookSwap-native) are served; unknown/unindexed → 404. A pool with no swaps returns a
+        // real series with `candles: []` (honest empty), never fabricated bars.
+        const { chainId, error } = parseChainId(params)
+        if (error) {
+          sendJson(res, 400, { error })
+          return true
+        }
+        if (chainId === undefined) {
+          sendJson(res, 400, { error: 'missing required query param "chainId"' })
+          return true
+        }
+        const tfRaw = (params.get('tf') ?? '1D').trim()
+        if (!isTimeframe(tfRaw)) {
+          sendJson(res, 400, { error: `invalid tf "${tfRaw}" (allowed: 1H, 1D, 1W, 1M, 1Y)` })
+          return true
+        }
+        const pool = (params.get('pool') ?? '').trim()
+        const tokenA = (params.get('tokenA') ?? '').trim()
+        const tokenB = (params.get('tokenB') ?? '').trim()
+        if (!pool && !(tokenA && tokenB)) {
+          sendJson(res, 400, { error: 'provide either "pool" or both "tokenA" and "tokenB"' })
+          return true
+        }
+        const db = getDb()
+        const series = buildCandles(db, chainId, tfRaw, {
+          pool: pool || undefined,
+          tokenA: tokenA || undefined,
+          tokenB: tokenB || undefined,
+        })
+        if (!series) {
+          sendJson(res, 404, { error: 'pool not found or not indexed' })
+          return true
+        }
+        sendJson(res, 200, series)
         return true
       }
       default:
