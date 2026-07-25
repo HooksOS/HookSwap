@@ -50,6 +50,8 @@ import { useV2Pair } from '~/hooks/useV2Pairs'
 import { getNativeTokenDBAddress } from '~/utils/nativeTokens'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { terminalColors, terminalFonts, terminalShadows } from '~/terminal/theme/tokens'
+import { useCandles } from '~/terminal/screens/swap/useCandles'
+import { useCodexChart } from '~/terminal/screens/swap/CodexChart'
 
 const MONO = terminalFonts.mono
 
@@ -522,38 +524,72 @@ function TerminalChartPanelBody({
     }
   }, [reservesPair, chartedCurrency])
 
+  // HookSwap-native OHLC candles built from the data-api's indexed Swap/Sync events — the primary source
+  // for chains the hosted GraphQL price history does not index. Covers ALL timeframes (not just 1D).
+  const candles = useCandles(chartedCurrency, otherCurrency, timePeriod)
+  // Codex / defined.fi richer candles — inert unless a REACT_APP_CODEX_API_KEY is configured (scaffold).
+  const codex = useCodexChart(chartedCurrency, timePeriod)
+
+  // Which source drives the GraphQL-unindexed branch (Codex preferred when active, else native candles).
+  const useCodexBranch = showInvalidSkeleton && codex.enabled && codex.hasData
+  const useCandleBranch = showInvalidSkeleton && !useCodexBranch && candles.hasData
+
+  // Spot from the candle/Codex close when those branches drive the chart.
+  const codexSpot = useCodexBranch ? codex.data[codex.data.length - 1]?.close : undefined
+  const candleSpot = useCandleBranch ? candles.data[candles.data.length - 1]?.close : undefined
+  const candleQuote = candles.quoteSymbol
+
   // Prefer the GraphQL USD spot ($) on indexed chains; else the data-api native spot;
   // else the LIVE reserves native spot; else honest "—". Native branches are labeled
   // with the quote symbol, never under a "$"/USD label.
   const priceStr =
     spot !== undefined
       ? convertFiatAmountFormatted(spot, NumberType.FiatTokenPrice)
-      : nativeSpot !== undefined && quoteSymbol
-        ? `${formatNumberOrString({ value: nativeSpot, type: NumberType.SwapPrice })} ${quoteSymbol}`
-        : reservesSpot !== undefined && quoteSymbol
-          ? `${formatNumberOrString({ value: reservesSpot, type: NumberType.SwapPrice })} ${quoteSymbol}`
-          : '—'
+      : codexSpot !== undefined
+        ? convertFiatAmountFormatted(codexSpot, NumberType.FiatTokenPrice)
+        : candleSpot !== undefined && candleQuote
+          ? `${formatNumberOrString({ value: candleSpot, type: NumberType.SwapPrice })} ${candleQuote}`
+          : nativeSpot !== undefined && quoteSymbol
+            ? `${formatNumberOrString({ value: nativeSpot, type: NumberType.SwapPrice })} ${quoteSymbol}`
+            : reservesSpot !== undefined && quoteSymbol
+              ? `${formatNumberOrString({ value: reservesSpot, type: NumberType.SwapPrice })} ${quoteSymbol}`
+              : '—'
 
   const changeStr = change24h === undefined ? '—' : `${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%`
   const changeColor =
     change24h === undefined ? terminalColors.ink3 : change24h >= 0 ? terminalColors.greenUp : terminalColors.redDown
 
-  const volStr = volume === undefined ? '—' : convertFiatAmountFormatted(volume, NumberType.FiatTokenStats)
-
-  // Only the 1D indexer window can serve the native series; 1H/1W/1M/1Y stay honest-empty.
-  const showNativeSeries = timePeriod === TimePeriod.DAY && nativeSeries.length >= 2
+  // The native 1D line is now only a deepest fallback (candles cover all timeframes when present).
+  const showNativeSeries = timePeriod === TimePeriod.DAY && !candles.hasData && !useCodexBranch && nativeSeries.length >= 2
 
   // --- OHLC row, from the SAME series the chart draws (honest "—" otherwise) --
-  // Indexed → USD-formatted; native → plain number (denomination shown by the caption).
-  const usedSeries = !showInvalidSkeleton ? entries : showNativeSeries ? nativeSeries : []
+  // USD sources (GraphQL, Codex) → USD-formatted; native candles/line → plain number + caption.
+  const seriesIsUsd = !showInvalidSkeleton || useCodexBranch
+  const usedSeries = !showInvalidSkeleton
+    ? entries
+    : useCodexBranch
+      ? codex.data
+      : useCandleBranch
+        ? candles.data
+        : showNativeSeries
+          ? nativeSeries
+          : []
   const fmtSeries = (v: number | undefined): string => {
     if (v === undefined || !Number.isFinite(v)) {
       return '—'
     }
-    return !showInvalidSkeleton
+    return seriesIsUsd
       ? convertFiatAmountFormatted(v, NumberType.FiatTokenPrice)
       : formatNumberOrString({ value: v, type: NumberType.SwapPrice })
   }
+
+  // VOL cell: USD token-volume on indexed/Codex; native quote-token flow when native candles drive.
+  const volStr =
+    useCandleBranch && candleQuote && candles.volumeQuote !== undefined
+      ? `${formatNumberOrString({ value: candles.volumeQuote, type: NumberType.TokenNonTx })} ${candleQuote}`
+      : volume === undefined
+        ? '—'
+        : convertFiatAmountFormatted(volume, NumberType.FiatTokenStats)
   let ohlcOpen: number | undefined
   let ohlcHigh: number | undefined
   let ohlcLow: number | undefined
@@ -585,9 +621,9 @@ function TerminalChartPanelBody({
       }
     >
       <div ref={chartRef} style={{ position: 'relative', flex: 1, minHeight: 300, background: terminalColors.bg }}>
-        {/* Native-denomination caption — makes the UNLABELED native line explicitly "priced in
-            <wrapped-native>". Only on the native branch (GraphQL-unindexed 1D series). */}
-        {showInvalidSkeleton && showNativeSeries && quoteSymbol && (
+        {/* Native-denomination caption — makes an UNLABELED native series explicitly "priced in
+            <quote>". Shown for the native candlestick (candles) and the deepest 1D native line. */}
+        {showInvalidSkeleton && ((useCandleBranch && candleQuote) || (showNativeSeries && quoteSymbol)) && (
           <div
             style={{
               position: 'absolute',
@@ -603,7 +639,7 @@ function TerminalChartPanelBody({
               pointerEvents: 'none',
             }}
           >
-            Price in {quoteSymbol}
+            Price in {useCandleBranch ? candleQuote : quoteSymbol}
           </div>
         )}
         {!showInvalidSkeleton ? (
@@ -618,10 +654,34 @@ function TerminalChartPanelBody({
             hideXAxis={false}
             hideMinMaxLines
           />
+        ) : useCodexBranch ? (
+          // Codex / defined.fi richer USD candles (only when a REACT_APP_CODEX_API_KEY is configured).
+          <PriceChartBody
+            data={codex.data}
+            height={chartHeight}
+            type={PriceChartType.CANDLESTICK}
+            stale={false}
+            timePeriod={toHistoryDuration(timePeriod)}
+            hideYAxis={false}
+            hideXAxis={false}
+            hideMinMaxLines
+          />
+        ) : useCandleBranch ? (
+          // HookSwap-native OHLC candlesticks from the data-api's indexed swaps. Native/quote-denominated
+          // → UNLABELED y-axis (yAxisFormatter guard) so a native ratio is never shown under a "$".
+          <PriceChartBody
+            data={candles.data}
+            height={chartHeight}
+            type={PriceChartType.CANDLESTICK}
+            stale={false}
+            timePeriod={toHistoryDuration(timePeriod)}
+            hideYAxis
+            hideXAxis={false}
+            yAxisFormatter={() => ''}
+            hideMinMaxLines
+          />
         ) : showNativeSeries ? (
-          // GraphQL unindexed (Robinhood) + a data-api 1D native series exists → plot it
-          // UNLABELED (hideYAxis + yAxisFormatter guards) so a native ratio is never
-          // shown under a "$".
+          // Deepest fallback: GraphQL-unindexed 1D native relative line, plotted UNLABELED.
           <PriceChartBody
             data={nativeSeries}
             height={chartHeight}
@@ -634,7 +694,7 @@ function TerminalChartPanelBody({
             hideMinMaxLines
           />
         ) : (
-          <EmptyChartOverlay spotLabel={priceStr} loading={loading} />
+          <EmptyChartOverlay spotLabel={priceStr} loading={loading || candles.loading || codex.loading} />
         )}
       </div>
     </PanelShell>
