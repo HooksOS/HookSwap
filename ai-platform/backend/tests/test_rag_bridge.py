@@ -33,19 +33,19 @@ def _store_with_facts() -> RetrievalStore:
                 "text": "Robinhood Chain has chain id 4663 and the HookSwap v2 router "
                         "is deployed at 0xBe3729d06E3A17F3c7c5ac394c7bCbe138B6EEFA.",
                 "source_id": "contracts/deployments/robinhood.json",
-                "metadata": {"doc_type": "deployment", "chain": "robinhood"},
+                "metadata": {"doc_type": "deployment", "chain": "robinhood", "visibility": "public"},
             },
             {
                 "id": "hype",
                 "text": "HyperEVM has chain id 999 and its wrapped native token is WHYPE.",
                 "source_id": "contracts/deployments/hyperevm.json",
-                "metadata": {"doc_type": "deployment", "chain": "hyperevm"},
+                "metadata": {"doc_type": "deployment", "chain": "hyperevm", "visibility": "public"},
             },
             {
                 "id": "fee",
                 "text": "HookSwap charges a 0.3% interface fee on swaps.",
-                "source_id": "docs/fees.md",
-                "metadata": {"doc_type": "doc"},
+                "source_id": "docs/users/fees.md",
+                "metadata": {"doc_type": "doc", "visibility": "public"},
             },
         ]
     )
@@ -189,6 +189,93 @@ def test_config_floor_used_only_when_embedder_publishes_none():
     s.embedder = _NoFloor(dim=512)
     eng = RagEngine(s, settings=type("S", (), {"rag_min_confidence": 0.42, "rag_top_k": 8})())
     assert eng._threshold() == pytest.approx(0.42)
+
+
+# --------------------------------------------------------------------------- #
+# Visibility scoping — the marketing bot PUBLISHES                            #
+# --------------------------------------------------------------------------- #
+def _mixed_visibility_store() -> RetrievalStore:
+    s = RetrievalStore(embedder=StableHashEmbedder(dim=512))
+    s.add_many(
+        [
+            {
+                "id": "pub",
+                "text": "HookSwap is deployed on 7 production chains including Robinhood Chain.",
+                "source_id": "docs/users/chains.md",
+                "metadata": {"doc_type": "doc", "visibility": "public"},
+            },
+            {
+                "id": "int",
+                "text": "All server work happens on the Hivelocity box 203.0.113.10, "
+                        "ssh ubuntu@ with key ~/.ssh/example_deploy_key.",
+                "source_id": "CLAUDE.md#infra",
+                "metadata": {"doc_type": "project_facts", "visibility": "internal"},
+            },
+            {
+                "id": "unlabelled",
+                "text": "Server credentials from an older corpus with no visibility label.",
+                "source_id": "CLAUDE.md#old",
+                "metadata": {"doc_type": "project_facts"},
+            },
+        ]
+    )
+    return s
+
+
+def test_public_scope_excludes_internal_and_unlabelled(monkeypatch):
+    """Internal infra detail must never reach a component that publishes."""
+    monkeypatch.setattr(
+        RagEngine, "from_settings",
+        classmethod(lambda cls, settings=None: cls(_mixed_visibility_store())),
+    )
+    provider = get_grounding_provider()
+    facts = provider.retrieve("server box ssh key and chains", top_k=8)
+    sources = [f.source for f in facts]
+    assert not any("CLAUDE.md" in s for s in sources), sources
+    assert not any("203.0.113.10" in f.text for f in facts)
+
+
+def test_unlabelled_chunks_fail_closed():
+    """A corpus ingested before visibility labelling must not become publishable."""
+    eng = RagEngine(_mixed_visibility_store())
+    hits = eng.retrieve("older corpus credentials", top_k=8, visibility="public")
+    assert all(h.metadata.get("visibility") == "public" for h in hits)
+    assert not any(h.id == "unlabelled" for h in hits)
+
+
+def test_internal_chat_still_sees_everything():
+    """/v1/chat is an internal team tool and must NOT be scoped."""
+    eng = RagEngine(_mixed_visibility_store())
+    hits = eng.retrieve("hivelocity box ssh", top_k=8)
+    assert any("CLAUDE.md" in h.source for h in hits), "internal assistant lost its grounding"
+
+
+def test_engine_declines_when_corpus_has_no_public_chunks(monkeypatch):
+    """A public view over an all-internal corpus grounds nothing — prefer static facts."""
+    s = RetrievalStore(embedder=StableHashEmbedder(dim=512))
+    s.add(id="i", text="internal only", source_id="CLAUDE.md",
+          metadata={"visibility": "internal"})
+    monkeypatch.setattr(RagEngine, "from_settings", classmethod(lambda cls, settings=None: cls(s)))
+    assert get_rag_engine() is None
+    assert isinstance(get_grounding_provider(), StaticFactStore)
+
+
+def test_visibility_classification_fails_closed():
+    import sys
+    from pathlib import Path
+
+    ing = Path(__file__).resolve().parents[2] / "ingestion"
+    sys.path.insert(0, str(ing))
+    from ingest_docs import classify_visibility
+
+    assert classify_visibility("docs/users/chains.md") == "public"
+    assert classify_visibility("docs/developers/README.md") == "public"
+    assert classify_visibility("contracts/deployments/robinhood.json") == "public"
+    # operator runbooks, the project working doc, and anything new default to internal
+    assert classify_visibility("docs/operators/deploy-contracts.md") == "internal"
+    assert classify_visibility("CLAUDE.md") == "internal"
+    assert classify_visibility("docs/marketing-rag-spec.md") == "internal"
+    assert classify_visibility("docs/some-new-tree/whatever.md") == "internal"
 
 
 def test_grounding_provider_falls_back_to_static_without_corpus(monkeypatch):

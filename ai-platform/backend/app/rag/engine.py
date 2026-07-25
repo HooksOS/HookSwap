@@ -170,6 +170,7 @@ class RagEngine:
         top_k: Optional[int] = None,
         chain: Optional[str] = None,
         kinds: Optional[Sequence[str]] = None,
+        visibility: Optional[str] = None,
     ) -> list[Retrieved]:
         """Retrieve top-k chunks, optionally narrowed to a chain / document kind.
 
@@ -192,7 +193,7 @@ class RagEngine:
         # returned chunks scoring ~0.40 against a 0.55 floor, which is exactly how a
         # marketing post ends up "grounded" in unrelated documents.
         threshold = self._threshold()
-        if not chain and not kinds:
+        if not chain and not kinds and not visibility:
             return [h for h in self.store.search(query, top_k=k) if h.score >= threshold]
 
         fetch_k = max(k, int(getattr(self.settings, "rag_fetch_k", 32)))
@@ -203,6 +204,13 @@ class RagEngine:
         out: list[Retrieved] = []
         for hit in candidates:
             meta = hit.metadata or {}
+            if visibility:
+                # Fail CLOSED: a chunk with no visibility label (e.g. an older corpus
+                # ingested before labelling existed) is treated as internal, never
+                # published. Requiring an explicit "public" is what makes a stale
+                # corpus safe rather than silently publishable.
+                if str(meta.get("visibility", "internal")).lower() != visibility:
+                    continue
             if kind_set:
                 doc_type = str(meta.get("doc_type", "")).lower()
                 if doc_type not in kind_set:
@@ -333,11 +341,44 @@ class RagEngine:
 # --------------------------------------------------------------------------- #
 # Process-wide engine accessor                                                #
 # --------------------------------------------------------------------------- #
-_ENGINE: Optional["RagEngine"] = None
+class PublicScopedEngine:
+    """A retrieve-only view of the engine restricted to publishable sources.
+
+    The marketing bot's output is a public X post, so it must not be able to ground
+    on the operator runbooks or CLAUDE.md — those carry server IPs, SSH key paths,
+    deployer-wallet details and unreleased blockers. Scoping happens HERE rather
+    than inside the assistant so that no future caller of the marketing port can
+    forget the filter: the object it receives simply cannot see internal chunks.
+
+    The internal team assistant (``/v1/chat``) is unaffected — it uses
+    ``app.state.rag_engine``, a separate full-corpus instance built in ``main.py``.
+    """
+
+    def __init__(self, engine: "RagEngine") -> None:
+        self._engine = engine
+
+    @property
+    def store(self):  # noqa: ANN201 - passthrough for size/sources introspection
+        return self._engine.store
+
+    def retrieve(
+        self,
+        query: str,
+        *,
+        top_k: Optional[int] = None,
+        chain: Optional[str] = None,
+        kinds: Optional[Sequence[str]] = None,
+    ) -> list[Retrieved]:
+        return self._engine.retrieve(
+            query, top_k=top_k, chain=chain, kinds=kinds, visibility="public"
+        )
+
+
+_ENGINE: Optional["PublicScopedEngine"] = None
 _ENGINE_LOADED = False
 
 
-def get_rag_engine() -> Optional["RagEngine"]:
+def get_rag_engine() -> Optional["PublicScopedEngine"]:
     """Return the shared engine, or ``None`` when it has nothing to ground with.
 
     ``app.marketing.rag_port.get_grounding_provider()`` probes this exact name to
@@ -371,8 +412,28 @@ def get_rag_engine() -> Optional["RagEngine"]:
         )
         _ENGINE = None
         return None
-    log.info("rag_engine_ready", chunks=engine.store.size, sources=len(engine.store.sources()))
-    _ENGINE = engine
+    public_chunks = sum(
+        1 for hit, _ in engine.store._items
+        if str((hit.metadata or {}).get("visibility", "internal")).lower() == "public"
+    )
+    if public_chunks == 0:
+        # Every chunk is internal (or the corpus predates visibility labelling), so a
+        # public-scoped view would ground nothing. Fall back to the static store
+        # rather than hand the publishing bot an engine that always returns empty.
+        log.warning(
+            "rag_engine_no_public_chunks",
+            chunks=engine.store.size,
+            hint="re-run ingestion/ingest_docs.py to label visibility; using StaticFactStore",
+        )
+        _ENGINE = None
+        return None
+    log.info(
+        "rag_engine_ready",
+        chunks=engine.store.size,
+        public_chunks=public_chunks,
+        sources=len(engine.store.sources()),
+    )
+    _ENGINE = PublicScopedEngine(engine)
     return _ENGINE
 
 

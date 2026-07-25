@@ -100,6 +100,35 @@ def env_settings() -> SimpleNamespace:
     )
 
 
+# --------------------------------------------------------------------------- #
+# Visibility classification                                                   #
+# --------------------------------------------------------------------------- #
+# The X marketing bot PUBLISHES. Anything it can retrieve, it can paraphrase into
+# a public post, so the corpus has to distinguish material that is safe to publish
+# from material that merely happens to be in the repo. CLAUDE.md and the operator
+# runbooks contain server addresses, SSH key paths, deployer-wallet details, unreleased
+# blockers and security-review status — all legitimate grounding for the INTERNAL
+# team assistant (/v1/chat), none of it publishable.
+#
+# The default is INTERNAL and public trees are allowlisted, so a new doc directory
+# is private until someone deliberately marks it publishable. Failing closed is the
+# only safe direction for a component whose output is a public post.
+PUBLIC_PREFIXES = (
+    "docs/users/",
+    "docs/developers/",
+)
+
+
+def classify_visibility(source_path: str) -> str:
+    """Return "public" or "internal" for a repo-relative source path."""
+    p = source_path.replace("\\", "/")
+    if p.startswith("contracts/deployments/"):
+        # Deployed addresses are on-chain and independently verifiable — publishing
+        # them reveals nothing that a block explorer does not already show.
+        return "public"
+    return "public" if any(p.startswith(prefix) for prefix in PUBLIC_PREFIXES) else "internal"
+
+
 class ChunkSink:
     """Collects chunks so they can be embedded in ONE batched pass at the end.
 
@@ -130,7 +159,8 @@ def ingest_markdown_file(sink: ChunkSink, path: Path, source_id: str, *, doc_typ
             id=f"{source_id}::{ch.ordinal}",
             text=ch.text,
             source_id=chunk_source,
-            metadata={"doc_type": doc_type, "path": source_id, "heading": ch.heading_path},
+            metadata={"doc_type": doc_type, "path": source_id, "heading": ch.heading_path,
+                      "visibility": classify_visibility(source_id)},
         )
     return len(chunks)
 
@@ -204,6 +234,7 @@ def ingest_deployments(sink: ChunkSink, repo_root: Path) -> int:
                     "path": rel,
                     "chain": chain,
                     "chain_id": chain_id,
+                    "visibility": classify_visibility(rel),
                 },
             )
             n += 1
@@ -239,7 +270,7 @@ def ingest_chain_registry(sink: ChunkSink) -> int:
             id=f"hookswap:chains::{ch.ordinal}",
             text=ch.text,
             source_id="hookswap:chain-registry",
-            metadata={"doc_type": "chain_registry"},
+            metadata={"doc_type": "chain_registry", "visibility": "public"},
         )
         n += 1
     return n

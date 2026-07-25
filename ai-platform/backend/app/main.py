@@ -107,6 +107,19 @@ if marketing_router is not None:
     )
 
 
+def _public_chunk_count(engine: "RagEngine | None") -> int:
+    """Chunks the marketing bot may ground on (visibility == public)."""
+    if not engine:
+        return 0
+    try:
+        return sum(
+            1 for hit, _ in engine.store._items
+            if str((hit.metadata or {}).get("visibility", "internal")).lower() == "public"
+        )
+    except Exception:
+        return 0
+
+
 @app.get("/health")
 async def health() -> dict[str, Any]:
     """Liveness + which providers are configured (nothing here can fail)."""
@@ -125,12 +138,18 @@ async def health() -> dict[str, Any]:
             },
             "embeddings": {
                 "kind": getattr(embedder, "kind", None),
+                "dim": getattr(embedder, "dim", None),
+                "min_score": getattr(embedder, "recommended_min_score", None),
                 "openai_key_present": openai_key,
                 "using_openai": getattr(embedder, "kind", None) == "openai",
             },
             "corpus": {
                 "path": str(resolve_corpus_path(settings)),
                 "chunks": engine.store.size if engine else 0,
+                # What the PUBLISHING bot can ground on. If this is 0 while `chunks`
+                # is not, the corpus predates visibility labelling and the marketing
+                # bot has silently fallen back to StaticFactStore — re-run ingestion.
+                "public_chunks": _public_chunk_count(engine),
                 "sources": len(engine.store.sources()) if engine else 0,
                 "loaded": bool(engine and engine.store.size > 0),
             },
