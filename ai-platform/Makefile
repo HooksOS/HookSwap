@@ -89,6 +89,22 @@ migrate-new: ## Create a new migration: make migrate-new M="msg"
 seed: ## Seed baseline data (chains registry, default tenant)
 	$(COMPOSE) exec backend python -m app.scripts.seed
 
+.PHONY: ingest
+ingest: ## Build the RAG corpus from the repo (docs, CLAUDE.md, deployments, chains)
+	@# Runs on the HOST, not in the container: it reads the parent HookSwap repo
+	@# (docs/, CLAUDE.md, contracts/deployments/) which is outside the build context,
+	@# and writes <ai-platform>/data/corpus.json — the path the backend mounts read-only.
+	@# Provider/keys come from backend/.env. With a free-tier Voyage key this is
+	@# rate-paced (3 RPM / 10K TPM) and takes ~9 min; adding billing makes it seconds.
+	$(or $(PYTHON),backend/.venv/bin/python) ingestion/ingest_docs.py
+
+.PHONY: venv
+venv: ## Create the backend virtualenv used by `make ingest` (needs python3.11+)
+	$(or $(PY311),python3.11) -m venv backend/.venv
+	backend/.venv/bin/pip install -q --upgrade pip
+	backend/.venv/bin/pip install -q -r backend/requirements.txt
+	@echo "venv ready: backend/.venv"
+
 .PHONY: shell
 shell: ## Open a shell in a service (S=backend)
 	$(COMPOSE) exec $(or $(S),backend) /bin/sh

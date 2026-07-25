@@ -1,0 +1,15 @@
+
+# --- generated / local (added 2026-07-25) ---
+# The RAG corpus is a build artifact of `make ingest` (9.4MB of float vectors that
+# change with every embedder/model switch). It is rebuilt from the repo, so it is
+# reproducible rather than source, and the backend mounts it from ./data at runtime.
+data/corpus.json
+data/*.json.tmp
+
+# Local virtualenv used by `make ingest` / `make venv`
+backend/.venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+.pytest_cache/

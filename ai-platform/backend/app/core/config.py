@@ -6,10 +6,10 @@ Every setting is env-driven (prefix ``HOOKSWAP_AI_``). Import the singleton
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 Environment = Literal["development", "staging", "production"]
 
@@ -29,7 +29,13 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = False
     api_prefix: str = "/api/v1"
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    # NoDecode: pydantic-settings JSON-decodes complex-typed fields read from a
+    # dotenv/env source BEFORE any `mode="before"` validator runs, so the CSV form
+    # shipped in .env.example ("a,b") raised SettingsError and the app could not
+    # boot at all with a .env present. NoDecode hands the raw string to _split_csv.
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:3000"]
+    )
 
     # --- security ---
     jwt_secret: str = "change-me-in-prod-please-32b-min"
@@ -42,7 +48,7 @@ class Settings(BaseSettings):
     # configured. Never hardcode a real key here — inject via
     # HOOKSWAP_AI_API_KEYS. When auth is enforced but this is empty the app
     # FAILS CLOSED (deny) — loudly in production.
-    api_keys: list[str] = Field(default_factory=list)
+    api_keys: Annotated[list[str], NoDecode] = Field(default_factory=list)  # see cors_origins note
     # Local-dev escape hatch ONLY. Defaults secure (False). Setting it True
     # skips endpoint auth — but it is IGNORED in production (auth always on).
     auth_disabled: bool = False
@@ -147,8 +153,17 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", "api_keys", mode="before")
     @classmethod
     def _split_csv(cls, v: object) -> object:
+        """Accept both CSV ("a,b" — the .env.example form) and a real JSON list."""
         if isinstance(v, str):
-            return [item.strip() for item in v.split(",") if item.strip()]
+            s = v.strip()
+            if s.startswith("["):  # a JSON list still round-trips correctly
+                import json
+
+                try:
+                    return json.loads(s)
+                except ValueError:
+                    pass
+            return [item.strip() for item in s.split(",") if item.strip()]
         return v
 
     @property

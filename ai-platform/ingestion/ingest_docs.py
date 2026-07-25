@@ -61,25 +61,72 @@ def find_repo_root() -> Path:
 # --------------------------------------------------------------------------- #
 # Embedder / settings shim (env-driven, no pydantic dependency)               #
 # --------------------------------------------------------------------------- #
+def load_dotenv_if_present() -> None:
+    """Load ``backend/.env`` into os.environ without adding a pydantic dependency.
+
+    The server reads its config through pydantic-settings, which loads that file
+    automatically; this script deliberately does not import pydantic, so without
+    this it would silently ingest with the *default* provider (hash) even though
+    ``.env`` selects Voyage — producing a corpus whose vectors don't match what
+    the server later queries with. Existing env vars always win.
+    """
+    env_path = Path(__file__).resolve().parents[1] / "backend" / ".env"
+    if not env_path.is_file():
+        return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        # strip inline comments only for unquoted values, then surrounding quotes
+        value = value.strip()
+        if value and value[0] not in "\"'":
+            value = value.split("#", 1)[0].strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
 def env_settings() -> SimpleNamespace:
+    load_dotenv_if_present()
     return SimpleNamespace(
         embedding_provider=os.getenv("HOOKSWAP_AI_EMBEDDING_PROVIDER", "openai"),
         embedding_model=os.getenv("HOOKSWAP_AI_EMBEDDING_MODEL", "text-embedding-3-large"),
         embedding_dim=int(os.getenv("HOOKSWAP_AI_EMBEDDING_DIM", "3072")),
-        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        openai_api_key=os.getenv("HOOKSWAP_AI_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY"),
+        voyage_api_key=os.getenv("HOOKSWAP_AI_VOYAGE_API_KEY") or os.getenv("VOYAGE_API_KEY"),
+        nomic_api_key=os.getenv("HOOKSWAP_AI_NOMIC_API_KEY"),
         corpus_path=os.getenv("HOOKSWAP_AI_CORPUS_PATH"),
     )
+
+
+class ChunkSink:
+    """Collects chunks so they can be embedded in ONE batched pass at the end.
+
+    The ingesters used to call ``store.add`` per chunk, which embeds immediately —
+    that is one HTTP round-trip per chunk against a keyed provider (thousands of
+    requests for this repo). This exposes the same ``add(**kwargs)`` signature, so
+    the ingesters are unchanged, but defers embedding to ``store.add_many``.
+    """
+
+    def __init__(self) -> None:
+        self.records: list[dict[str, Any]] = []
+
+    def add(self, *, id: str, text: str, source_id: str, metadata: dict[str, Any] | None = None) -> None:
+        self.records.append(
+            {"id": id, "text": text, "source_id": source_id, "metadata": metadata or {}}
+        )
 
 
 # --------------------------------------------------------------------------- #
 # Source ingesters                                                            #
 # --------------------------------------------------------------------------- #
-def ingest_markdown_file(store: RetrievalStore, path: Path, source_id: str, *, doc_type: str) -> int:
+def ingest_markdown_file(sink: ChunkSink, path: Path, source_id: str, *, doc_type: str) -> int:
     text = path.read_text(encoding="utf-8", errors="replace")
     chunks = chunk_markdown(text)
     for ch in chunks:
         chunk_source = f"{source_id}#{ch.heading_path}" if ch.heading_path else source_id
-        store.add(
+        sink.add(
             id=f"{source_id}::{ch.ordinal}",
             text=ch.text,
             source_id=chunk_source,
@@ -88,22 +135,22 @@ def ingest_markdown_file(store: RetrievalStore, path: Path, source_id: str, *, d
     return len(chunks)
 
 
-def ingest_docs_tree(store: RetrievalStore, repo_root: Path) -> int:
+def ingest_docs_tree(sink: ChunkSink, repo_root: Path) -> int:
     docs_dir = repo_root / "docs"
     if not docs_dir.is_dir():
         return 0
     n = 0
     for md in sorted(docs_dir.rglob("*.md")):
         rel = md.relative_to(repo_root).as_posix()
-        n += ingest_markdown_file(store, md, rel, doc_type="doc")
+        n += ingest_markdown_file(sink, md, rel, doc_type="doc")
     return n
 
 
-def ingest_claude_md(store: RetrievalStore, repo_root: Path) -> int:
+def ingest_claude_md(sink: ChunkSink, repo_root: Path) -> int:
     claude = repo_root / "CLAUDE.md"
     if not claude.is_file():
         return 0
-    return ingest_markdown_file(store, claude, "CLAUDE.md", doc_type="project_facts")
+    return ingest_markdown_file(sink, claude, "CLAUDE.md", doc_type="project_facts")
 
 
 _ADDRESS_HINT = ("address", "factory", "router", "quoter", "manager", "permit", "weth", "hash",
@@ -129,7 +176,7 @@ def _flatten_deployment(obj: Any, prefix: str = "") -> list[str]:
     return lines
 
 
-def ingest_deployments(store: RetrievalStore, repo_root: Path) -> int:
+def ingest_deployments(sink: ChunkSink, repo_root: Path) -> int:
     dep_dir = repo_root / "contracts" / "deployments"
     if not dep_dir.is_dir():
         return 0
@@ -148,7 +195,7 @@ def ingest_deployments(store: RetrievalStore, repo_root: Path) -> int:
         body = header + "\n" + "\n".join(_flatten_deployment(data))
         # deployment files are flat fact-lists; keep each file as a bounded set of chunks
         for ch in chunk_text(body, max_chars=1500):
-            store.add(
+            sink.add(
                 id=f"{rel}::{ch.ordinal}",
                 text=ch.text,
                 source_id=rel,
@@ -163,7 +210,7 @@ def ingest_deployments(store: RetrievalStore, repo_root: Path) -> int:
     return n
 
 
-def ingest_chain_registry(store: RetrievalStore) -> int:
+def ingest_chain_registry(sink: ChunkSink) -> int:
     """Ingest the live HookSwap chain list from the backend registry."""
     try:
         from app.core.chains import CHAINS  # local import: keeps failure isolated
@@ -188,7 +235,7 @@ def ingest_chain_registry(store: RetrievalStore) -> int:
     text = "\n".join(lines)
     n = 0
     for ch in chunk_text(text, max_chars=1500):
-        store.add(
+        sink.add(
             id=f"hookswap:chains::{ch.ordinal}",
             text=ch.text,
             source_id="hookswap:chain-registry",
@@ -216,6 +263,17 @@ def main() -> int:
 
     embedder = build_embedder(settings)
     store = RetrievalStore(embedder=embedder)
+    sink = ChunkSink()
+
+    # A keyed provider that was requested but fell back to hashing would silently
+    # produce a low-quality corpus, so surface the mismatch loudly instead.
+    requested = (getattr(settings, "embedding_provider", "") or "").lower()
+    if requested and requested != embedder.kind and embedder.kind == "stable-hash":
+        print(
+            f"WARNING: provider '{requested}' requested but fell back to "
+            f"'{embedder.kind}' (missing API key?) — corpus quality will be degraded.",
+            file=sys.stderr,
+        )
 
     print(f"Repo root:   {repo_root}")
     print(f"Embedder:    {embedder.kind} (dim={embedder.dim})")
@@ -223,13 +281,17 @@ def main() -> int:
     print("Ingesting sources…")
 
     counts = {
-        "docs/**/*.md": ingest_docs_tree(store, repo_root),
-        "CLAUDE.md": ingest_claude_md(store, repo_root),
-        "contracts/deployments/*.json": ingest_deployments(store, repo_root),
-        "chain-registry": ingest_chain_registry(store),
+        "docs/**/*.md": ingest_docs_tree(sink, repo_root),
+        "CLAUDE.md": ingest_claude_md(sink, repo_root),
+        "contracts/deployments/*.json": ingest_deployments(sink, repo_root),
+        "chain-registry": ingest_chain_registry(sink),
     }
     for name, c in counts.items():
         print(f"  - {name:32s} {c:4d} chunks")
+
+    # ONE batched embedding pass over everything collected above.
+    print(f"Embedding {len(sink.records)} chunks with {embedder.kind}…")
+    store.add_many(sink.records)
 
     store.save(out_path)
     print(

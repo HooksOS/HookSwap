@@ -210,6 +210,14 @@ services:
       QDRANT_URL: http://qdrant:6333
       OPENSEARCH_URL: http://opensearch:9200
       S3_ENDPOINT_URL: http://minio:9000
+      # The RAG corpus is built OUTSIDE the ./backend build context (by
+      # `make ingest` into <ai-platform>/data), so it is mounted, not baked. Without
+      # this the container resolved the default path inside the image, found nothing,
+      # and every query answered "not in the knowledge base".
+      HOOKSWAP_AI_CORPUS_PATH: /data/corpus.json
+    volumes:
+      # read-only: the server only ever reads the corpus; ingestion writes it on the host
+      - ./data:/data:ro
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:

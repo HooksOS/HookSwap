@@ -21,13 +21,12 @@ a single JSON file so the ingestion script and the server share one source of tr
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional, Protocol, runtime_checkable
+from typing import Any, Iterable, Optional
 
 CORPUS_SCHEMA_VERSION = 1
 
@@ -49,101 +48,38 @@ class Retrieved:
         s = " ".join(self.text.split())
         return s if len(s) <= max_chars else s[: max_chars - 1].rstrip() + "…"
 
+    # -- aliases consumed by app.marketing.rag_port._EngineAdapter -------------
+    # The adapter duck-types `.source` / `.kind` / `.chain`; without these it
+    # would fall back to the literal string "rag" as the citation source, so
+    # every marketing claim would cite "rag" instead of the real document.
+    @property
+    def source(self) -> str:
+        return self.source_id
+
+    @property
+    def kind(self) -> str:
+        return str((self.metadata or {}).get("doc_type") or "feature")
+
+    @property
+    def chain(self) -> Optional[str]:
+        value = (self.metadata or {}).get("chain")
+        return str(value) if value else None
+
 
 # --------------------------------------------------------------------------- #
 # Embedders                                                                   #
 # --------------------------------------------------------------------------- #
-@runtime_checkable
-class Embedder(Protocol):
-    kind: str
-    dim: int
-    recommended_min_score: float
-
-    def embed(self, text: str) -> list[float]: ...
-
-
-class StableHashEmbedder:
-    """Deterministic bag-of-words hashing embedder (offline, keyless, cross-process).
-
-    Mirrors ``hookswap_kg._HashingEmbedder`` but uses ``hashlib.blake2b`` instead of the
-    process-salted builtin ``hash()`` so ingested vectors and query vectors share one space.
-    """
-
-    kind = "stable-hash"
-    # Floor calibrated against the real HookSwap corpus so genuinely off-topic queries
-    # fall below it (hit the honest "not in KB" path) while on-topic queries clear it.
-    # Larger `dim` keeps hash-collision noise well under this floor.
-    recommended_min_score = 0.13
-
-    def __init__(self, dim: int = 4096) -> None:
-        self.dim = dim
-
-    def _bucket(self, token: str) -> int:
-        digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
-        return int.from_bytes(digest, "big") % self.dim
-
-    def embed(self, text: str) -> list[float]:
-        vec = [0.0] * self.dim
-        for tok in _tokenize(text):
-            vec[self._bucket(tok)] += 1.0
-        norm = math.sqrt(sum(x * x for x in vec)) or 1.0
-        return [x / norm for x in vec]
-
-
-class OpenAIEmbedder:
-    """Real embeddings via OpenAI, wired only behind config (keyed). Optional dependency."""
-
-    kind = "openai"
-    recommended_min_score = 0.30
-
-    def __init__(self, model: str, dim: int, api_key: str) -> None:
-        self.model = model
-        self.dim = dim
-        self._api_key = api_key
-        self._client: Any = None
-
-    def _get_client(self) -> Any:
-        if self._client is None:
-            from openai import OpenAI  # imported lazily so the core runs without openai
-
-            self._client = OpenAI(api_key=self._api_key)
-        return self._client
-
-    def embed(self, text: str) -> list[float]:
-        resp = self._get_client().embeddings.create(model=self.model, input=text)
-        return list(resp.data[0].embedding)
-
-
-def build_embedder(settings: Any) -> Embedder:
-    """Pick the embedder from config. Local stable-hash default keeps the core keyless.
-
-    OpenAI is used only when explicitly selected *and* a key is present; otherwise we fall
-    back to the offline embedder rather than crash (facts-only, never silently broken).
-    """
-    provider = getattr(settings, "embedding_provider", "openai")
-    openai_key = getattr(settings, "openai_api_key", None) or os.getenv("OPENAI_API_KEY")
-    if provider == "openai" and openai_key:
-        return OpenAIEmbedder(
-            model=getattr(settings, "embedding_model", "text-embedding-3-large"),
-            dim=int(getattr(settings, "embedding_dim", 3072)),
-            api_key=openai_key,
-        )
-    return StableHashEmbedder()
-
-
-def _tokenize(text: str) -> list[str]:
-    out: list[str] = []
-    tok: list[str] = []
-    for ch in text.lower():
-        if ch.isalnum() or ch == "_":
-            tok.append(ch)
-        else:
-            if tok:
-                out.append("".join(tok))
-                tok = []
-    if tok:
-        out.append("".join(tok))
-    return out
+# The provider implementations moved to `app.embeddings` (which also added real
+# Voyage support and batched `embed_many`). They are re-exported here unchanged so
+# every historical import path keeps working:
+#     from app.retrieval.store import Embedder, StableHashEmbedder, OpenAIEmbedder, build_embedder
+# Dependency direction is retrieval -> embeddings; `app.embeddings` never imports
+# `app.retrieval`.
+from app.embeddings.base import Embedder, embed_texts, supports_batch, tokenize as _tokenize
+from app.embeddings.factory import build_embedder
+from app.embeddings.hashing import StableHashEmbedder
+from app.embeddings.openai_provider import OpenAIEmbedder
+from app.embeddings.voyage import VoyageEmbedder
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -196,10 +132,40 @@ class RetrievalStore:
         source_id: str,
         metadata: Optional[dict[str, Any]] = None,
     ) -> None:
-        vec = self.embedder.embed(text)
+        # Asymmetric providers (Voyage) encode stored documents differently from
+        # search queries; use the document side when the embedder distinguishes them.
+        embed_doc = getattr(self.embedder, "embed_document", None)
+        vec = embed_doc(text) if callable(embed_doc) else self.embedder.embed(text)
         self._items.append(
             (Retrieved(id=id, score=0.0, text=text, source_id=source_id, metadata=metadata or {}), vec)
         )
+
+    def add_many(self, records: Iterable[dict[str, Any]]) -> int:
+        """Bulk-add records ``{id, text, source_id, metadata?}`` in ONE embedding pass.
+
+        Ingestion must not make one API round-trip per chunk — the repo corpus is
+        thousands of chunks, so per-chunk calls against a keyed provider are both
+        unusably slow and needlessly expensive. ``embed_texts`` uses the provider's
+        batch endpoint when it has one and falls back to a loop when it does not.
+        """
+        items = list(records)
+        if not items:
+            return 0
+        vectors = embed_texts(self.embedder, [r["text"] for r in items])
+        for rec, vec in zip(items, vectors):
+            self._items.append(
+                (
+                    Retrieved(
+                        id=rec["id"],
+                        score=0.0,
+                        text=rec["text"],
+                        source_id=rec["source_id"],
+                        metadata=rec.get("metadata") or {},
+                    ),
+                    list(vec),
+                )
+            )
+        return len(items)
 
     def clear(self) -> None:
         self._items.clear()
@@ -299,7 +265,10 @@ __all__ = [
     "Retrieved",
     "RetrievalStore",
     "StableHashEmbedder",
+    "VoyageEmbedder",
     "build_embedder",
     "default_corpus_path",
+    "embed_texts",
     "resolve_corpus_path",
+    "supports_batch",
 ]
