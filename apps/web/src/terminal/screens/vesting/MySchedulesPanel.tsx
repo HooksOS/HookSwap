@@ -16,7 +16,7 @@ import { VestingScheduleCard } from '~/terminal/screens/vesting/VestingScheduleC
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { type Address } from '~/chains'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
-import { useMySchedules } from '~/terminal/vesting/useMySchedules'
+import { useMySchedulesAllChains } from '~/terminal/vesting/useMySchedulesAllChains'
 
 const MONO = terminalFonts.mono
 const SANS = terminalFonts.sans
@@ -152,7 +152,10 @@ export function MySchedulesPanel({
   switchTarget?: UniverseChainId
 }): JSX.Element {
   const isMobile = useIsMobileViewport()
-  const schedules = useMySchedules({ chainId, owner })
+  // MULTICHAIN: aggregate the wallet's schedules across ALL HookSwap chains regardless of the
+  // connected chain (each row carries its own chainId → chain badge). Viewing is all-chain;
+  // Release still requires the wallet on that row's chain (handled per-row below).
+  const schedules = useMySchedulesAllChains({ owner, connectedChainId: chainId })
 
   const rows = schedules.rows
   const receiving = (rows ?? []).filter((r) => r.isBeneficiary).length
@@ -168,19 +171,8 @@ export function MySchedulesPanel({
       : undefined
 
   const body = ((): JSX.Element => {
-    if (!deployed) {
-      return (
-        <>
-          <NotDeployedNote chainLabel={chainLabel} />
-          {switchTarget !== undefined ? (
-            <SwitchChainButton
-              target={switchTarget}
-              note="Vesting is live on other HookSwap chains — switch networks to view and claim schedules there."
-            />
-          ) : null}
-        </>
-      )
-    }
+    // MULTICHAIN: no `!deployed` gate here — schedules are aggregated across every HookSwap
+    // chain, so the list shows even when the CURRENTLY-connected chain has no vesting suite.
     if (!connected) {
       return <ConnectState onConnect={onConnect} />
     }
@@ -197,11 +189,11 @@ export function MySchedulesPanel({
       <div style={gridStyle(isMobile)}>
         {rows.map((row) => (
           <VestingScheduleCard
-            key={String(row.id)}
+            key={`${row.chainId}-${row.id}`}
             row={row}
-            chainId={chainId}
+            chainId={row.chainId}
             releasing={schedules.isReleasing && schedules.releasingChild?.toLowerCase() === row.contractAddress.toLowerCase()}
-            onRelease={(child) => void schedules.release(child)}
+            onRelease={(child) => void schedules.release(child, row.chainId)}
             isMobile={isMobile}
           />
         ))}

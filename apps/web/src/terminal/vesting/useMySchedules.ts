@@ -29,6 +29,8 @@ import { vestingChildAbi, vestingManagerAbi } from '~/terminal/vesting/abis'
 
 export interface VestingScheduleRow {
   id: bigint
+  /** The chain this schedule is deployed on (for cross-chain aggregation + chain badges). */
+  chainId: number
   /** The per-schedule `HookSwapVesting` child holding the tokens (the `release()` target). */
   contractAddress: Address
   token: Address
@@ -193,6 +195,7 @@ export function useMySchedules({ chainId, owner }: { chainId?: number; owner?: A
 
       return {
         id: s[0],
+        chainId: chainId as number,
         contractAddress: s[9],
         token: s[1],
         tokenSymbol,
@@ -210,7 +213,7 @@ export function useMySchedules({ chainId, owner }: { chainId?: number; owner?: A
         isBeneficiary: Boolean(ownerLower && beneficiary.toLowerCase() === ownerLower),
       }
     })
-  }, [schedules, releasableRead.data, tokenMetaRead.data, owner])
+  }, [schedules, releasableRead.data, tokenMetaRead.data, owner, chainId])
 
   /* --------------------------------------------------------------- release */
 

@@ -15,6 +15,7 @@
  */
 import { UniverseChainId } from 'uniswap/src/features/chains/types'
 import { getChainLabel } from 'uniswap/src/features/chains/utils'
+import { ChainLogo } from '~/components/Logo/ChainLogo'
 import { ExplorerDataType } from 'uniswap/src/utils/linking'
 import { formatUnits, type Address } from '~/chains'
 import { ExplorerAddress } from '~/terminal/components/ExplorerAddress'
@@ -239,6 +240,28 @@ export function VestingScheduleCard({
             />
             <RoleBadge isBeneficiary={row.isBeneficiary} />
             <StatusPill status={status} />
+            {/* MULTICHAIN: badge the chain this schedule is deployed on (aggregated view). */}
+            {chainId !== undefined ? (
+              <span
+                title={chainLabel}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '2px 7px 2px 4px',
+                  borderRadius: 999,
+                  border: `1px solid ${terminalColors.line}`,
+                  background: terminalColors.panel2,
+                  fontFamily: MONO,
+                  fontSize: 10.5,
+                  color: terminalColors.ink3,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <ChainLogo chainId={chainId as UniverseChainId} size={13} />
+                {chainLabel}
+              </span>
+            ) : null}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 5 }}>
             <span style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3 }}>
