@@ -250,6 +250,41 @@ domain `("HookSwapPerps", "1")`.
 `feeRate = 10` (0.10% per side). Robinhood WETH matches the DEX stack's
 [contract addresses](./contract-addresses.md).
 
+### Robinhood Chain — self-service market factory pilot (chainId 4663)
+
+> ⚠️ **UNAUDITED MAINNET PILOT.** This is a user-authorized, capped pilot of the HookSwapPerps
+> **self-service factory** stack on Robinhood mainnet (deployed 2026-07-24, 52 txs, all status
+> `0x1`). It is **pre-external-audit** (see `SECURITY_REVIEW.md`), the per-market matcher is a
+> **pilot placeholder** (the deployer `0xc14C`, to be replaced by the real perps-engine matcher),
+> and it is **not yet wired to the frontend or matching engine**. Treat as a capped pilot, not
+> production. Economics were scaled down 1000× vs Sepolia to keep the real-money outlay tiny; every
+> code path is identical, just smaller.
+
+Every stack contract **and** the 5 proof markets are owned by the **treasury**
+`0x011d438E3eb3fce848950859591ec037C6529E13` (a Gnosis Safe proxy on Robinhood) — which is also the
+`platformAdmin`, `feeReceiver`, bond-slash recipient, and listing-fee treasury. The per-market
+matcher is the deployer `0xc14C897c6bff88a5Eeac31F795693b9230205125` (pilot placeholder).
+
+| Contract | Address |
+|---|---|
+| PerpMarketFactory | `0xedD55A2E0b7Bf7081e96D933a06BB5f549111732` |
+| MarketRegistry | `0xC19e0ae91f32AaF0bDf4442133DaE82AB8dd183d` |
+| OracleGuard | `0xE43EE7069699398786753B9Bd8a8c03717B8ba8e` |
+| ParamGuard | `0x65373b3780e60FE20Bf9192A497C0e62ffd3c8f2` |
+| InsuranceHub | `0x3e61CF511E2c4dcfA64d6fd7712417ce66AF36aA` |
+| BondManager | `0x422350Fa111F1c678B19F33bB5b405752C78205c` |
+| FeeRouter | `0xD77f47Ae520e2C56E18CADfde732f001D24Ce95B` |
+| PerpMarket implementation | `0x3AaFDf0194FF9aD09224e25b939ba88847B20B74` |
+| Collateral (WETH) | `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` |
+| Chainlink ETH/USD ref feed | `0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9` |
+| Owner / treasury (Safe) | `0x011d438E3eb3fce848950859591ec037C6529E13` |
+
+**Fee split** (`FeeRouter`): **platform 50% (hard floor 40%) / creator 40% / insurance 10%**.
+**Config:** `listingFee = 0`, `curatedMinBond = 5e13`, `permissionlessMinBond = 1e14`, ParamGuard
+`maxLeverage = 20×` (200000), platform max-leverage fallback `100×` (1000000). The RH Chainlink
+ETH/USD feed (proxy above, 8-dec, on-chain verified) is the reference feed for every market's
+OracleGuard config. Source: `contracts/perps/config/factory-robinhood.json`.
+
 ## See also
 
 - [Perpetuals — user guide](../users/perps.md)

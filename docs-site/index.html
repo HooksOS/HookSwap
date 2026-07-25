@@ -263,6 +263,7 @@ const CX_EXPLORER = {
   196: 'https://web3.okx.com/explorer/x-layer/',
   999: 'https://hyperevmscan.io/',
   4217: 'https://explore.tempo.xyz/',
+  988: 'https://stablescan.xyz/',
   11155111: 'https://sepolia.etherscan.io/',
 };
 function addrLink(base, addr){
@@ -362,6 +363,19 @@ const CX_CHAINS = [
     referralRouter:'0x0E88A920A522d2e858B5fB0e896F228f4619E0a6',
     weth9:'0xBbBcC62853a5fA27b93d6Bab3E6F7ce841E25Df2',
   }, note:'Tempo has no native-gas wrapper — gas is paid in pathUSD (ERC-20). The WETH9 address is only the router/periphery constructor arg; do not use addLiquidityETH / msg.value on Tempo.' },
+  { nm:'Stable', id:988, tag:'v2 + v3 + UR · live', a:{
+    v2Factory:'0xBe3729d06E3A17F3c7c5ac394c7bCbe138B6EEFA',
+    v2Router02:'0xFd0Dd93a1b6157e68b0A491d94249720506dc787',
+    v3Factory:'0xf486e625C892C0739A16A3A49B37fD52374B30CB',
+    nonfungiblePositionManager:'0xEcA2f71C9C4bFb522877B808970b2C06c7A83894',
+    swapRouter02:'0x5B57386e5F882e13946Ea4ef638c30d1f9b95D84',
+    quoterV2:'0x1b51C392DE4e3D3E0Ab066C5F89492ec0fCF21c3',
+    universalRouter:'0x79F291b64e46a5D2adbe150D58516cd19f49A323',
+    tokenLockerManager:'0x250c3448278f7b71e3e9b641f2efeb6074820e25',
+    v3PositionLocker:'0x144331bb4c3026d135896cafec3ae3d667f4f376',
+    referralRouter:'0x7EFFe9DD68035f43ad43aE6C31bc1a47Ab4579D0',
+    weth9:'0x817997ca8394e26cce3de3a076a4889b27dbf9de',
+  }, note:'Stable pays gas in USDT0 (18-dec native). Its canonical wrapped-native is WgUSDT (0x8179…f9de, 18-dec) — the WETH9 constructor arg the DEX is deployed against; all four v3 fee tiers enabled. The DEX is live and on-chain-verified (a real swap has been executed).' },
   { nm:'Sepolia', id:11155111, tag:'testnet · lockers + referral', a:{
     swapRouter02:'0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E',
     tokenLockerManager:'0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',

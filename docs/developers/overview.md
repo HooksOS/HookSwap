@@ -54,3 +54,40 @@ can compute pool/pair addresses off-chain deterministically with
   stack); the rebranded interface pointed at HookSwap addresses.
 - **In progress:** the routing backend, indexing, and on-chain liquidity. Until those land for a
   given chain/pair, quotes return `404 NO_ROUTE_FOUND`.
+
+## Fees
+
+HookSwap's fee stack mirrors Uniswap's, with the treasury/fee-receiver
+`0x011d438E3eb3fce848950859591ec037C6529E13` as the protocol beneficiary:
+
+- **LP / pool fee** — v2 pools charge a flat **0.30%** to LPs; v3 pools charge their fee tier
+  (0.01% / 0.05% / 0.30% / 1.00%). This accrues to liquidity providers.
+- **Interface fee — 0.30%** — taken on the swap's **output** token (via Universal Router
+  `PAY_PORTION`) on every swap routed through the HookSwap interface, sent to the treasury.
+  (`HOOKSWAP_FEE_BIPS=30` in the trading adapter; raised from 0.2% → 0.3% on 2026-07-24.)
+- **v2 protocol-fee switch (`feeTo`)** — **ENABLED (2026-07-24) on 6 of 7 chains** → treasury:
+  Robinhood (4663), X Layer (196), MegaETH (4326), Ink (57073), HyperEVM (999), Tempo (4217).
+  When `feeTo` is set, ~1/6 of the 0.30% (≈0.05%) is minted as LP tokens to the treasury on
+  liquidity events. **Stable (988) is pending** — its v2 factory's `feeToSetter` is the treasury
+  Safe itself, so `setFeeTo` must be executed from the Safe (a batch tx is queued). Sepolia is the
+  canonical Uniswap deployment (not HookSwap's) and is skipped.
+- **v3 protocol fee** — **ENABLED on Robinhood** (2026-07-24) via `feeProtocol(6,6)` (1/6) on all
+  four live RH v3 pools. Other chains have no v3 pools yet (their live pools are all v2).
+- **Perps** — the `FeeRouter` splits each trade's per-side fee **platform 50% (floor 40%) /
+  creator 40% / insurance 10%** (see [perps.md](./perps.md)).
+
+> **Note:** the [DefiLlama adapter](./analytics-indexer.md#defillama--external-analytics) still
+> reports `revenueRatio: 0` (100% of the 0.30% pool fee to LPs) — it has not been updated for the
+> 2026-07-24 v2 `feeTo` enablement, so DefiLlama shows protocol revenue = 0 at the pool level.
+
+## HookSwap surfaces (subdomains)
+
+| Surface | URL | What it is |
+|---|---|---|
+| App / Terminal | `https://hookswap.org` | The main swap + LP + perps + launchpad interface |
+| Docs | `https://docs.hookswap.org` | This documentation site |
+| Bridge | `https://bridge.hookswap.org` | Cross-chain bridge, **Relay-powered** (`api.relay.link`) |
+| Admin console | `https://admin.hookswap.org` | Internal ops console — Safe-batch builder, **treasury-Safe gated** (basic-auth), holds no keys |
+| Developer portal | `https://developer.hookswap.org` | Developer landing (serves the same web root as docs) |
+| Trading API | `https://trading.hookswap.org` | Self-hosted routing/quote backend (see [routing.md](./routing.md)) |
+| Data API | `https://data.hookswap.org` | Read-only pool/token/stats REST + locker/farms indexer (see [data-api.md](./data-api.md)) |

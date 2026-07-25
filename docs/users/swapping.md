@@ -52,5 +52,9 @@ Swaps pay the pool's trading fee to liquidity providers:
 - **v2 pools:** a flat 0.30% fee.
 - **v3 pools:** the pool's fee tier — 0.01%, 0.05%, 0.30%, or 1.00%.
 
+On top of the LP fee, HookSwap takes a **0.3% interface fee** on the swap's **output** token,
+routed to the HookSwap treasury (`0x011d438E3eb3fce848950859591ec037C6529E13`). The swap ticket
+shows this as a "HookSwap fee" row, bound to the live quote.
+
 Plus normal network gas (paid in the chain's native token — see [Chains](./chains.md); on
 Tempo gas is paid in an ERC-20, not native).

@@ -296,6 +296,26 @@ superseded factories on Sepolia.
 
 ---
 
+## HookSwapPerps (perpetuals)
+
+The perpetuals stack (off-chain EIP-712 matching + on-chain settlement) is documented in full on
+[perps.md](./perps.md). The canonical factory addresses:
+
+| Network | Contract | Address | Source |
+|---|---|---|---|
+| Sepolia (11155111) | PerpMarketFactory (canonical) | `0xa1A8C5A2D5527abfD2E46F4FaCebC6BC00C1a79a` | `contracts/perps/config/factory-sepolia.json` |
+| Robinhood (4663) — **UNAUDITED mainnet pilot** | PerpMarketFactory | `0xedD55A2E0b7Bf7081e96D933a06BB5f549111732` | `contracts/perps/config/factory-robinhood.json` |
+
+The **Robinhood factory pilot** (deployed 2026-07-24) is a capped, pre-audit pilot: every stack
+contract + all 5 proof markets are owned by the treasury Safe
+`0x011d438E3eb3fce848950859591ec037C6529E13`, the matcher is a pilot placeholder (deployer
+`0xc14C`), and it is not yet wired to the frontend/engine. FeeRouter split is **platform 50%
+(floor 40%) / creator 40% / insurance 10%**. The full RH stack (MarketRegistry, OracleGuard,
+ParamGuard, InsuranceHub, BondManager, FeeRouter, PerpMarket impl, Chainlink ETH/USD feed) is in
+[perps.md → Robinhood self-service factory pilot](./perps.md#robinhood-chain--self-service-market-factory-pilot-chainid-4663).
+
+---
+
 ## Coverage notes (honest gaps)
 
 - **LaunchPad (HookOSV3Launcher + HookOSV3FeeVault)** is deployed on **Robinhood only**. The app's

@@ -25,6 +25,7 @@ The API serves HookSwap's own deployed chains. `chainId` is a numeric EVM chain 
 | `57073` | Ink | ETH |
 | `196` | XLayer | OKB |
 | `999` | HyperEVM | HYPE |
+| `988` | Stable | USDT0 |
 | `11155111` | Sepolia *(testnet)* | ETH |
 
 Pass an unsupported/invalid `chainId` and the endpoint returns `400`.
@@ -158,6 +159,30 @@ curl "https://data.hookswap.org/v1/stats?chainId=4663"
 The `v2` series carry a single current USD point **once the WETH/USDG anchor pool is seeded +
 indexed** on Robinhood; until then they are honest empty arrays (the UI shows `$0` / `0%`). `v3`/`v4`
 are always empty (the indexer ingests only v2 events; v4 is excluded from HookSwap).
+
+## `GET /v1/pool/candles`
+
+Native **OHLC(V)** candles for a single pool, built from the already-indexed `Swap`/`Sync` events
+(no external chart provider). Powers the Terminal token/pool price chart. A pool is identified
+**either** by its key (`pool` = v2/v3 pair address or v4 poolId) **or** by its token pair
+(`tokenA` + `tokenB`, resolved to the most-active indexed pool). Only pools already in the
+indexer DB are served. `o`/`h`/`l`/`c` are always **pool-canonical** (the price of token0 in
+token1). A pool with no swaps returns a real series with `candles: []` (honest empty) — bars are
+never fabricated.
+
+| Param | Required | Description |
+|---|---|---|
+| `chainId` | **yes** | A supported chain id. `400` if missing/invalid. |
+| `tf` | no | Timeframe: `1H`, `1D` (default), `1W`, `1M`, `1Y`. `400` if invalid. |
+| `pool` | one of | The pool key (v2/v3 pair address or v4 poolId). |
+| `tokenA` + `tokenB` | one of | A token pair, resolved to the most-active indexed pool. |
+
+Provide **either** `pool` **or** both `tokenA` and `tokenB` (else `400`). An unknown/unindexed
+pool returns `404`.
+
+```bash
+curl "https://data.hookswap.org/v1/pool/candles?chainId=4663&pool=0xF7ddC383…&tf=1D"
+```
 
 ## Errors
 

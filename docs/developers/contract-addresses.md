@@ -113,5 +113,18 @@ HookSwap reuses Uniswap's canonical Sepolia deployment for testing (no HookSwap 
 
 `tickLower` / `tickUpper` must be multiples of the pool's `tickSpacing`, or `mint` reverts.
 
+## Perpetuals (HookSwapPerps)
+
+The perps stack is separate from the DEX. Canonical self-service factory addresses:
+
+| Network | PerpMarketFactory | Note |
+|---|---|---|
+| Sepolia (11155111) | `0xa1A8C5A2D5527abfD2E46F4FaCebC6BC00C1a79a` | validation chain |
+| Robinhood (4663) | `0xedD55A2E0b7Bf7081e96D933a06BB5f549111732` | **UNAUDITED mainnet pilot**, owner = treasury Safe `0x011d438E` |
+
+Full stack (registry, guards, insurance, bond, fee router, impl, Chainlink feed) + the core-P2P
+`Settlement` addresses → [perps.md](./perps.md). Sources:
+`contracts/perps/config/factory-{sepolia,robinhood}.json`.
+
 > If a chain is ever redeployed, regenerate `launchpad-integration/addresses.json` from the
 > updated `contracts/deployments/*.json` and update this page.
