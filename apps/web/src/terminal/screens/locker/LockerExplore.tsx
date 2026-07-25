@@ -30,6 +30,7 @@ import { useLockerTvlHistory } from '~/terminal/lockers/analytics/useLockerTvlHi
 import { UnlockScheduleChart } from '~/terminal/screens/locker/UnlockScheduleChart'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { ChainBadge } from '~/terminal/components/ChainBadge'
 
 const MONO = terminalFonts.mono
 const SANS = terminalFonts.sans
@@ -278,13 +279,14 @@ function LedgerIdentity({
   avatar,
   name,
   badge,
-  chainName,
+  chainId,
   lockCount,
 }: {
   avatar: React.ReactNode
   name: string
   badge: React.ReactNode
-  chainName: string
+  /** MULTICHAIN: chain id (not a name string) so the row renders the shared badge. */
+  chainId: number
   lockCount: number
 }): JSX.Element {
   return (
@@ -308,7 +310,7 @@ function LedgerIdentity({
           {badge}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-          <span style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.ink3 }}>{chainName}</span>
+          <ChainBadge chainId={chainId} size="sm" />
           <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
             {lockCount} lock{lockCount === 1 ? '' : 's'}
           </span>
@@ -329,7 +331,7 @@ function TokenRow({ t, to }: { t: TokenAgg; to?: string }): JSX.Element {
           avatar={<Avatar seed={t.token} initials={initials} logoUrl={resolveLedgerLogo(t.chainId, t.token)} />}
           name={t.symbol || 'Unknown'}
           badge={<Badge>TOKEN</Badge>}
-          chainName={t.chainName}
+          chainId={t.chainId}
           lockCount={t.lockCount}
         />
         <div style={mobileStatGridStyle}>
@@ -365,7 +367,7 @@ function TokenRow({ t, to }: { t: TokenAgg; to?: string }): JSX.Element {
           <Badge>TOKEN</Badge>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-          <span style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.ink3 }}>{t.chainName}</span>
+          <ChainBadge chainId={t.chainId} size="sm" />
           <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
             {t.lockCount} lock{t.lockCount === 1 ? '' : 's'}
           </span>
@@ -399,7 +401,7 @@ function PoolRow({ p, to }: { p: PoolAgg; to?: string }): JSX.Element {
           avatar={<Avatar seed={p.pair} initials={`${a}${b}`} />}
           name={pair}
           badge={<Badge tone="green">LP</Badge>}
-          chainName={p.chainName}
+          chainId={p.chainId}
           lockCount={p.lockCount}
         />
         <div style={mobileStatGridStyle}>
@@ -431,7 +433,7 @@ function PoolRow({ p, to }: { p: PoolAgg; to?: string }): JSX.Element {
           <Badge tone="green">LP</Badge>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-          <span style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.ink3 }}>{p.chainName}</span>
+          <ChainBadge chainId={p.chainId} size="sm" />
           <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
             {p.lockCount} lock{p.lockCount === 1 ? '' : 's'}
           </span>

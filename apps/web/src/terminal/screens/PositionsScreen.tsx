@@ -42,6 +42,7 @@ import { StatCard } from '~/terminal/components/StatCard'
 import { AddLiquidityModal } from '~/terminal/pools/AddLiquidityModal'
 import { RemoveLiquidityModal } from '~/terminal/pools/RemoveLiquidityModal'
 import { terminalColors, terminalFonts, terminalType } from '~/terminal/theme/tokens'
+import { ChainBadge } from '~/terminal/components/ChainBadge'
 
 const MONO = terminalFonts.mono
 const DISPLAY = terminalFonts.display
@@ -355,11 +356,9 @@ function PositionPairCell({ position }: { position: PositionInfo }): JSX.Element
         >
           {currency0?.symbol ?? '—'} / {currency1?.symbol ?? '—'}
         </span>
-        {position.chainId !== undefined ? (
-          <span style={{ fontFamily: MONO, fontSize: 10.5, color: terminalColors.ink3Alt }}>
-            {getChainLabel(position.chainId)}
-          </span>
-        ) : null}
+        {/* MULTICHAIN: positions span every enabled chain, so each row is badged
+            with its chain (logo + name) rather than a bare label. */}
+        <ChainBadge chainId={position.chainId} size="sm" />
       </span>
     </span>
   )

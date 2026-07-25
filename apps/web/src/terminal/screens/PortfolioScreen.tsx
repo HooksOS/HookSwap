@@ -61,6 +61,7 @@ import {
   terminalFonts,
 } from '~/terminal/theme/tokens'
 import { formatRelativeTime } from '~/terminal/utils/time'
+import { ChainBadge } from '~/terminal/components/ChainBadge'
 
 const MONO = terminalFonts.mono
 const DISPLAY = terminalFonts.display
@@ -902,11 +903,8 @@ function PositionPairCell({ position }: { position: PositionInfo }): JSX.Element
         >
           {currency0?.symbol ?? '—'} / {currency1?.symbol ?? '—'}
         </span>
-        {position.chainId !== undefined ? (
-          <span style={{ fontFamily: MONO, fontSize: 10.5, color: terminalColors.ink3Alt }}>
-            {getChainLabel(position.chainId)}
-          </span>
-        ) : null}
+        {/* MULTICHAIN: portfolio positions are aggregated across all enabled chains. */}
+        <ChainBadge chainId={position.chainId} size="sm" />
       </span>
     </span>
   )

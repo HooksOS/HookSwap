@@ -29,6 +29,7 @@ import { useFarmsStats } from '~/terminal/farms/analytics/useFarmsStats'
 import { useFarmsTvlHistory } from '~/terminal/farms/analytics/useFarmsTvlHistory'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
+import { ChainBadge } from '~/terminal/components/ChainBadge'
 
 const MONO = terminalFonts.mono
 const SANS = terminalFonts.sans
@@ -320,7 +321,7 @@ function FarmRow({ f }: { f: Farm }): JSX.Element {
               <StatusPill status={f.status} />
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, minWidth: 0 }}>
-              <span style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.ink3 }}>{f.chainName}</span>
+              <ChainBadge chainId={f.chainId} size="sm" />
               <span
                 style={{
                   fontFamily: MONO,
@@ -384,7 +385,7 @@ function FarmRow({ f }: { f: Farm }): JSX.Element {
           <StatusPill status={f.status} />
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-          <span style={{ fontFamily: SANS, fontSize: 11.5, color: terminalColors.ink3 }}>{f.chainName}</span>
+          <ChainBadge chainId={f.chainId} size="sm" />
           <span style={{ fontFamily: MONO, fontSize: 11, color: terminalColors.faint }}>
             stake {f.stakingToken.symbol || '?'} · earn {f.rewardToken.symbol || '?'}
           </span>
