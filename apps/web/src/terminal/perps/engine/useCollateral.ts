@@ -31,6 +31,12 @@ import type { Address, Hash } from '~/chains'
 import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
 import { erc20Abi, perpMarketReadAbi, perpMarketWriteAbi, STANDARD_DECIMALS } from '~/terminal/perps/engine/perpMarketAbi'
 
+/** Minimal `symbol()` ABI — the module's local erc20Abi only declares the three
+ *  functions the deposit flow needs (decimals/balanceOf/allowance). */
+const ERC20_SYMBOL_ABI = [
+  { type: 'function', name: 'symbol', stateMutability: 'view', inputs: [], outputs: [{ type: 'string' }] },
+] as const
+
 /** Which asset a deposit moves when the collateral is WETH: raw ETH (wrapped) or the ERC-20. */
 export type CollateralAsset = 'native' | 'erc20'
 
@@ -46,6 +52,8 @@ export interface UseCollateral {
   weth?: Address
   /** Collateral token decimals for the ERC-20 amount fields (deposit/wallet balance/allowance). */
   collateralDecimals: number
+  /** Collateral token symbol (e.g. "WETH", "USDG"), undefined while loading. */
+  collateralSymbol?: string
 
   /** Deposited collateral available to trade (raw, 18-dec), or undefined while loading. */
   availableRaw?: bigint
@@ -170,6 +178,18 @@ export function useCollateral({
     query: { enabled: Boolean(collateral) },
   })
   const collateralDecimals = decimalsRead.data !== undefined ? Number(decimalsRead.data as number) : STANDARD_DECIMALS
+
+  // Collateral token SYMBOL. The UI must name the token a market actually settles
+  // in (WETH vs USDG vs …) rather than assuming WETH — collateral is fixed per
+  // market at createMarket() time, so it varies across markets on the same chain.
+  const symbolRead = useReadContract({
+    address: collateral,
+    chainId,
+    abi: ERC20_SYMBOL_ABI,
+    functionName: 'symbol',
+    query: { enabled: Boolean(collateral) },
+  })
+  const collateralSymbol = symbolRead.data !== undefined ? String(symbolRead.data) : undefined
 
   // Wallet's collateral ERC-20 balance (token-dec).
   const walletErc20Read = useReadContract({
@@ -408,6 +428,7 @@ export function useCollateral({
     isWethCollateral,
     weth,
     collateralDecimals,
+    collateralSymbol,
     availableRaw,
     availableFormatted: fmt(availableRaw, STANDARD_DECIMALS),
     lockedRaw,

@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatUnits } from 'viem'
 import { UniverseChainId } from 'uniswap/src/features/chains/types'
+import { getChainLabel } from 'uniswap/src/features/chains/utils'
 import { ExplorerDataType, getExplorerLink } from 'uniswap/src/utils/linking'
 import { Modal } from '~/terminal/components/Modal'
 import type { Address } from '~/chains'
@@ -34,6 +35,7 @@ export function CollateralDrawer({
   wrongChain,
   onConnect,
   onSwitchChain,
+  collateralSymbol: collateralSymbolProp,
 }: {
   open: boolean
   onClose: () => void
@@ -44,8 +46,12 @@ export function CollateralDrawer({
   wrongChain: boolean
   onConnect: () => void
   onSwitchChain: () => void
+  /** Symbol of the token THIS market settles in (fixed at market creation). */
+  collateralSymbol?: string
 }): JSX.Element {
   const col = useCollateral({ market, trader, chainId })
+  // Prefer the caller's value; otherwise read it straight off the market's collateral token.
+  const collateralSymbol = collateralSymbolProp ?? col.collateralSymbol
 
   const [tab, setTab] = useState<Tab>('deposit')
   const [asset, setAsset] = useState<CollateralAsset>('native')
@@ -53,7 +59,9 @@ export function CollateralDrawer({
 
   const base = market?.base ?? 'BASE'
   // The deposit-asset label: raw ETH vs the ERC-20 WETH collateral (both credit the same balance).
-  const assetLabel = asset === 'native' ? 'ETH' : 'WETH'
+  // Follows the market's REAL collateral: a USDG-margined market must not be
+  // labelled "WETH" just because WETH was the first collateral ever shipped.
+  const assetLabel = asset === 'native' ? 'ETH' : (collateralSymbol ?? 'WETH')
 
   // When the collateral isn't WETH there's no native path → force the ERC-20 deposit.
   useEffect(() => {
@@ -105,7 +113,8 @@ export function CollateralDrawer({
       return { label: 'Connect wallet', onClick: onConnect, disabled: false, tone: 'green' }
     }
     if (wrongChain) {
-      return { label: 'Switch to Sepolia', onClick: onSwitchChain, disabled: false, tone: 'green' }
+      // Was hardcoded to "Sepolia" — wrong on every other chain the markets live on.
+      return { label: `Switch to ${getChainLabel(chainId as UniverseChainId)}`, onClick: onSwitchChain, disabled: false, tone: 'green' }
     }
     if (!market) {
       return { label: 'No market selected', onClick: () => undefined, disabled: true, tone: 'green' }
@@ -150,9 +159,44 @@ export function CollateralDrawer({
     <Modal open={open} onClose={onClose} title="Collateral" width={380} radius={18}>
       <div style={{ padding: '4px 20px 22px', fontFamily: MONO }}>
         <div style={{ fontFamily: SANS, fontSize: 12, color: terminalColors.ink3, marginBottom: 12, lineHeight: 1.5 }}>
-          Isolated margin for <b style={{ color: terminalColors.ink }}>{market?.label ?? '—'}</b>. Deposited collateral
-          is held in the market and settles your positions.
+          Isolated margin for <b style={{ color: terminalColors.ink }}>{market?.label ?? '—'}</b>
+          {collateralSymbol ? (
+            <>
+              , settled in <b style={{ color: terminalColors.ink }}>{collateralSymbol}</b>
+            </>
+          ) : null}
+          . Deposited collateral is held in the market and settles your positions.
+          {collateralSymbol ? (
+            // "Why is this WETH and not a stablecoin?" — because the collateral token
+            // is fixed at market creation (createMarket(collateral,…)), so it is a
+            // property of the market, not a choice here. Saying so prevents users
+            // hunting for a setting that does not exist.
+            <div style={{ marginTop: 6, color: terminalColors.ink3Alt, fontSize: 11.5 }}>
+              Each market settles in one fixed token, set when the market was created — switch markets to use a
+              different collateral.
+            </div>
+          ) : null}
         </div>
+
+        {/* Disconnected: every figure below is "—" and the form cannot do anything, so
+            lead with connecting rather than rendering a dead deposit form. */}
+        {!connected ? (
+          <div
+            style={{
+              fontFamily: SANS,
+              fontSize: 12,
+              color: terminalColors.ink3,
+              background: terminalColors.panel2,
+              border: `1px solid ${terminalColors.line}`,
+              borderRadius: 10,
+              padding: '10px 12px',
+              marginBottom: 14,
+              lineHeight: 1.5,
+            }}
+          >
+            Connect a wallet to see your balances and deposit collateral.
+          </div>
+        ) : null}
 
         {/* Deposit / Withdraw */}
         <div style={{ display: 'flex', background: terminalColors.panel2, borderRadius: 8, padding: 3, gap: 2, marginBottom: 14 }}>

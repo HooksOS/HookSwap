@@ -193,6 +193,12 @@ export function PerpsScreen(): JSX.Element {
         openInterest={ticker.openInterest}
         fundingRatePct={ticker.fundingRatePct}
         maxLeverageX={selected?.catalogMaxLeverage}
+        // Makes the symbol a market switcher. The watchlist could always change
+        // markets, but nothing signalled it was interactive — so selection was
+        // effectively undiscoverable from the main chrome.
+        markets={markets}
+        names={marketNames}
+        onSelectMarket={(m) => setSelectedAddr(m.address)}
       />
 
       <div style={{ padding: '14px var(--tm-gutter) 40px' }}>

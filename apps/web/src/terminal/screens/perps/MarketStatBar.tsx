@@ -1,6 +1,8 @@
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
 import { EMPTY } from '~/terminal/screens/perps/perpsCatalog'
 import type { PerpMarketView } from '~/terminal/perps/engine/marketView'
+import { MarketSelect } from '~/terminal/screens/perps/MarketSelect'
+import type { ResolvedMarketName } from '~/terminal/perps/factory/useMarketNames'
 
 const MONO = terminalFonts.mono
 
@@ -64,6 +66,9 @@ export function MarketStatBar({
   openInterest,
   fundingRatePct,
   maxLeverageX,
+  markets,
+  names,
+  onSelectMarket,
 }: {
   market?: PerpMarketView
   mark?: number
@@ -73,8 +78,13 @@ export function MarketStatBar({
   openInterest?: number
   fundingRatePct?: number
   maxLeverageX?: number
+  /** When supplied, the symbol becomes a market switcher (see MarketSelect). */
+  markets?: PerpMarketView[]
+  names?: ReadonlyMap<string, ResolvedMarketName>
+  onSelectMarket?: (m: PerpMarketView) => void
 }): JSX.Element {
   const symbol = market?.label ?? 'PERP'
+  const collateralSymbol = market ? names?.get(market.address.toLowerCase())?.collateralSymbol : undefined
   const lev = maxLeverageX ?? market?.catalogMaxLeverage
   const markStr = fmtPrice(mark)
 
@@ -99,7 +109,33 @@ export function MarketStatBar({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: terminalColors.ink }}>{symbol}</span>
+        {markets && onSelectMarket ? (
+          <MarketSelect markets={markets} names={names} selected={market} onSelect={onSelectMarket} />
+        ) : (
+          <span style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: terminalColors.ink }}>{symbol}</span>
+        )}
+        {/* Collateral is a per-market on-chain property (set at createMarket), not a
+            user setting — showing it here stops "why is this WETH?" being a mystery. */}
+        {collateralSymbol ? (
+          <span
+            title={`This market settles in ${collateralSymbol}. Collateral is fixed per market.`}
+            style={{
+              fontFamily: MONO,
+              fontSize: 9.5,
+              fontWeight: 600,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: terminalColors.ink3,
+              background: terminalColors.panel2,
+              border: `1px solid ${terminalColors.line}`,
+              borderRadius: 5,
+              padding: '2px 6px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {collateralSymbol} margin
+          </span>
+        ) : null}
         <span
           style={{
             fontFamily: MONO,
