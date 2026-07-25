@@ -65,6 +65,7 @@ import { MultichainContextProvider } from '~/state/multichain/MultichainContext'
 import { useOnSelectCurrency } from 'uniswap/src/features/transactions/swap/form/hooks/useOnSelectCurrency'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
+import { SwapChainSync } from '~/terminal/screens/swap/SwapChainSync'
 import { TerminalChartPanel } from '~/terminal/screens/swap/TerminalChartPanel'
 import { TerminalMarketsPanel } from '~/terminal/screens/swap/TerminalMarketsPanel'
 import { TerminalSwapReviewFlow, useTerminalReviewTrigger } from '~/terminal/screens/swap/TerminalSwapReviewFlow'
@@ -846,8 +847,10 @@ function WrongChainBanner(): JSX.Element | null {
   const [switching, setSwitching] = useState(false)
   const connectedChainId = account.chainId
 
-  // Only relevant once a wallet is connected on a non-Robinhood chain.
-  if (connectedChainId === undefined || connectedChainId === UniverseChainId.Robinhood) {
+  // Only relevant when the wallet is connected to a chain HookSwap does NOT trade on.
+  // Data-driven via isChainDexLive (a chain with a live v2/v3 stack) — NOT hardcoded to
+  // Robinhood, since swaps route on XLayer/Stable/HyperEVM/etc too.
+  if (connectedChainId === undefined || isChainDexLive(connectedChainId as UniverseChainId)) {
     return null
   }
 
@@ -1112,6 +1115,10 @@ export function SwapScreen(): JSX.Element {
           initialOutputCurrency={initialOutputCurrency}
         >
           <SwapFormStoreContextProvider prefilledState={prefilledState}>
+            {/* Keeps the top-nav switcher, the wallet chain, and the token-selector
+                chain dropdown in lock-step (single source of truth = wallet chain,
+                fallback = this screen's resolved active chain). */}
+            <SwapChainSync fallbackChainId={chainId} />
             <TransactionModalContextProvider
               bottomSheetViewStyles={{}}
               screen={txScreen}
