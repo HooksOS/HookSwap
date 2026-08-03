@@ -7,16 +7,10 @@
 // market's chainId comes from its MarketRegistry (fetchAllMarkets tags each market).
 // Every settlement/read helper takes a chainId and uses THAT chain's clients.
 
-import {
-  createPublicClient,
-  createWalletClient,
-  http,
-  type Account,
-  type PublicClient,
-  type WalletClient,
-} from "viem";
+import { type Account, type PublicClient, type WalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { ENV, type ChainConfig, type GasMode } from "./env.js";
+import { createFailoverPublicClient, createFailoverWalletClient } from "./rpc/failover.js";
 import { MARKET_REGISTRY_ABI, ORACLE_GUARD_ABI, PERP_MARKET_ABI } from "./abis.js";
 import type { MarketMeta, Order } from "./types.js";
 
@@ -36,10 +30,14 @@ export interface ChainCtx {
 }
 
 function buildCtx(cfg: ChainConfig): ChainCtx {
-  const publicClient: PublicClient = createPublicClient({ transport: http(cfg.rpcUrl) });
+  const label = cfg.network ? `${cfg.network}/${cfg.chainId}` : String(cfg.chainId);
+  // Both clients share ONE FailoverProvider (same chainId + url list => cached), so
+  // the pinned write endpoint — and therefore the nonce source — is consistent
+  // between the read path and the settleBatch broadcast. See src/rpc/failover.ts.
+  const publicClient: PublicClient = createFailoverPublicClient(cfg.chainId, cfg.rpcUrls, label);
   const matcherAccount: Account | null = cfg.matcherKey ? privateKeyToAccount(cfg.matcherKey) : null;
   const walletClient: WalletClient | null = matcherAccount
-    ? createWalletClient({ account: matcherAccount, transport: http(cfg.rpcUrl) })
+    ? createFailoverWalletClient(matcherAccount, cfg.chainId, cfg.rpcUrls, label)
     : null;
   return {
     chainId: cfg.chainId,

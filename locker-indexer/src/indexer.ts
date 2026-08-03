@@ -8,8 +8,8 @@
 // whose RPC fails does not crash the cycle — it is marked stale and its last known
 // locks are retained until it recovers.
 
-import { createPublicClient, formatUnits, getAddress, http, type PublicClient } from "viem";
-import { CHAINS, MULTICALL3, type ChainConfig } from "./chains.js";
+import { createPublicClient, formatUnits, getAddress, type PublicClient } from "viem";
+import { CHAINS, MULTICALL3, chainTransport, type ChainConfig } from "./chains.js";
 import { ERC20_ABI, LOCKER_MANAGER_ABI } from "./abi.js";
 import { ENV } from "./env.js";
 import { priceUsdBatch } from "./pricing.js";
@@ -217,7 +217,9 @@ interface RawLp {
 
 /** Read one chain fully. Throws on RPC failure (caller catches → marks stale). */
 async function indexChain(cfg: ChainConfig, nowSec: number): Promise<Lock[]> {
-  const client: PublicClient = createPublicClient({ transport: http(cfg.rpcUrl) });
+  // Multi-RPC failover ring (src/rpc.ts): a 429/dead endpoint transparently
+  // advances to the next public endpoint for this chain.
+  const client: PublicClient = createPublicClient({ transport: chainTransport(cfg) });
 
   const count = (await client.readContract({
     address: cfg.manager,

@@ -64,8 +64,14 @@ const GATEWAY_RPC_PREFIX = `${getEntryGatewayUrl()}/rpc/`
 
 const selectHookSwapLegacyRpcUrl = (chainId: UniverseChainId, rpcType: RPCType): RpcConfig | null => {
   const config = selectRpcUrl(chainId, rpcType)
-  if (!config || !config.rpcUrl.startsWith(GATEWAY_RPC_PREFIX)) {
-    return config
+  if (!config) {
+    return null
+  }
+  // A gateway URL must never survive as a failover hop either — strip it from the
+  // fallback chain regardless of which slot the primary came from.
+  const fallbackRpcUrls = config.fallbackRpcUrls?.filter((url) => !url.startsWith(GATEWAY_RPC_PREFIX))
+  if (!config.rpcUrl.startsWith(GATEWAY_RPC_PREFIX)) {
+    return { ...config, fallbackRpcUrls }
   }
   const info = getChainInfo(chainId)
   const candidates = [
@@ -75,7 +81,9 @@ const selectHookSwapLegacyRpcUrl = (chainId: UniverseChainId, rpcType: RPCType):
     ...(info.rpcUrls[RPCType.Interface]?.http ?? []),
   ]
   const publicUrl = candidates.find((url) => url && !url.startsWith(GATEWAY_RPC_PREFIX))
-  return publicUrl ? { ...config, rpcUrl: publicUrl } : null
+  return publicUrl
+    ? { ...config, rpcUrl: publicUrl, fallbackRpcUrls: fallbackRpcUrls?.filter((url) => url !== publicUrl) }
+    : null
 }
 
 // Extension is header-based (can't share the web origin's cookie jar).
@@ -101,6 +109,9 @@ const asUniRpcConfig = (config: RpcConfig): RpcConfig => {
   const promoted: RpcConfig = {
     ...config,
     isUniRpc: true,
+    // The gateway does its own server-side failover; client-side fallbacks are neither
+    // authenticated nor needed on this path.
+    fallbackRpcUrls: undefined,
     headers: { 'x-request-source': REQUEST_SOURCE, ...config.headers },
   }
   return isExtensionApp

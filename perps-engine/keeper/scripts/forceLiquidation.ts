@@ -18,15 +18,11 @@
 // Keys are read from mode-600 JSON files; NEVER logged.
 
 import { readFileSync } from "fs";
-import {
-  createPublicClient,
-  createWalletClient,
-  getAddress,
-  http,
-  type Hash,
-} from "viem";
+import { getAddress, type Hash } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { EIP712_DOMAIN_NAME, EIP712_DOMAIN_VERSION, EIP712_ORDER_TYPES } from "../keeperAbi.js";
+import { resolveRpcList } from "../../src/rpc/endpoints.js";
+import { createFailoverPublicClient, createFailoverWalletClient } from "../../src/rpc/failover.js";
 
 function req(name: string): string {
   const v = (process.env[name] || "").trim();
@@ -41,8 +37,11 @@ function loadKey(path: string): `0x${string}` {
   return `0x${k}` as `0x${string}`;
 }
 
-const RPC = (process.env.SEPOLIA_RPC_URL || "https://sepolia.drpc.org").trim();
 const CHAIN_ID = Number(process.env.PERPS_CHAIN_ID || 11155111);
+// Ordered public endpoint list with auto-failover (comma-separated env vars ok).
+const RPC_URLS = resolveRpcList(CHAIN_ID, {
+  sources: [process.env.PERPS_RPC_URL, process.env[`PERPS_RPC_${CHAIN_ID}`], process.env.SEPOLIA_RPC_URL],
+});
 const MARKET = getAddress(req("MARKET") as `0x${string}`);
 const COLLATERAL = getAddress(req("COLLATERAL") as `0x${string}`);
 const FEED = getAddress((process.env.CHAINLINK_FEED || "0x694AA1769357215DE4FAC081bf1f309aDC325306") as `0x${string}`);
@@ -81,12 +80,12 @@ const MARKET_ABI = [
   { type: "function", name: "marketMaxLeverage", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 ] as const;
 
-const pub = createPublicClient({ transport: http(RPC) });
+const pub = createFailoverPublicClient(CHAIN_ID, RPC_URLS, `forceLiq/${CHAIN_ID}`);
 
 const deployer = privateKeyToAccount(loadKey(req("DEPLOYER_KEY_FILE")));
 const t1 = privateKeyToAccount(loadKey(req("T1_KEY_FILE"))); // long
 const t2 = privateKeyToAccount(loadKey(req("T2_KEY_FILE"))); // short
-const deployerWallet = createWalletClient({ account: deployer, transport: http(RPC) });
+const deployerWallet = createFailoverWalletClient(deployer, CHAIN_ID, RPC_URLS, `forceLiq/${CHAIN_ID}`);
 
 async function mark1e18(): Promise<bigint> {
   const r = (await pub.readContract({ address: FEED, abi: CHAINLINK_ABI, functionName: "latestRoundData" })) as readonly [bigint, bigint, bigint, bigint, bigint];

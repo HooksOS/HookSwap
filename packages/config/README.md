@@ -20,7 +20,7 @@ All platforms use `process.env.X` references directly. Each build tool replaces 
 - **Metro + Babel** (mobile) — `transform-inline-environment-variables` plugin inlines values from the shell; `.env` files are loaded via `dotenv` in `babel.config.js`
 - **WXT/Webpack** (extension) — `DefinePlugin` / WXT config handles replacements
 
-No `REACT_APP_` prefix is required. The base config uses `??` fallbacks (e.g. `process.env.ALCHEMY_API_KEY ?? process.env.REACT_APP_ALCHEMY_API_KEY`) for backward compatibility with env vars that still use the legacy prefix.
+No `REACT_APP_` prefix is required. The base config uses `??` fallbacks (e.g. `process.env.INFURA_KEY ?? process.env.REACT_APP_INFURA_KEY`) for backward compatibility with env vars that still use the legacy prefix.
 
 ## Key files
 

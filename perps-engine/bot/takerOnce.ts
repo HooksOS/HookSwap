@@ -16,9 +16,11 @@
  *   TAKER_KEY_ENV=RH_MATCHER_PRIVATE PERPS_CHAIN_ID=4663 MARKET=0x… \
  *   PERPS_RPC_URL=… node_modules/.bin/tsx bot/takerOnce.ts
  */
-import { createPublicClient, createWalletClient, formatEther, getAddress, http, parseEther } from "viem";
+import { formatEther, getAddress, parseEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { EIP712_DOMAIN_NAME, EIP712_DOMAIN_VERSION, EIP712_ORDER_TYPES, PERP_MARKET_ABI } from "../src/abis.js";
+import { resolveRpcList } from "../src/rpc/endpoints.js";
+import { createFailoverPublicClient, createFailoverWalletClient } from "../src/rpc/failover.js";
 
 // The market ABI exposes no `collateralToken()`; the engine's /markets is the
 // source of truth for a market's collateral (same as the bot's resolveCollateral).
@@ -34,7 +36,10 @@ function req(name: string): string {
 
 const CHAIN_ID = Number(req("PERPS_CHAIN_ID"));
 const MARKET = getAddress(req("MARKET") as `0x${string}`);
-const RPC_URL = req("PERPS_RPC_URL");
+// PERPS_RPC_URL accepts a comma-separated list; anything missing is topped up from
+// the validated public list for CHAIN_ID (../src/rpc/endpoints.ts). Optional now —
+// the built-in list is used when it is unset.
+const RPC_URLS = resolveRpcList(CHAIN_ID, { sources: [process.env.PERPS_RPC_URL] });
 const ENGINE_URL = (process.env.ENGINE_URL || "http://hookswap-perps-engine:4110").replace(/\/+$/, "");
 // The key is read from whichever env var holds it — never passed on the CLI.
 const KEY = req(process.env.TAKER_KEY_ENV || "RH_MATCHER_PRIVATE");
@@ -43,8 +48,8 @@ const LEVERAGE = BigInt(process.env.TAKER_LEVERAGE_X || "2") * 10_000n;
 const DEPOSIT_ETH = process.env.TAKER_DEPOSIT_ETH || "0.002";
 
 const account = privateKeyToAccount((KEY.startsWith("0x") ? KEY : `0x${KEY}`) as `0x${string}`);
-const publicClient = createPublicClient({ transport: http(RPC_URL) });
-const walletClient = createWalletClient({ account, transport: http(RPC_URL) });
+const publicClient = createFailoverPublicClient(CHAIN_ID, RPC_URLS, `taker/${CHAIN_ID}`);
+const walletClient = createFailoverWalletClient(account, CHAIN_ID, RPC_URLS, `taker/${CHAIN_ID}`);
 
 const log = (m: string): void => console.log(`${new Date().toISOString()} ${m}`);
 

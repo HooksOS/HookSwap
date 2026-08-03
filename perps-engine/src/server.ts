@@ -10,6 +10,7 @@ import { fetchPositions } from "./chain.js";
 import { MatchingEngine } from "./engine.js";
 import { OrderError, parseOrder, parseSignature, sanityCheck, verifyCancelSigner, verifySigner } from "./order.js";
 import { marksConfigured } from "./mark.js";
+import { allFailoverProviders } from "./rpc/failover.js";
 import { CANDLE_INTERVALS, MarkStore, nextFundingTime, volume24h } from "./marketData.js";
 import type { MarketMeta, StoredOrder } from "./types.js";
 
@@ -118,6 +119,10 @@ export async function startServer(engine: MatchingEngine, marks: MarkStore): Pro
           markets: all.length,
           liveSettle: ENV.liveSettle,
           marksConfigured: marksConfigured(),
+          // Multi-RPC failover state: which endpoints each chain has, which are in
+          // cooldown, and which one broadcasts are currently pinned to. Public URLs
+          // only — no keys, no credentials (the stack is public-RPC-only by policy).
+          rpc: allFailoverProviders().map((p) => p.status()),
         });
       }
 

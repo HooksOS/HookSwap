@@ -34,7 +34,6 @@
 
 import {
   createPublicClient,
-  http,
   getAddress,
   getCreate2Address,
   keccak256,
@@ -42,6 +41,7 @@ import {
   type PublicClient,
   type Address,
 } from 'viem'
+import { failoverHttp, resolveRpcUrls } from './rpc.js'
 
 /** USD price per whole token, or undefined when unpriceable. Keyed by token address (lowercased). */
 export type PriceMap = Map<string, number | undefined>
@@ -50,12 +50,14 @@ export type PriceMap = Map<string, number | undefined>
 // Per-chain config. Copied verbatim from data-api/src/chains.ts (itself copied
 // from trading-api-adapter/src/chains.ts → contracts/deployments/<chain>.json).
 // Only the fields pricing needs: RPC, wrapped-native, v2/v3 factory, stablecoin.
-// RPC: env WEB3_RPC_<chainId> overrides the public fallback (same as data-api).
+// RPC: resolved through the shared failover ring (src/rpc.ts). WEB3_RPC_<chainId>
+// still wins here (data-api parity) and now accepts a comma-separated list.
 // ─────────────────────────────────────────────────────────────────────────────
 interface ChainCfg {
   chainId: number
+  name: string
+  /** Pricing-side env override, checked FIRST. Accepts a comma-separated list. */
   rpcEnvVar: string
-  publicRpc: string
   wrappedNative: { address: Address; decimals: number }
   v2Factory: Address
   v3Factory: Address
@@ -67,8 +69,8 @@ const CHAINS: Record<number, ChainCfg> = {
   // Robinhood (4663) — the ONLY chain with a verified USD stablecoin (USDG, 6dp).
   4663: {
     chainId: 4663,
+    name: 'Robinhood',
     rpcEnvVar: 'WEB3_RPC_4663',
-    publicRpc: 'https://rpc.mainnet.chain.robinhood.com',
     wrappedNative: { address: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73', decimals: 18 },
     v2Factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     v3Factory: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
@@ -77,8 +79,8 @@ const CHAINS: Record<number, ChainCfg> = {
   // MegaETH (4326) — no verified stablecoin anchor ⇒ all tokens undefined.
   4326: {
     chainId: 4326,
+    name: 'MegaETH',
     rpcEnvVar: 'WEB3_RPC_4326',
-    publicRpc: 'https://mainnet.megaeth.com/rpc',
     wrappedNative: { address: '0x4200000000000000000000000000000000000006', decimals: 18 },
     v2Factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     v3Factory: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
@@ -86,8 +88,8 @@ const CHAINS: Record<number, ChainCfg> = {
   // Ink (57073) — no verified stablecoin anchor.
   57073: {
     chainId: 57073,
+    name: 'Ink',
     rpcEnvVar: 'WEB3_RPC_57073',
-    publicRpc: 'https://rpc-gel.inkonchain.com',
     wrappedNative: { address: '0x4200000000000000000000000000000000000006', decimals: 18 },
     v2Factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     v3Factory: '0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3',
@@ -95,8 +97,8 @@ const CHAINS: Record<number, ChainCfg> = {
   // XLayer (196) — no verified stablecoin anchor (has WOKB pools but no USD anchor).
   196: {
     chainId: 196,
+    name: 'XLayer',
     rpcEnvVar: 'WEB3_RPC_196',
-    publicRpc: 'https://xlayer.drpc.org',
     wrappedNative: { address: '0xe538905cf8410324e03A5A23C1c177a474D59b2b', decimals: 18 },
     v2Factory: '0xD1Cf664944173140AFc302c169eFD55c24966B45',
     v3Factory: '0xAB34Bb3767020059A35e71D03f13E9e4fbCD07aC',
@@ -104,8 +106,8 @@ const CHAINS: Record<number, ChainCfg> = {
   // HyperEVM (999) — no verified stablecoin anchor.
   999: {
     chainId: 999,
+    name: 'HyperEVM',
     rpcEnvVar: 'WEB3_RPC_999',
-    publicRpc: 'https://rpc.hyperliquid.xyz/evm',
     wrappedNative: { address: '0x5555555555555555555555555555555555555555', decimals: 18 },
     v2Factory: '0xB92598Fa464B96FEC394a17A269Ad18060Ec60B2',
     v3Factory: '0x45DB3eaE624dBcA631A9C6C1406DA0B8F6Fb275A',
@@ -117,8 +119,8 @@ const CHAINS: Record<number, ChainCfg> = {
   // read on-chain 2026-07-25 (WgUSDT=18, USDT0=6).
   988: {
     chainId: 988,
+    name: 'Stable',
     rpcEnvVar: 'WEB3_RPC_988',
-    publicRpc: 'https://stable-mainnet.rpc.sentio.xyz',
     wrappedNative: { address: '0x817997ca8394e26cce3de3a076a4889b27dbf9de', decimals: 18 },
     v2Factory: '0xBe3729d06E3A17F3c7c5ac394c7bCbe138B6EEFA',
     v3Factory: '0xf486e625C892C0739A16A3A49B37fD52374B30CB',
@@ -127,8 +129,8 @@ const CHAINS: Record<number, ChainCfg> = {
   // Sepolia (11155111) — canonical Uniswap stack; no verified stablecoin anchor configured.
   11155111: {
     chainId: 11155111,
+    name: 'Sepolia',
     rpcEnvVar: 'WEB3_RPC_11155111',
-    publicRpc: 'https://ethereum-sepolia-rpc.publicnode.com',
     wrappedNative: { address: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14', decimals: 18 },
     v2Factory: '0xF62c03E08ada871A0bEb309762E260a7a6a880E6',
     v3Factory: '0x0227628f3F023bb0B980b67D528571c95c6DaC1c',
@@ -196,9 +198,16 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 
 // ── low-level helpers ────────────────────────────────────────────────────────
 
+/**
+ * Pricing client — SAME multi-RPC failover ring as the indexers (src/rpc.ts).
+ * This used to be a second, independent single-URL resolver; both resolvers are now
+ * unified so one env override (or one endpoint outage) is learned service-wide.
+ * Precedence: WEB3_RPC_<id> → the friendly alias (e.g. XLAYER_RPC_URL) →
+ * LOCKER_RPC_<id> → the built-in public list. Any of them may be a comma-list.
+ */
 function makeClient(chain: ChainCfg): PublicClient {
-  const url = process.env[chain.rpcEnvVar] || chain.publicRpc
-  return createPublicClient({ transport: http(url, { timeout: 15_000 }) })
+  const urls = resolveRpcUrls(chain.chainId, [chain.rpcEnvVar])
+  return createPublicClient({ transport: failoverHttp(chain.chainId, chain.name, urls) })
 }
 
 /** CREATE2 v2 pair address for (a,b) under a factory. Order-independent (sorts token0<token1). */

@@ -12,7 +12,6 @@ import {
   getPlaywrightRpcUrls,
   getQuicknodeEndpointUrl,
   getUniRpcEndpointUrl,
-  withAlchemyPrimary,
 } from 'uniswap/src/features/chains/evm/rpc'
 import { buildChainTokens } from 'uniswap/src/features/chains/evm/tokens'
 import {
@@ -80,7 +79,7 @@ export const MAINNET_CHAIN_INFO = {
           http: ['https://rpc.mevblocker.io/?referrer=uniswapwallet'],
         },
         [RPCType.Public]: {
-          http: withAlchemyPrimary(UniverseChainId.Mainnet, [getUniRpcEndpointUrl(UniverseChainId.Mainnet)]),
+          http: [getUniRpcEndpointUrl(UniverseChainId.Mainnet)],
         },
         // Default feeds the wallet-connector rpc maps (WalletConnect/Binance read
         // rpcUrls.default.http[0] from a cookieless in-page client), so it must be an
@@ -95,10 +94,7 @@ export const MAINNET_CHAIN_INFO = {
           http: ['https://rpc.ankr.com/eth', 'https://eth-mainnet.public.blastapi.io'],
         },
         [RPCType.Interface]: {
-          http: withAlchemyPrimary(UniverseChainId.Mainnet, [
-            `https://mainnet.infura.io/v3/${config.infuraKey}`,
-            getQuicknodeEndpointUrl(UniverseChainId.Mainnet),
-          ]),
+          http: [`https://mainnet.infura.io/v3/${config.infuraKey}`, getQuicknodeEndpointUrl(UniverseChainId.Mainnet)],
         },
       },
   urlParam: CHAIN_ID_TO_URL_PARAM[UniverseChainId.Mainnet],
@@ -134,6 +130,17 @@ const testnetTokens = buildChainTokens({
   },
 })
 
+// Verified-live public Sepolia RPCs, in failover order (each returns chainId 0xaa36a7 / 11155111).
+// PUBLIC ONLY — no keyed provider (see evm/rpc.ts).
+// ⛔ BLACKLISTED, do not re-add: https://ethereum-sepolia-rpc.publicnode.com — it 403s on
+// eth_getLogs and on archive eth_call, so it works only for `eth_call` at latest and silently
+// breaks log/history reads while looking healthy.
+const SEPOLIA_PUBLIC_RPC_URLS = [
+  'https://sepolia.drpc.org',
+  'https://sepolia.gateway.tenderly.co',
+  'https://11155111.rpc.thirdweb.com',
+]
+
 export const SEPOLIA_CHAIN_INFO = {
   ...sepolia,
   id: UniverseChainId.Sepolia,
@@ -168,35 +175,16 @@ export const SEPOLIA_CHAIN_INFO = {
   networkLayer: NetworkLayer.L1,
   blockTimeMs: 12000,
   pendingTransactionsRetryOptions: undefined,
+  // PUBLIC RPCs ONLY, ordered for client-side failover. HookSwap has no UniRPC gateway
+  // session, so the gateway URL 401s / CORS-fails from the browser (Sepolia is in
+  // PUBLIC_RPC_ONLY_CHAINS) — the perps MarketRegistry directory and every anonymous read
+  // depend on these resolving to real, CORS-enabled endpoints.
   rpcUrls: {
-    [RPCType.Public]: {
-      // HookSwap has no UniRPC gateway session, so the gateway URL 401s / CORS-fails from
-      // the browser (Sepolia is in PUBLIC_RPC_ONLY_CHAINS). Keyed Alchemy (eth-sepolia)
-      // leads when ALCHEMY_API_KEY is set, then real, CORS-enabled public RPCs (both on
-      // the CSP connect-src allowlist) so wallet-less on-chain reads work — the perps
-      // MarketRegistry directory and every anonymous read depend on this.
-      http: withAlchemyPrimary(UniverseChainId.Sepolia, [
-        'https://ethereum-sepolia-rpc.publicnode.com',
-        'https://sepolia.gateway.tenderly.co',
-      ]),
-    },
-    // Default feeds third-party wallet-connector rpc maps — stays UNKEYED.
-    [RPCType.Default]: {
-      http: ['https://sepolia.gateway.tenderly.co'],
-    },
-    [RPCType.Fallback]: {
-      // Trimmed 2026-07-25: rpc.sepolia.org (Apache 404), rpc.sepolia.online and
-      // www.sepoliarpc.space (NXDOMAIN), rpc-sepolia.rockx.com (502) and
-      // rpc.bordel.wtf/sepolia (404) were all dead when probed — they only added
-      // failover latency. These three are verified live.
-      http: withAlchemyPrimary(UniverseChainId.Sepolia, [
-        'https://sepolia.drpc.org',
-        'https://ethereum-sepolia-rpc.publicnode.com',
-      ]),
-    },
-    [RPCType.Interface]: {
-      http: withAlchemyPrimary(UniverseChainId.Sepolia, [`https://sepolia.infura.io/v3/${config.infuraKey}`]),
-    },
+    [RPCType.Public]: { http: SEPOLIA_PUBLIC_RPC_URLS },
+    // Default also feeds third-party wallet-connector rpc maps (cookieless in-page clients).
+    [RPCType.Default]: { http: SEPOLIA_PUBLIC_RPC_URLS },
+    [RPCType.Fallback]: { http: SEPOLIA_PUBLIC_RPC_URLS },
+    [RPCType.Interface]: { http: SEPOLIA_PUBLIC_RPC_URLS },
   },
   spotPriceStablecoinAmountOverride: CurrencyAmount.fromRawAmount(testnetTokens.USDC, 100e6),
   tokens: testnetTokens,

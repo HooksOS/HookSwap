@@ -25,6 +25,7 @@
 import { ethers } from 'ethers'
 import { getProvider, getTokenMeta, getV2Pairs, readV3LiveState, TokenMeta } from '../onchain'
 import { ChainConfig, getChain, supportedChainIds } from '../chains'
+import { isGetLogsBudgetExhausted, MAX_GET_LOGS_RANGE } from '../rpc'
 import { isHookSwapV4Hook } from '../v4Hooks'
 import {
   getCursor,
@@ -67,8 +68,15 @@ import {
   V4_SWAP_TOPIC,
 } from './abis'
 
-/** Blocks per eth_getLogs window. Public RPCs commonly cap ranges; 9_500 matches onchain.ts's v3 scanner. */
-const INDEXER_LOG_CHUNK = 9_500
+/**
+ * Blocks per eth_getLogs window — matches onchain.ts's v3 scanner (both use rpc.ts MAX_GET_LOGS_RANGE).
+ * Lowered from 9_500 → 2_000 on 2026-08-02 when the stack moved to public-only RPC lists: several of the
+ * validated endpoints hard-refuse wider ranges (drpc free plans refuse >10000; XLayer's rpc.xlayer.tech /
+ * xlayerrpc.okx.com cap at 100 blocks; Stable's rpc.stable.xyz / stable.drpc.org cap at 500). A refused
+ * range aborts the pass (`break` below) and the cursor stalls, so the chunk must be safe on EVERY
+ * endpoint the failover can land on. getLogsAdaptive bisects further for the tightest-capped ones.
+ */
+const INDEXER_LOG_CHUNK = MAX_GET_LOGS_RANGE
 
 /** How far back the FIRST scan of a never-seen pool reaches (blocks). Overridable via env. */
 function backfillBlocks(): number {
@@ -186,16 +194,15 @@ async function ingestPool(
     let logs: ethers.providers.Log[]
     try {
       // topic0 = Swap OR Sync (single getLogs call), filtered to this pool address.
-      logs = await provider.getLogs({
-        address: pool,
-        topics: [[SWAP_TOPIC, SYNC_TOPIC]],
-        fromBlock: start,
-        toBlock: end,
-      })
+      // ADAPTIVE: an endpoint the failover lands on may cap ranges tighter than INDEXER_LOG_CHUNK
+      // (live-tested 2026-08-02: HyperEVM's hyperliquid.rpc.blxrbdn.com refuses >1000 blocks; Stable's
+      // rpc.stable.xyz >500; XLayer's rpc.xlayer.tech >100). Bisecting on error makes the backfill
+      // endpoint-agnostic instead of stalling the cursor whenever failover lands on a tighter one.
+      logs = await getLogsAdaptive(provider, { address: pool, topics: [[SWAP_TOPIC, SYNC_TOPIC]] }, start, end)
     } catch (err) {
-      // RPC rejected this range — stop here; cursor stays at the last persisted block so we resume.
-      // eslint-disable-next-line no-console
-      console.warn(`[indexer] chain ${chainId} pool ${pool} getLogs ${start}-${end} failed; resuming next pass`, err)
+      // RPC rejected this range (or the getLogs budget is spent) — stop here; the cursor stays at the
+      // last persisted block so we resume from exactly here next pass.
+      warnScanStopped(`chain ${chainId} pool ${pool}`, start, end, err)
       break
     }
 
@@ -265,6 +272,12 @@ async function getLogsAdaptive(
   try {
     return await provider.getLogs({ ...filter, fromBlock, toBlock })
   } catch (err) {
+    // BUDGET REFUSAL (rpc.ts): nothing was sent, and every sub-range would be refused too — bisecting
+    // would be a hot loop against an empty bucket. Propagate so the caller stops this pass at its last
+    // persisted cursor and resumes next pass (which is already its error policy).
+    if (isGetLogsBudgetExhausted(err)) {
+      throw err
+    }
     if (fromBlock >= toBlock) {
       throw err // single block already — a real failure, let the caller resume next pass
     }
@@ -275,6 +288,22 @@ async function getLogsAdaptive(
     ])
     return a.concat(b)
   }
+}
+
+/**
+ * Log why a chunked scan stopped early. The cursor was already persisted, so every case here is
+ * "resume next pass", never data loss.
+ *
+ * SILENT for an rpc.ts getLogs-budget refusal: that is an EXPECTED, healthy yield, rpc.ts already emits
+ * exactly one throttle line per window, and a starved pass would otherwise print this once per pool —
+ * the per-request spam the budget is supposed to replace.
+ */
+function warnScanStopped(label: string, start: number, end: number, err: unknown): void {
+  if (isGetLogsBudgetExhausted(err)) {
+    return
+  }
+  // eslint-disable-next-line no-console
+  console.warn(`[indexer] ${label} getLogs ${start}-${end} failed; resuming next pass`, err)
 }
 
 /** Resolve the FIRST-scan start block for a factory/PoolManager scan: env override → deployBlock → latest-backfill. */
@@ -322,10 +351,11 @@ async function discoverV3Pools(
     const end = Math.min(start + INDEXER_LOG_CHUNK - 1, latest)
     let logs: ethers.providers.Log[]
     try {
-      logs = await provider.getLogs({ address: factory, topics: [V3_POOL_CREATED_TOPIC], fromBlock: start, toBlock: end })
+      // ADAPTIVE for the same reason as ingestPool: bisect rather than stall when the endpoint the
+      // failover landed on caps ranges tighter than INDEXER_LOG_CHUNK.
+      logs = await getLogsAdaptive(provider, { address: factory, topics: [V3_POOL_CREATED_TOPIC] }, start, end)
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn(`[indexer] chain ${chainId} v3 discovery getLogs ${start}-${end} failed; resuming next pass`, err)
+      warnScanStopped(`chain ${chainId} v3 discovery`, start, end, err)
       break
     }
     for (const log of logs) {
@@ -379,8 +409,7 @@ async function ingestV3Pool(
     try {
       logs = await getLogsAdaptive(provider, { address: pool, topics: [V3_SWAP_TOPIC] }, start, end)
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn(`[indexer] chain ${chainId} v3 pool ${pool} getLogs ${start}-${end} failed; resuming next pass`, err)
+      warnScanStopped(`chain ${chainId} v3 pool ${pool}`, start, end, err)
       break
     }
     await loadBlockTimestamps(provider, logs.map((l) => l.blockNumber), tsCache)
@@ -635,8 +664,7 @@ async function ingestV4ForChain(
         end,
       )
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn(`[indexer] chain ${chainId} v4 PoolManager getLogs ${start}-${end} failed; resuming next pass`, err)
+      warnScanStopped(`chain ${chainId} v4 PoolManager`, start, end, err)
       break
     }
     await loadBlockTimestamps(provider, logs.map((l) => l.blockNumber), tsCache)

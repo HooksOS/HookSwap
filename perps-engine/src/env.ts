@@ -15,6 +15,7 @@
 import { existsSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { resolveRpcList } from "./rpc/endpoints.js";
 
 // Minimal .env loader (no dotenv dep). Loads perps-engine/.env if present, without
 // overriding vars already set in the process environment (systemd/env wins).
@@ -53,7 +54,15 @@ export interface ChainConfig {
   chainId: number;
   /** Optional human label (sepolia / robinhood) for logs. */
   network?: string;
-  /** Resolved RPC URL (rpcUrlEnv override already applied, else literal, else public default). */
+  /**
+   * ORDERED RPC endpoint list for this chain (auto-failover, index 0 first).
+   * Built from, in precedence order: rpcUrlEnv → rpcUrl → rpcFallbackEnv →
+   * rpcFallback → the built-in public list in src/rpc/endpoints.ts. Every source
+   * accepts a COMMA-SEPARATED list as well as a single URL. Blacklisted endpoints
+   * (HTTP 200 + wrong data) are stripped.
+   */
+  rpcUrls: string[];
+  /** First endpoint — kept for logs / back-compat with single-URL callers. */
   rpcUrl: string;
   marketRegistry: `0x${string}`;
   oracleGuard: `0x${string}`;
@@ -65,15 +74,10 @@ export interface ChainConfig {
   gasMode: GasMode;
 }
 
-// Public fallback RPCs (kept in sync with oracle/rpc.ts DEFAULT_RPCS). Used only
-// when a chain entry supplies neither a literal rpcUrl nor an rpcUrlEnv override.
-const DEFAULT_RPCS: Record<number, string> = {
-  11155111: "https://ethereum-sepolia-rpc.publicnode.com",
-  4663: "https://rpc.mainnet.chain.robinhood.com",
-  999: "https://rpc.hyperliquid.xyz/evm",
-  57073: "https://rpc-gel.inkonchain.com",
-  196: "https://rpc.xlayer.tech",
-};
+// NOTE: the per-chain public RPC lists now live in ONE place — src/rpc/endpoints.ts
+// (PUBLIC_RPCS). The old private DEFAULT_RPCS map here (and its duplicates in
+// oracle/rpc.ts + keeper/keeperChain.ts) was a single-URL-per-chain copy that went
+// stale and pinned Sepolia to the blacklisted publicnode endpoint.
 
 /** Normalize a matcher key (read from an env var) to 0x-prefixed 32-byte hex, or "". */
 function normalizeKey(raw: string | undefined): `0x${string}` | "" {
@@ -96,17 +100,26 @@ function resolveChainEntry(e: any, i: number): ChainConfig {
   if (!/^0x[0-9a-fA-F]{40}$/.test(marketRegistry)) throw new Error(`${ctx}.marketRegistry invalid`);
   if (!/^0x[0-9a-fA-F]{40}$/.test(oracleGuard)) throw new Error(`${ctx}.oracleGuard invalid`);
 
-  // RPC precedence: rpcUrlEnv (env var value) > literal rpcUrl > public default.
-  const fromEnv = e?.rpcUrlEnv ? (process.env[String(e.rpcUrlEnv)] || "").trim() : "";
-  const literal = String(e?.rpcUrl || "").trim();
-  const rpcUrl = fromEnv || literal || DEFAULT_RPCS[chainId] || "";
-  if (!rpcUrl) throw new Error(`${ctx}: no rpcUrl (set rpcUrl, rpcUrlEnv, or a known default for ${chainId})`);
+  // RPC precedence (each source may be a single URL OR a comma-separated list):
+  //   rpcUrlEnv → rpcUrls → rpcUrl → rpcFallbackEnv → rpcFallback → PUBLIC_RPCS.
+  // rpcFallback/rpcFallbackEnv were declared in config/chains.json but the engine
+  // used to IGNORE both (only the keeper read them) — they are wired up here now.
+  const rpcUrls = resolveRpcList(chainId, {
+    sources: [
+      e?.rpcUrlEnv ? process.env[String(e.rpcUrlEnv)] : undefined,
+      e?.rpcUrls,
+      e?.rpcUrl,
+      e?.rpcFallbackEnv ? process.env[String(e.rpcFallbackEnv)] : undefined,
+      e?.rpcFallback,
+    ],
+  });
 
   const matcherKeyEnv = String(e?.matcherKeyEnv || "MATCHER_PRIVATE_KEY").trim();
   return {
     chainId,
     network: e?.network ? String(e.network) : undefined,
-    rpcUrl,
+    rpcUrls,
+    rpcUrl: rpcUrls[0],
     marketRegistry: marketRegistry as `0x${string}`,
     oracleGuard: oracleGuard as `0x${string}`,
     matcherKeyEnv,
@@ -135,7 +148,6 @@ function loadChainsConfig(): ChainConfig[] | null {
 }
 
 const LEGACY_CHAIN_ID = Number(process.env.PERPS_CHAIN_ID || 11155111);
-const LEGACY_RPC = (process.env.SEPOLIA_RPC_URL || "https://sepolia.drpc.org").trim();
 const LEGACY_REGISTRY = (process.env.MARKET_REGISTRY ||
   "0xEDE278469694e951676973B7b9e193a98463DAC2").trim() as `0x${string}`;
 const LEGACY_ORACLE_GUARD = (process.env.ORACLE_GUARD ||
@@ -144,11 +156,22 @@ const LEGACY_ORACLE_GUARD = (process.env.ORACLE_GUARD ||
 /** BACKWARD-COMPAT: one chain synthesized from the legacy single-chain env vars. */
 function synthesizeSingleChain(): ChainConfig[] {
   const matcherKeyEnv = "MATCHER_PRIVATE_KEY";
+  // SEPOLIA_RPC_URL / PERPS_RPC_URL / PERPS_RPC_<id> all accept a comma-separated
+  // list; anything they omit is topped up from PUBLIC_RPCS[chainId].
+  const rpcUrls = resolveRpcList(LEGACY_CHAIN_ID, {
+    sources: [
+      process.env.PERPS_RPC_URL,
+      process.env[`PERPS_RPC_${LEGACY_CHAIN_ID}`],
+      process.env.SEPOLIA_RPC_URL,
+      process.env.SEPOLIA_RPC_FALLBACK,
+    ],
+  });
   return [
     {
       chainId: LEGACY_CHAIN_ID,
       network: process.env.PERPS_NETWORK || undefined,
-      rpcUrl: LEGACY_RPC,
+      rpcUrls,
+      rpcUrl: rpcUrls[0],
       marketRegistry: LEGACY_REGISTRY,
       oracleGuard: LEGACY_ORACLE_GUARD,
       matcherKeyEnv,
@@ -168,6 +191,8 @@ export const ENV = {
   /** Legacy single-chain id (first configured chain) — kept for logs/back-compat. */
   chainId: CHAINS[0].chainId,
   rpcUrl: CHAINS[0].rpcUrl,
+  /** First chain's full ordered endpoint list (diagnostics). */
+  rpcUrls: CHAINS[0].rpcUrls,
   marketRegistry: CHAINS[0].marketRegistry,
   oracleGuard: CHAINS[0].oracleGuard,
   /** false = assemble + simulate settleBatch (no broadcast). true = mine it. */

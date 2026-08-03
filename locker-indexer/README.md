@@ -32,10 +32,25 @@ npm run typecheck  # tsc --noEmit
 | `FARMS_TVL_HISTORY_FILE` | `./data/farms-tvl-history.json` | daily farms TVL series file |
 | `VESTING_TVL_HISTORY_FILE` | `./data/vesting-tvl-history.json` | daily vesting locked-value series file |
 | `LOCKER_APP_BASE_URL` | `https://hookswap.org` | app base the `/lock/.../share` page redirects humans to (`<base>/#/lock/:chainId/:id`) |
-| `LOCKER_RPC_<chainId>` / per-chain alias | public RPC | RPC override (e.g. `SEPOLIA_RPC_URL`, `ROBINHOOD_RPC_URL`, `HYPEREVM_RPC_URL`, `INK_RPC_URL`, `MEGAETH_RPC_URL`, `XLAYER_RPC_URL`, `TEMPO_RPC_URL`) |
+| `LOCKER_RPC_<chainId>` / per-chain alias | built-in public list | RPC override, **comma-separated ordered list** (e.g. `SEPOLIA_RPC_URL`, `ROBINHOOD_RPC_URL`, `HYPEREVM_RPC_URL`, `INK_RPC_URL`, `MEGAETH_RPC_URL`, `XLAYER_RPC_URL`, `TEMPO_RPC_URL`, `STABLE_RPC_URL`) |
+| `WEB3_RPC_<chainId>` | — | pricing-side RPC override (checked before the aliases above); also a comma-separated list |
+| `LOCKER_RPC_COOLDOWN_MS` | `60000` | how long a failed endpoint is skipped before retry |
+| `LOCKER_RPC_TIMEOUT_MS` | `15000` | per-request timeout against a single endpoint |
 
 Chains indexed: HyperEVM (999), Ink (57073), MegaETH (4326), XLayer (196),
-Robinhood (4663), Tempo (4217), Sepolia (11155111).
+Robinhood (4663), Tempo (4217), Stable (988), Sepolia (11155111).
+
+### RPC failover
+
+Every chain has an ORDERED list of live-tested **public** endpoints (up to 5) in
+`src/rpc.ts` (`RPC_ENDPOINTS`) — no Alchemy, no keyed endpoints. `src/rpc.ts` is the
+single RPC resolver for the whole service (locks, farms, vesting, launchpad **and**
+pricing). Requests start at the last-known-good endpoint, advance on failure
+(connection error/timeout, HTTP 4xx/5xx, JSON-RPC 429/-32005/-32001/-32601, or a
+capacity/rate-limit message) and wrap around the ring; a failed endpoint is
+cooldown-marked for 60s and one line is logged per failover. A deterministic contract
+revert never triggers failover. `eth_getLogs` ranges are split into ≤2000-block
+requests. Setting any override env var replaces that chain's whole list.
 
 ## Data shapes
 

@@ -12,14 +12,7 @@
 // SECURITY: BOT_PRIVATE_KEY is read from env once and NEVER logged. The bot signs
 // orders (off-chain) and sends at most a few on-chain txs (depositETH / top-up).
 
-import {
-  createPublicClient,
-  createWalletClient,
-  formatEther,
-  getAddress,
-  http,
-  parseEther,
-} from "viem";
+import { formatEther, getAddress, parseEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   EIP712_CANCEL_TYPES,
@@ -28,6 +21,11 @@ import {
   EIP712_ORDER_TYPES,
   PERP_MARKET_ABI,
 } from "../src/abis.js";
+import { resolveRpcList } from "../src/rpc/endpoints.js";
+import {
+  createFailoverPublicClient,
+  createFailoverWalletClient,
+} from "../src/rpc/failover.js";
 
 // ---- Config (env) ----------------------------------------------------------
 
@@ -46,12 +44,19 @@ const ENGINE_URL = (process.env.ENGINE_URL || "https://perps.hookswap.org").repl
 // and was the only thing coupling it to Sepolia. PERPS_RPC_URL is the name to use;
 // PERPS_RPC_<chainId> lets one env file hold several chains, and SEPOLIA_RPC_URL is
 // still honoured last so existing deployments keep working.
-const RPC_URL = (
-  process.env.PERPS_RPC_URL ||
-  process.env[`PERPS_RPC_${CHAIN_ID}`] ||
-  process.env.SEPOLIA_RPC_URL ||
-  "https://sepolia.drpc.org"
-).trim();
+//
+// MULTI-RPC: each of these env vars accepts a COMMA-SEPARATED list as well as a
+// single URL, and whatever they supply is topped up with the validated public list
+// for CHAIN_ID from ../src/rpc/endpoints.ts. Reads fail over automatically; the
+// bot's deposit broadcasts stay pinned to one endpoint (see src/rpc/failover.ts).
+const RPC_URLS = resolveRpcList(CHAIN_ID, {
+  sources: [
+    process.env.PERPS_RPC_URL,
+    process.env[`PERPS_RPC_${CHAIN_ID}`],
+    process.env.SEPOLIA_RPC_URL,
+  ],
+});
+const RPC_URL = RPC_URLS[0];
 const MARKET = getAddress(reqEnv("MARKET") as `0x${string}`);
 // Chainlink ETH/USD (8-decimal answer). Default is the SEPOLIA proxy; every other
 // chain MUST set CHAINLINK_FEED. Verified live 2026-07-25 — Robinhood (4663):
@@ -93,8 +98,11 @@ const CHAINLINK_ABI = [
 // ---- Clients ---------------------------------------------------------------
 
 const account = privateKeyToAccount(reqEnv("BOT_PRIVATE_KEY") as `0x${string}`);
-const publicClient = createPublicClient({ transport: http(RPC_URL) });
-const walletClient = createWalletClient({ account, transport: http(RPC_URL) });
+// Both clients share ONE failover provider (cached by chainId + url list), so the
+// pinned write endpoint and the nonce read that precedes a depositETH broadcast
+// come from the same node.
+const publicClient = createFailoverPublicClient(CHAIN_ID, RPC_URLS, `bot/${CHAIN_ID}`);
+const walletClient = createFailoverWalletClient(account, CHAIN_ID, RPC_URLS, `bot/${CHAIN_ID}`);
 
 let COLLATERAL: `0x${string}` | null = null; // read from /markets on boot
 let depositedOnce = false;
@@ -333,6 +341,7 @@ async function loopOnce(): Promise<void> {
 async function main(): Promise<void> {
   log(`[boot] HookSwapPerps counterparty bot`);
   log(`[boot] engine=${ENGINE_URL} market=${MARKET} bot=${account.address} chainId=${CHAIN_ID}`);
+  log(`[boot] rpc primary=${RPC_URL} fallbacks=${RPC_URLS.length - 1} (${RPC_URLS.join(" > ")})`);
   COLLATERAL = await resolveCollateral();
   log(`[boot] collateral(token)=${COLLATERAL} size=${formatEther(SIZE)} lev=${LEVERAGE_X}x spreadBps=${SPREAD_BPS}`);
 

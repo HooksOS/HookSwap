@@ -14,8 +14,8 @@
 //   resolves USD today). A chain whose RPC fails does not crash the cycle — it is
 //   marked stale and its last-known schedules are retained.
 
-import { createPublicClient, formatUnits, getAddress, http, type PublicClient } from "viem";
-import { CHAINS, MULTICALL3, vestingManager, type ChainConfig } from "../chains.js";
+import { createPublicClient, formatUnits, getAddress, type PublicClient } from "viem";
+import { CHAINS, MULTICALL3, chainTransport, vestingManager, type ChainConfig } from "../chains.js";
 import { ENV } from "../env.js";
 import { priceUsdBatch } from "../pricing.js";
 import { ERC20_META_ABI, VESTING_CHILD_ABI, VESTING_MANAGER_ABI } from "./abi.js";
@@ -221,7 +221,9 @@ async function indexChainVesting(
   manager: `0x${string}`,
   nowSec: number,
 ): Promise<VestingSchedule[]> {
-  const client: PublicClient = createPublicClient({ transport: http(cfg.rpcUrl) });
+  // Multi-RPC failover ring (src/rpc.ts): a 429/dead endpoint transparently
+  // advances to the next public endpoint for this chain.
+  const client: PublicClient = createPublicClient({ transport: chainTransport(cfg) });
 
   // 1) vestingCount() — throws on a dead RPC (→ chain marked stale by caller).
   const count = (await client.readContract({

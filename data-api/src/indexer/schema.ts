@@ -165,6 +165,35 @@ CREATE TABLE IF NOT EXISTS ingest_cursor (
   PRIMARY KEY (chainId, pool)
 );
 
+-- GENERIC scan cursor, keyed by an arbitrary scanKey (NOT a pool address) — for factory/singleton log
+-- scans that are not per-pool. Same contract as ingest_cursor: lastBlock = last block FULLY scanned
+-- (inclusive), so the next pass starts at lastBlock + 1. Added 2026-08-03 so onchain.ts's v3
+-- PoolCreated discovery is INCREMENTAL: it used to rescan its whole span on every cache miss, which
+-- on Robinhood spent up to 190 eth_getLogs per miss and permanently exhausted that endpoint's ~12/60s
+-- getLogs budget (see rpc.ts). With a cursor each pass advances a few chunks and CONVERGES.
+CREATE TABLE IF NOT EXISTS scan_cursor (
+  chainId      INTEGER NOT NULL,
+  scanKey      TEXT    NOT NULL,
+  lastBlock    INTEGER NOT NULL,
+  PRIMARY KEY (chainId, scanKey)
+);
+
+-- Raw PoolCreated discoveries from onchain.ts's v3 factory scan. Needed BECAUSE that scan is now
+-- incremental: a pass only sees the pools created inside the window it scanned, so the previously
+-- discovered ones must persist or every pass would "lose" them. Every row is a real decoded on-chain
+-- PoolCreated log (pool/token0/token1/fee straight from the event) — nothing derived or invented.
+-- Distinct from v3_pools, which is the INDEXER's enriched table (decimals/symbols/tickSpacing) and is
+-- left untouched.
+CREATE TABLE IF NOT EXISTS v3_discovered_pools (
+  chainId      INTEGER NOT NULL,
+  pool         TEXT    NOT NULL,          -- lowercased pool address
+  token0       TEXT    NOT NULL,
+  token1       TEXT    NOT NULL,
+  fee          INTEGER NOT NULL,
+  blockNumber  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (chainId, pool)
+);
+
 -- ============================================================================================
 -- UNISWAP-v3-STYLE pools (every LaunchPad launch is a v3 pool). ADDITIVE — v2 tables untouched.
 -- Price comes from v3_swap_events.sqrtPriceX96 (a v3 pool's BALANCES do not give price); TVL comes
@@ -452,6 +481,72 @@ export function setCursor(db: SqliteDatabase, chainId: number, pool: string, las
     `INSERT INTO ingest_cursor (chainId, pool, lastBlock) VALUES (?,?,?)
      ON CONFLICT(chainId, pool) DO UPDATE SET lastBlock=excluded.lastBlock`,
   ).run(chainId, pool, lastBlock)
+}
+
+// ---------- generic scan cursor (factory / singleton log scans; see scan_cursor DDL) ----------
+
+/**
+ * Read a generic scan cursor (last block FULLY scanned, inclusive), or undefined if never scanned.
+ * `scanKey` namespaces the scan — onchain.ts uses `v3factory:<factoryAddress>` so a factory change
+ * starts a fresh scan instead of silently inheriting an unrelated cursor.
+ */
+export function getScanCursor(db: SqliteDatabase, chainId: number, scanKey: string): number | undefined {
+  const row = db
+    .prepare(`SELECT lastBlock FROM scan_cursor WHERE chainId=? AND scanKey=?`)
+    .get(chainId, scanKey) as { lastBlock: number } | undefined
+  return row?.lastBlock
+}
+
+/**
+ * Persist a generic scan cursor. MONOTONIC: never moves backwards (a concurrent/older pass writing a
+ * lower block must not cause a re-scan of ground already covered — that is exactly the getLogs spend
+ * this cursor exists to avoid).
+ */
+export function setScanCursor(db: SqliteDatabase, chainId: number, scanKey: string, lastBlock: number): void {
+  db.prepare(
+    `INSERT INTO scan_cursor (chainId, scanKey, lastBlock) VALUES (?,?,?)
+     ON CONFLICT(chainId, scanKey) DO UPDATE SET lastBlock=MAX(scan_cursor.lastBlock, excluded.lastBlock)`,
+  ).run(chainId, scanKey, lastBlock)
+}
+
+// ---------- v3 factory discoveries (raw PoolCreated rows; see v3_discovered_pools DDL) ----------
+
+/** A raw decoded `PoolCreated` log. `pool` is stored lowercased; token addresses as emitted. */
+export interface V3DiscoveredPoolRow {
+  chainId: number
+  pool: string
+  token0: string
+  token1: string
+  fee: number
+  blockNumber: number
+}
+
+/** Idempotently persist v3 pools discovered by a factory log scan. Returns rows newly inserted. */
+export function upsertV3DiscoveredPools(db: SqliteDatabase, rows: V3DiscoveredPoolRow[]): number {
+  if (rows.length === 0) {
+    return 0
+  }
+  const stmt = db.prepare(
+    `INSERT INTO v3_discovered_pools (chainId, pool, token0, token1, fee, blockNumber)
+     VALUES (?,?,?,?,?,?)
+     ON CONFLICT(chainId, pool) DO UPDATE SET
+       token0=excluded.token0, token1=excluded.token1, fee=excluded.fee, blockNumber=excluded.blockNumber`,
+  )
+  const insertAll = db.transaction((batch: V3DiscoveredPoolRow[]) => {
+    let inserted = 0
+    for (const r of batch) {
+      inserted += stmt.run(r.chainId, r.pool.toLowerCase(), r.token0, r.token1, r.fee, r.blockNumber).changes
+    }
+    return inserted
+  })
+  return insertAll(rows) as number
+}
+
+/** Every v3 pool discovered so far on a chain (the union across all incremental scan passes). */
+export function getV3DiscoveredPools(db: SqliteDatabase, chainId: number): V3DiscoveredPoolRow[] {
+  return db
+    .prepare(`SELECT chainId, pool, token0, token1, fee, blockNumber FROM v3_discovered_pools WHERE chainId=?`)
+    .all(chainId) as V3DiscoveredPoolRow[]
 }
 
 // ---------- transaction/activity reads (ListTransactions / GetTransaction) ----------

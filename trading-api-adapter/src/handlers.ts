@@ -5,7 +5,8 @@
 
 import { randomUUID } from 'crypto'
 import { ethers } from 'ethers'
-import { ChainConfig, getChain, isSupportedChain, resolveRpcUrl } from './chains'
+import { ChainConfig, getChain, isSupportedChain, resolveRpcUrls } from './chains'
+import { createFailoverProvider } from './rpc'
 import { createRoutingProvider } from './routingClient'
 import { toTradingApiQuoteResponse } from './translate'
 import {
@@ -216,12 +217,17 @@ const ERC20_ALLOWANCE_ABI = [
   'function approve(address spender, uint256 amount) returns (bool)',
 ]
 
-/** One JsonRpcProvider per chain, reused across requests (avoids re-handshaking each call). */
+/**
+ * One provider per chain, reused across requests (avoids re-handshaking each call). Multi-endpoint
+ * auto-failover comes from src/rpc.ts: the allowance `eth_call` walks the chain's ordered public RPC
+ * list, so a rate-limited endpoint can no longer make /v1/check_approval fail (which would block every
+ * swap on that chain).
+ */
 const approvalProviders = new Map<number, ethers.providers.JsonRpcProvider>()
 function getApprovalProvider(chain: ChainConfig): ethers.providers.JsonRpcProvider {
   let p = approvalProviders.get(chain.chainId)
   if (!p) {
-    p = new ethers.providers.JsonRpcProvider(resolveRpcUrl(chain), chain.chainId)
+    p = createFailoverProvider(resolveRpcUrls(chain), chain.chainId, `${chain.chainId} (${chain.name})`)
     approvalProviders.set(chain.chainId, p)
   }
   return p

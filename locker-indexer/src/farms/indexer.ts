@@ -11,8 +11,8 @@
 //   today) or the farm has zero stake. A chain whose RPC fails does not crash the
 //   cycle — it is marked stale and its last-known farms are retained.
 
-import { createPublicClient, formatUnits, getAddress, http, type PublicClient } from "viem";
-import { CHAINS, MULTICALL3, farmFactories, type ChainConfig } from "../chains.js";
+import { createPublicClient, formatUnits, getAddress, type PublicClient } from "viem";
+import { CHAINS, MULTICALL3, chainTransport, farmFactories, type ChainConfig } from "../chains.js";
 import { ENV } from "../env.js";
 import { priceUsdBatch } from "../pricing.js";
 import { ERC20_META_ABI, STAKING_REWARDS_ABI, STAKING_REWARDS_FACTORY_ABI } from "./abi.js";
@@ -211,7 +211,9 @@ async function indexChainFarms(
   factories: `0x${string}`[],
   nowSec: number,
 ): Promise<Farm[]> {
-  const client: PublicClient = createPublicClient({ transport: http(cfg.rpcUrl) });
+  // Multi-RPC failover ring (src/rpc.ts): a 429/dead endpoint transparently
+  // advances to the next public endpoint for this chain.
+  const client: PublicClient = createPublicClient({ transport: chainTransport(cfg) });
 
   // 1) allFarms() on EVERY configured factory; union the children (first factory
   //    to list a farm owns it). A factory that reverts is best-effort skipped —

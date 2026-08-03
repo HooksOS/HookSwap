@@ -1,6 +1,6 @@
 import { SessionGateSource, type Session } from '@universe/sessions'
 import { logger } from 'utilities/src/logger/logger'
-import { createPublicClient, defineChain, http, PublicClient, Transport, walletActions } from 'viem'
+import { createPublicClient, defineChain, fallback, http, PublicClient, Transport, walletActions } from 'viem'
 import { createUniRpcTransportFactory } from './createUniRpcTransport'
 import { SignerInfo } from './FlashbotsCommon'
 import { createFlashbotsRpcClient } from './FlashbotsRpcClient'
@@ -64,6 +64,11 @@ export function createViemClientFactory(ctx: CreateViemClientFactoryCtx): Create
       // earlier versions sniffed for header presence, which was an implicit
       // contract that any legacy provider with static headers could break.
       let baseTransport: Transport
+      // Set when `baseTransport` already emits observer events per inner endpoint
+      // (the fallback path wraps each URL individually so telemetry attributes the
+      // failure to the endpoint that actually failed); skips the outer wrapper so
+      // requests are not double-counted.
+      let isObservable = false
       if (rpcConfig.isUniRpc) {
         const uniRpcTransportConfig = { rpcUrl: rpcConfig.rpcUrl, headers: rpcConfig.headers ?? {} }
         const { getRequestHeaders } = rpcConfig
@@ -88,18 +93,38 @@ export function createViemClientFactory(ctx: CreateViemClientFactoryCtx): Create
             })
           : uniRpcTransport
       } else {
-        baseTransport = http(rpcConfig.rpcUrl, {
-          fetchOptions: rpcConfig.headers ? { headers: rpcConfig.headers } : undefined,
-        })
+        const fetchOptions = rpcConfig.headers ? { headers: rpcConfig.headers } : undefined
+        const urls = [rpcConfig.rpcUrl, ...(rpcConfig.fallbackRpcUrls ?? [])]
+        if (urls.length > 1) {
+          // Public reads get real client-side failover across the chain's ordered
+          // public endpoints — a dead or rate-limited primary must not take the chain
+          // down. viem's `fallback` builds each inner transport with retryCount 0 and
+          // advances on any error that isn't a user rejection / execution revert, so a
+          // 429 moves straight to the next endpoint.
+          baseTransport = fallback(
+            urls.map((url) =>
+              createObservableTransport({
+                baseTransportFactory: http(url, { fetchOptions }),
+                observer: getRpcObserver(),
+                meta: { chainId: input.chainId, url },
+              }),
+            ),
+          )
+          isObservable = true
+        } else {
+          baseTransport = http(rpcConfig.rpcUrl, { fetchOptions })
+        }
       }
 
       return createPublicClient({
         chain: viemChain,
-        transport: createObservableTransport({
-          baseTransportFactory: baseTransport,
-          observer: getRpcObserver(),
-          meta: { chainId: input.chainId, url: rpcConfig.rpcUrl },
-        }),
+        transport: isObservable
+          ? baseTransport
+          : createObservableTransport({
+              baseTransportFactory: baseTransport,
+              observer: getRpcObserver(),
+              meta: { chainId: input.chainId, url: rpcConfig.rpcUrl },
+            }),
       }).extend(walletActions)
     } catch (error) {
       logger.error(error, {

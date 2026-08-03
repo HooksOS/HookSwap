@@ -1,27 +1,29 @@
-// Per-chain config: the HookSwapTokenLockerManager address + an RPC endpoint.
+// Per-chain config: the HookSwapTokenLockerManager address + its RPC endpoint ring.
 //
-// Manager addresses are verified against contracts/locker deployments. RPC defaults
-// are the public endpoints already used by the HookSwap interface chain-info files
-// (packages/uniswap/src/features/chains/evm/info/*.ts). Each RPC is env-overridable
-// via LOCKER_RPC_<chainId> (or the friendlier alias listed per chain). A chain whose
-// RPC does not respond is reported unreachable — never faked.
+// Manager addresses are verified against contracts/locker deployments. RPCs are the
+// live-tested PUBLIC endpoint lists in src/rpc.ts (RPC_ENDPOINTS) — 1-6 per chain,
+// tried in order with auto-failover + cooldown. No Alchemy / no keyed endpoints.
+// Every list is env-overridable with a COMMA-SEPARATED list via the friendly alias
+// (e.g. XLAYER_RPC_URL) or LOCKER_RPC_<chainId>. A chain whose whole ring fails is
+// reported unreachable — never faked.
+
+import { failoverHttp, resolveRpcUrls } from "./rpc.js";
 
 export interface ChainConfig {
   chainId: number;
   name: string;
   /** HookSwapTokenLockerManager address on this chain. */
   manager: `0x${string}`;
-  /** Resolved RPC URL (env override applied). */
+  /** Primary RPC URL (first of the ring) — display/status only. */
   rpcUrl: string;
+  /** Full ordered failover ring (env override applied). */
+  rpcUrls: string[];
 }
 
 interface ChainDef {
   chainId: number;
   name: string;
   manager: `0x${string}`;
-  defaultRpc: string;
-  /** Extra env var names checked (in order) before LOCKER_RPC_<chainId>. */
-  rpcEnv: string[];
 }
 
 const DEFS: ChainDef[] = [
@@ -29,43 +31,31 @@ const DEFS: ChainDef[] = [
     chainId: 999,
     name: "HyperEVM",
     manager: "0x7EFFe9DD68035f43ad43aE6C31bc1a47Ab4579D0",
-    defaultRpc: "https://rpc.hyperliquid.xyz/evm",
-    rpcEnv: ["HYPEREVM_RPC_URL"],
   },
   {
     chainId: 57073,
     name: "Ink",
     manager: "0x86426094d82bC1fd40F0901965b23D30837Dc66b",
-    defaultRpc: "https://rpc-gel.inkonchain.com",
-    rpcEnv: ["INK_RPC_URL"],
   },
   {
     chainId: 4326,
     name: "MegaETH",
     manager: "0x35dB40f22143651159056285E92c113ECE65E7e2",
-    defaultRpc: "https://mainnet.megaeth.com/rpc",
-    rpcEnv: ["MEGAETH_RPC_URL"],
   },
   {
     chainId: 196,
     name: "XLayer",
     manager: "0x35dB40f22143651159056285E92c113ECE65E7e2",
-    defaultRpc: "https://rpc.xlayer.tech",
-    rpcEnv: ["XLAYER_RPC_URL"],
   },
   {
     chainId: 4663,
     name: "Robinhood",
     manager: "0x35dB40f22143651159056285E92c113ECE65E7e2",
-    defaultRpc: "https://rpc.mainnet.chain.robinhood.com",
-    rpcEnv: ["ROBINHOOD_RPC_URL"],
   },
   {
     chainId: 4217,
     name: "Tempo",
     manager: "0x86426094d82bC1fd40F0901965b23D30837Dc66b",
-    defaultRpc: "https://rpc.tempo.xyz",
-    rpcEnv: ["TEMPO_RPC_URL"],
   },
   {
     // Stable (988) was missing here while data-api DID index it — the two services
@@ -75,33 +65,41 @@ const DEFS: ChainDef[] = [
     chainId: 988,
     name: "Stable",
     manager: "0x250c3448278f7b71e3e9b641f2efeb6074820e25",
-    defaultRpc: "https://stable-mainnet.rpc.sentio.xyz",
-    rpcEnv: ["STABLE_RPC_URL"],
   },
   {
     chainId: 11155111,
     name: "Sepolia",
     manager: "0xAa1f5Bd529Be345e7FB77934554112E5ecd7D7f3",
-    defaultRpc: "https://ethereum-sepolia-rpc.publicnode.com",
-    rpcEnv: ["SEPOLIA_RPC_URL"],
   },
 ];
 
-function resolveRpc(def: ChainDef): string {
-  for (const name of [...def.rpcEnv, `LOCKER_RPC_${def.chainId}`]) {
-    const v = process.env[name];
-    if (v && v.trim()) return v.trim();
-  }
-  return def.defaultRpc;
-}
-
 /** The active chain set (RPC env overrides applied at load). */
-export const CHAINS: ChainConfig[] = DEFS.map((d) => ({
-  chainId: d.chainId,
-  name: d.name,
-  manager: d.manager,
-  rpcUrl: resolveRpc(d),
-}));
+export const CHAINS: ChainConfig[] = DEFS.map((d) => {
+  // Single shared resolver (src/rpc.ts): friendly alias → LOCKER_RPC_<id> → the
+  // built-in public list. Each override may be a comma-separated ordered list.
+  const rpcUrls = resolveRpcUrls(d.chainId);
+  if (rpcUrls.length === 0) {
+    console.error(
+      `[chains] chain ${d.chainId} (${d.name}) has NO RPC endpoints configured — it will report unreachable.`,
+    );
+  }
+  return {
+    chainId: d.chainId,
+    name: d.name,
+    manager: d.manager,
+    rpcUrl: rpcUrls[0] ?? "",
+    rpcUrls,
+  };
+});
+
+/**
+ * A viem client for one chain, backed by the whole failover ring. Every indexer
+ * (locks / farms / vesting / launchpad) MUST build its client through this so a
+ * dead or rate-limited endpoint transparently advances to the next one.
+ */
+export function chainTransport(cfg: ChainConfig) {
+  return failoverHttp(cfg.chainId, cfg.name, cfg.rpcUrls);
+}
 
 export function chainName(chainId: number): string {
   return CHAINS.find((c) => c.chainId === chainId)?.name ?? `chain-${chainId}`;

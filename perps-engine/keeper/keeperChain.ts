@@ -10,21 +10,24 @@
 // The keeper uses a DEDICATED key per chain (separate from the engine matcher / bot)
 // so keeper txs (updatePrice / settleFundingBatch / liquidate) never collide with the
 // engine's settleBatch nonce. Sends are serialized PER CHAIN (independent chains run
-// in parallel; a chain's own nonces never collide). Reads fall back to a secondary RPC.
+// in parallel; a chain's own nonces never collide).
+//
+// RPC: reads auto-fail over across an ORDERED LIST of public endpoints (was a single
+// primary + single fallback). The list comes from src/rpc/endpoints.ts; the transport
+// from src/rpc/failover.ts. WRITES (liquidate / updatePrice / settleFundingBatch) stay
+// PINNED to one endpoint and are never re-broadcast elsewhere — see the WRITE SAFETY
+// block in src/rpc/failover.ts.
 
 import { existsSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import {
-  createPublicClient,
-  createWalletClient,
-  http,
-  type Account,
-  type Hash,
-  type PublicClient,
-  type WalletClient,
-} from "viem";
+import { type Account, type Hash, type PublicClient, type WalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { resolveRpcList } from "../src/rpc/endpoints.js";
+import {
+  createFailoverPublicClient,
+  createFailoverWalletClient,
+} from "../src/rpc/failover.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -87,20 +90,24 @@ export interface KeeperChainCtx {
   marketRegistry: `0x${string}`;
   oracleGuard: `0x${string}`;
   gasMode: GasMode;
+  /** ORDERED endpoint list this chain fails over across. */
+  rpcUrls: string[];
+  /**
+   * Failover-backed read client (tries every endpoint in `rpcUrls`).
+   * NOTE: `fallbackClient` is the SAME client now — the failover is inside the
+   * transport, so a separate "secondary" client is redundant. Kept as a field so
+   * existing call sites compile unchanged.
+   */
   primaryClient: PublicClient;
   fallbackClient: PublicClient;
   keeperAccount: Account | null;
   walletClient: WalletClient | null;
 }
 
-// Public fallback RPCs (kept in sync with oracle/rpc.ts DEFAULT_RPCS).
-const DEFAULT_RPCS: Record<number, string> = {
-  11155111: "https://ethereum-sepolia-rpc.publicnode.com",
-  4663: "https://rpc.mainnet.chain.robinhood.com",
-  999: "https://rpc.hyperliquid.xyz/evm",
-  57073: "https://rpc-gel.inkonchain.com",
-  196: "https://rpc.xlayer.tech",
-};
+// NOTE: the per-chain endpoint LISTS live in src/rpc/endpoints.ts (PUBLIC_RPCS).
+// The old private single-URL DEFAULT_RPCS map that used to sit here is gone — it
+// duplicated (and drifted from) the engine's and the oracle's copies, and pinned
+// Sepolia to the now-blacklisted publicnode endpoint.
 
 function normalizeKey(raw: string | undefined): `0x${string}` | "" {
   const k = (raw || "").trim().replace(/^0x/i, "");
@@ -118,20 +125,21 @@ function normalizeGasMode(v: unknown, dflt: GasMode): GasMode {
 function buildCtx(e: {
   chainId: number;
   network?: string;
-  rpcUrl: string;
-  rpcFallback?: string;
+  /** ORDERED endpoint list (already resolved + blacklist-filtered). */
+  rpcUrls: string[];
   marketRegistry: `0x${string}`;
   oracleGuard: `0x${string}`;
   gasMode: GasMode;
   keeperKey: `0x${string}` | "";
 }): KeeperChainCtx {
-  const primaryClient: PublicClient = createPublicClient({ transport: http(e.rpcUrl) });
-  const fallbackClient: PublicClient = createPublicClient({
-    transport: http(e.rpcFallback || e.rpcUrl),
-  });
+  const label = e.network ? `${e.network}/${e.chainId}` : `keeper/${e.chainId}`;
+  // ONE shared FailoverProvider per (chain, url list) — the read client and the
+  // wallet client use the same instance so the pinned write endpoint (and the
+  // nonce read that precedes each broadcast) stay on one consistent node.
+  const client: PublicClient = createFailoverPublicClient(e.chainId, e.rpcUrls, label);
   const keeperAccount: Account | null = e.keeperKey ? privateKeyToAccount(e.keeperKey) : null;
   const walletClient: WalletClient | null = keeperAccount
-    ? createWalletClient({ account: keeperAccount, transport: http(e.rpcUrl) })
+    ? createFailoverWalletClient(keeperAccount, e.chainId, e.rpcUrls, label)
     : null;
   return {
     chainId: e.chainId,
@@ -139,18 +147,31 @@ function buildCtx(e: {
     marketRegistry: e.marketRegistry,
     oracleGuard: e.oracleGuard,
     gasMode: e.gasMode,
-    primaryClient,
-    fallbackClient,
+    rpcUrls: e.rpcUrls,
+    primaryClient: client,
+    // Same client — failover now lives inside the transport (N endpoints), so the
+    // old "one spare client" pattern is subsumed.
+    fallbackClient: client,
     keeperAccount,
     walletClient,
   };
 }
 
-function resolveRpc(chainId: number, rpcUrlEnv: string | undefined, rpcUrl: string | undefined): string {
-  const fromEnv = rpcUrlEnv ? (process.env[rpcUrlEnv] || "").trim() : "";
-  const url = fromEnv || (rpcUrl || "").trim() || DEFAULT_RPCS[chainId] || "";
-  if (!url) throw new Error(`keeper: no RPC for chainId ${chainId}`);
-  return url;
+/**
+ * Ordered endpoint list for a keeper chain. Every source may be a single URL or a
+ * COMMA-SEPARATED list; precedence rpcUrlEnv → rpcUrls → rpcUrl → rpcFallbackEnv →
+ * rpcFallback → the built-in PUBLIC_RPCS list.
+ */
+function resolveRpcUrls(chainId: number, e: any): string[] {
+  return resolveRpcList(chainId, {
+    sources: [
+      e?.rpcUrlEnv ? process.env[String(e.rpcUrlEnv)] : undefined,
+      e?.rpcUrls,
+      e?.rpcUrl,
+      e?.rpcFallbackEnv ? process.env[String(e.rpcFallbackEnv)] : undefined,
+      e?.rpcFallback,
+    ],
+  });
 }
 
 function loadChainsFromConfig(): KeeperChainCtx[] | null {
@@ -170,10 +191,7 @@ function loadChainsFromConfig(): KeeperChainCtx[] | null {
       return buildCtx({
         chainId,
         network: e?.network ? String(e.network) : undefined,
-        rpcUrl: resolveRpc(chainId, e?.rpcUrlEnv, e?.rpcUrl),
-        rpcFallback: e?.rpcFallbackEnv
-          ? (process.env[String(e.rpcFallbackEnv)] || "").trim() || String(e?.rpcFallback || "").trim()
-          : String(e?.rpcFallback || "").trim(),
+        rpcUrls: resolveRpcUrls(chainId, e),
         marketRegistry: String(e?.marketRegistry).trim() as `0x${string}`,
         oracleGuard: String(e?.oracleGuard).trim() as `0x${string}`,
         gasMode: normalizeGasMode(e?.gasMode, "eip1559"),
@@ -191,8 +209,16 @@ function synthesizeSingleChain(): KeeperChainCtx[] {
     buildCtx({
       chainId,
       network: process.env.PERPS_NETWORK || undefined,
-      rpcUrl: (process.env.SEPOLIA_RPC_URL || DEFAULT_RPCS[chainId] || "https://sepolia.drpc.org").trim(),
-      rpcFallback: (process.env.SEPOLIA_RPC_FALLBACK || "https://1rpc.io/sepolia").trim(),
+      // All of these accept a comma-separated list; anything they omit is topped
+      // up from PUBLIC_RPCS[chainId].
+      rpcUrls: resolveRpcList(chainId, {
+        sources: [
+          process.env.PERPS_RPC_URL,
+          process.env[`PERPS_RPC_${chainId}`],
+          process.env.SEPOLIA_RPC_URL,
+          process.env.SEPOLIA_RPC_FALLBACK,
+        ],
+      }),
       marketRegistry: (process.env.MARKET_REGISTRY ||
         "0xEDE278469694e951676973B7b9e193a98463DAC2").trim() as `0x${string}`,
       oracleGuard: (process.env.ORACLE_GUARD ||
@@ -220,7 +246,11 @@ export function log(...args: unknown[]): void {
   console.log(new Date().toISOString(), ...args);
 }
 
-/** Read on a chain with a single fallback-RPC retry on transient/rate-limit failures. */
+/**
+ * Read on a chain. Endpoint failover is now handled INSIDE the transport (it walks
+ * the whole ordered endpoint list, cooling down failures), so this is a thin
+ * wrapper: one extra whole-list retry for a read that still failed everywhere.
+ */
 export async function read<T>(chainId: number, fn: (c: PublicClient) => Promise<T>): Promise<T> {
   const ctx = getKeeperCtx(chainId);
   try {
@@ -242,13 +272,45 @@ export interface SendResult {
   txHash: Hash | null;
   mined: boolean;
   reason: string;
+  /**
+   * True when the broadcast failed in a way that leaves it UNKNOWN whether the tx
+   * reached the mempool (timeout / socket / HTTP error) rather than being
+   * definitively rejected by the node. The keeper does NOT resend in that case —
+   * the next loop iteration re-simulates and re-reads on-chain state first.
+   */
+  ambiguous?: boolean;
 }
 
+/**
+ * A node-side gas/balance rejection is NOT a contract revert, but viem reports it as one.
+ *
+ * Real case (Sepolia, 2026-08-03): the keeper wallet held 0.000075 ETH and could not pay for a
+ * 153k-gas tx. `eth_call` succeeded; only `eth_estimateGas` WITH maxFeePerGas failed, and the RPCs
+ * disagreed on how to say so — drpc `-32003 "out of gas: gas required exceeds"`, tenderly and
+ * thirdweb a bare `code 3 "execution reverted"` with NO revert data. viem wrapped all three as
+ * `ContractFunctionRevertedError`, so the old code below (which fell through to `cause.name`)
+ * printed "ContractFunctionRevertedError" once a minute for 13 days while the actual contract call
+ * was fine. That sent an operator hunting a contract bug that did not exist.
+ *
+ * Rule: only call it a revert when there is decodable revert DATA. An empty-data "revert" is the
+ * node refusing the transaction, so surface the underlying message instead. Chain-agnostic — the
+ * same misreport would occur on Robinhood.
+ */
 export function shortReason(e: any): string {
-  const name = e?.cause?.data?.errorName || e?.data?.errorName || e?.cause?.name;
-  if (name) return String(name);
-  const s = e?.shortMessage || e?.details || e?.message || String(e);
-  return String(s).replace(/\s+/g, " ").trim().slice(0, 200);
+  const decoded = e?.cause?.data?.errorName || e?.data?.errorName;
+  if (decoded) return String(decoded);
+
+  const detail = String(
+    e?.cause?.details || e?.details || e?.cause?.shortMessage || e?.shortMessage || e?.message || e,
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (/insufficient funds|out of gas|gas required exceeds|exceeds .*balance|max fee per gas less than/i.test(detail)) {
+    return `INSUFFICIENT_KEEPER_BALANCE: ${detail.slice(0, 160)}`;
+  }
+  // No decodable revert data → do NOT report viem's class name as if it were a contract error.
+  return detail.slice(0, 200) || String(e?.cause?.name || e?.name || "UnknownError");
 }
 
 /** Per-chain gas fields: legacy → gasPrice; eip1559 → maxFeePerGas/maxPriorityFeePerGas. */
@@ -268,6 +330,14 @@ async function gasOverrides(ctx: KeeperChainCtx): Promise<Record<string, bigint>
 /**
  * Simulate-then-send a write on `chainId`, serialized against every other send on THAT
  * chain, with per-chain gas. Returns a structured result; NEVER throws (loop-safe).
+ *
+ * ⚠️ WRITE SAFETY: the broadcast itself (eth_sendRawTransaction) is pinned to ONE
+ * RPC endpoint and attempted exactly once — the failover transport never re-sends it
+ * on a different endpoint (src/rpc/failover.ts). The pending-nonce read that viem
+ * performs immediately before the broadcast is served from that SAME pinned endpoint.
+ * A failed send returns { mined:false } (with `ambiguous` set when the outcome is
+ * unknown) and is NOT retried here; the next keeper loop re-simulates against fresh
+ * on-chain state, so a tx that actually landed is detected rather than duplicated.
  */
 export function send(
   chainId: number,
@@ -290,6 +360,41 @@ export function send(
         args: args as any,
       });
       const gas = await gasOverrides(ctx);
+
+      // Balance preflight. A keeper that cannot pay for gas fails inside writeContract's
+      // estimateGas, and the RPCs disagree on how they say so — drpc returns
+      // "out of gas: gas required exceeds", while tenderly and thirdweb return a bare
+      // "execution reverted" with NO revert data. Sniffing the message is therefore
+      // endpoint-dependent and unreliable; checking the balance is not.
+      // Real incident (Sepolia): this wallet sat at 0.000075 ETH for 13.6 days emitting a
+      // revert-shaped error every 60s while the contract call itself was fine.
+      try {
+        const [balance, gasEstimate] = await Promise.all([
+          ctx.primaryClient.getBalance({ address: account.address }),
+          ctx.primaryClient.estimateContractGas({
+            account,
+            address,
+            abi,
+            functionName,
+            args: args as any,
+          } as any),
+        ]);
+        const unitPrice = (gas.maxFeePerGas ?? gas.gasPrice ?? 0n) as bigint;
+        const needed = gasEstimate * unitPrice;
+        if (unitPrice > 0n && balance < needed) {
+          return {
+            txHash: null,
+            mined: false,
+            reason:
+              `INSUFFICIENT_KEEPER_BALANCE: ${account.address} has ${balance} wei, ` +
+              `needs ~${needed} wei (${gasEstimate} gas x ${unitPrice} wei) — fund this wallet`,
+          };
+        }
+      } catch {
+        // Preflight is advisory only: if the estimate itself fails, fall through and let the
+        // real send produce the authoritative error rather than blocking on a probe.
+      }
+
       const hash = await wallet.writeContract({ ...(request as any), ...gas });
       const receipt = await ctx.primaryClient.waitForTransactionReceipt({
         hash,
@@ -300,8 +405,47 @@ export function send(
         mined: receipt.status === "success",
         reason: receipt.status === "success" ? "MINED" : "REVERTED_ONCHAIN",
       };
-    } catch (e) {
-      return { txHash: null, mined: false, reason: shortReason(e) };
+    } catch (e: any) {
+      // `hookswapSendAmbiguous` is tagged by the failover transport when the
+      // broadcast outcome is unknown (the tx may still be in a mempool).
+      const ambiguous = e?.hookswapSendAmbiguous === true;
+      if (ambiguous) {
+        log(
+          `[keeper] chain=${chainId} ${functionName} broadcast AMBIGUOUS on ` +
+            `${e?.hookswapRpcEndpoint || "?"} — NOT resending; next loop re-checks on-chain state`,
+        );
+      }
+      // A data-less "execution reverted" is ambiguous between a real revert and the node
+      // refusing the tx on funds. The pre-send preflight above can itself fail (RPC 429,
+      // estimate error), so classify here too, where we always get an answer: read the
+      // balance and compare against what this tx would cost. Endpoint-independent, unlike
+      // message sniffing (drpc says "out of gas: gas required exceeds"; tenderly and
+      // thirdweb say a bare "execution reverted" for the identical condition).
+      const reason = shortReason(e);
+      if (/execution reverted|out of gas|insufficient funds|gas required exceeds/i.test(reason)) {
+        try {
+          const unitPrice = ((await gasOverrides(ctx)) as any).maxFeePerGas
+            ?? ((await gasOverrides(ctx)) as any).gasPrice
+            ?? 0n;
+          const balance = await ctx.primaryClient.getBalance({ address: account.address });
+          // 153k gas is the measured cost of settleFundingBatch(5 pairs); use it as a floor
+          // so we can classify even when estimateGas is the thing that failed.
+          const needed = 153_168n * (unitPrice as bigint);
+          if ((unitPrice as bigint) > 0n && balance < needed) {
+            return {
+              txHash: null,
+              mined: false,
+              ambiguous,
+              reason:
+                `INSUFFICIENT_KEEPER_BALANCE: ${account.address} has ${balance} wei, needs ` +
+                `~${needed} wei — fund this wallet (underlying: ${reason.slice(0, 80)})`,
+            };
+          }
+        } catch {
+          // fall through to the raw reason
+        }
+      }
+      return { txHash: null, mined: false, reason, ambiguous };
     }
   };
   const prev = sendChains.get(chainId) ?? Promise.resolve();

@@ -7,17 +7,29 @@
  *   - documentation / sanity checks
  *   - the direct-SOR-embed mode (implemented in routingClient.ts/embedRouter.ts) which needs factory/quoter/router
  *
- * RPC URLs are read from env (see config/rpc.example.env). Public endpoints are the
- * defaults; Reggie replaces with hosted (Alchemy/QuickNode/etc) URLs + keys.
+ * RPC URLs are read from env (see config/rpc.example.env) and fall back to the per-chain `publicRpcs`
+ * list below. PUBLIC RPCs ONLY — no Alchemy/hosted keys (Reggie, 2026-08-02: the single Alchemy key went
+ * over quota and 429'd every chain at once, taking all chain reads down). Every JSON-RPC call auto-fails
+ * over down the list — see src/rpc.ts for the failover contract and the ⛔ blacklist of endpoints that
+ * answer HTTP 200 with wrong data.
  */
+
+import { parseRpcList } from './rpc'
 
 export interface ChainConfig {
   chainId: number
   name: string
-  /** env var this adapter reads for the RPC URL (falls back to `publicRpc`). */
+  /**
+   * Env var this adapter reads for the RPC endpoint(s). Accepts ONE url or a COMMA-SEPARATED list;
+   * when unset/empty the built-in `publicRpcs` list is used.
+   */
   rpcEnvVar: string
-  /** public fallback RPC (works but rate-limited; replace with hosted). */
-  publicRpc: string
+  /**
+   * ORDERED list of public RPC endpoints for this chain (index 0 first, then failover down the list,
+   * wrapping around). Every URL was LIVE-TESTED 2026-08-02. Do NOT add untested endpoints, and never
+   * add anything from rpc.ts's BLACKLISTED_RPCS.
+   */
+  publicRpcs: string[]
   nativeSymbol: string
   nativeDecimals: number
   /** wrapped-native token (WETH9-compatible). Real, static metadata. */
@@ -84,7 +96,9 @@ export const CHAINS: Record<number, ChainConfig> = {
     chainId: 4326,
     name: 'megaeth',
     rpcEnvVar: 'WEB3_RPC_4326',
-    publicRpc: 'https://mainnet.megaeth.com/rpc',
+    // Live-tested 2026-08-02. NOT included: megaeth.blockscout.com/api/eth-rpc (blacklisted — silently
+    // drops logs + caps results at 1000 with no error).
+    publicRpcs: ['https://mainnet.megaeth.com/rpc', 'https://megaeth.drpc.org', 'https://4326.rpc.thirdweb.com'],
     nativeSymbol: 'ETH',
     nativeDecimals: 18,
     wrappedNative: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
@@ -110,7 +124,11 @@ export const CHAINS: Record<number, ChainConfig> = {
     chainId: 4663,
     name: 'robinhood',
     rpcEnvVar: 'WEB3_RPC_4663',
-    publicRpc: 'https://rpc.mainnet.chain.robinhood.com',
+    // ⚠️ ROBINHOOD HAS EXACTLY ONE WORKING PUBLIC ENDPOINT (live-tested 2026-08-02). Do NOT add others:
+    // `robinhood.drpc.org` answers eth_chainId correctly then "does not exist" on every other method, and
+    // `robinhoodchain.blockscout.com/api/eth-rpc` returns HTTP 429 as `result:null` with no `error` field.
+    // Both are in rpc.ts BLACKLISTED_RPCS. There is no failover on this chain — it needs a paid endpoint.
+    publicRpcs: ['https://rpc.mainnet.chain.robinhood.com'],
     nativeSymbol: 'ETH',
     nativeDecimals: 18,
     wrappedNative: { address: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73', symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
@@ -153,7 +171,15 @@ export const CHAINS: Record<number, ChainConfig> = {
     chainId: 57073,
     name: 'ink',
     rpcEnvVar: 'WEB3_RPC_57073',
-    publicRpc: 'https://rpc-gel.inkonchain.com',
+    // Live-tested 2026-08-02. rpc-gel is deliberately NOT first: its load-balancer lags reads + nonces
+    // (CLAUDE.md 2026-07-23b) — rpc-qnd is the consistent one.
+    publicRpcs: [
+      'https://ink.gateway.tenderly.co',
+      'https://rpc-qnd.inkonchain.com',
+      'https://ink.drpc.org',
+      'https://rpc-gel.inkonchain.com',
+      'https://57073.rpc.thirdweb.com',
+    ],
     nativeSymbol: 'ETH',
     nativeDecimals: 18,
     wrappedNative: { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
@@ -179,7 +205,14 @@ export const CHAINS: Record<number, ChainConfig> = {
     chainId: 196,
     name: 'xlayer',
     rpcEnvVar: 'WEB3_RPC_196',
-    publicRpc: 'https://xlayer.drpc.org',
+    // Live-tested 2026-08-02. ⚠️ The last two cap eth_getLogs at 100 BLOCKS (irrelevant to the adapter,
+    // which does no log scans, but they are ordered last regardless so the wide-range endpoints win).
+    publicRpcs: [
+      'https://xlayer.drpc.org',
+      'https://196.rpc.thirdweb.com',
+      'https://rpc.xlayer.tech',
+      'https://xlayerrpc.okx.com',
+    ],
     nativeSymbol: 'OKB',
     nativeDecimals: 18,
     wrappedNative: { address: '0xe538905cf8410324e03A5A23C1c177a474D59b2b', symbol: 'WOKB', name: 'Wrapped OKB', decimals: 18 },
@@ -205,7 +238,16 @@ export const CHAINS: Record<number, ChainConfig> = {
     chainId: 999,
     name: 'hyperevm',
     rpcEnvVar: 'WEB3_RPC_999',
-    publicRpc: 'https://rpc.hyperliquid.xyz/evm',
+    // Live-tested 2026-08-02. The OFFICIAL endpoint (rpc.hyperliquid.xyz/evm) is deliberately LAST —
+    // it rate-limits aggressively, so it is the endpoint of last resort rather than the primary.
+    publicRpcs: [
+      'https://hyperliquid.drpc.org',
+      'https://rpc.hyperlend.finance',
+      'https://hyperliquid.rpc.blxrbdn.com',
+      'https://hyperliquid-json-rpc.stakely.io',
+      'https://999.rpc.thirdweb.com',
+      'https://rpc.hyperliquid.xyz/evm',
+    ],
     nativeSymbol: 'HYPE',
     nativeDecimals: 18,
     wrappedNative: { address: '0x5555555555555555555555555555555555555555', symbol: 'WHYPE', name: 'Wrapped HYPE', decimals: 18 },
@@ -226,7 +268,8 @@ export const CHAINS: Record<number, ChainConfig> = {
     chainId: 4217,
     name: 'tempo',
     rpcEnvVar: 'WEB3_RPC_4217',
-    publicRpc: 'https://rpc.tempo.xyz',
+    // Live-tested 2026-08-02.
+    publicRpcs: ['https://rpc.tempo.xyz', 'https://rpc.mainnet.tempo.xyz', 'https://tempo.drpc.org'],
     nativeSymbol: 'pathUSD',
     nativeDecimals: 18,
     // WETH9 param used by the router deploy; interface leaves tempo wrappedNativeCurrency=null.
@@ -255,7 +298,9 @@ export const CHAINS: Record<number, ChainConfig> = {
     chainId: 988,
     name: 'stable',
     rpcEnvVar: 'WEB3_RPC_988',
-    publicRpc: 'https://stable-mainnet.rpc.sentio.xyz',
+    // Live-tested 2026-08-02. rpc.stable.xyz is the official endpoint but documented flaky (503s/timeouts);
+    // Sentio is the interface's primary too. ⚠️ The last two cap eth_getLogs at 500 blocks.
+    publicRpcs: ['https://stable-mainnet.rpc.sentio.xyz', 'https://rpc.stable.xyz', 'https://stable.drpc.org'],
     // Native gas is USDT0 (18-dec native balance), NOT ETH; the wrapped-native / WETH9 arg is WgUSDT.
     nativeSymbol: 'USDT0',
     nativeDecimals: 18,
@@ -286,7 +331,13 @@ export const CHAINS: Record<number, ChainConfig> = {
     chainId: 11155111,
     name: 'sepolia',
     rpcEnvVar: 'WEB3_RPC_11155111',
-    publicRpc: 'https://ethereum-sepolia-rpc.publicnode.com',
+    // Live-tested 2026-08-02. NOT included: ethereum-sepolia-rpc.publicnode.com (blacklisted — 403s on
+    // eth_getLogs and on any archive eth_call).
+    publicRpcs: [
+      'https://sepolia.drpc.org',
+      'https://sepolia.gateway.tenderly.co',
+      'https://11155111.rpc.thirdweb.com',
+    ],
     nativeSymbol: 'ETH',
     nativeDecimals: 18,
     wrappedNative: { address: '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14', symbol: 'WETH', name: 'Wrapped Ether', decimals: 18 },
@@ -329,7 +380,22 @@ export function isSupportedChain(chainId: number): boolean {
   return chainId in CHAINS
 }
 
-/** Resolve the RPC URL for a chain: env override first, public fallback second. */
+/**
+ * Resolve the ORDERED RPC endpoint list for a chain.
+ *
+ * `WEB3_RPC_<chainId>` may be a single URL (backwards compatible) OR a comma-separated list; when it is
+ * unset/empty the built-in `publicRpcs` list is used. Blacklisted entries are dropped with a warning.
+ * The order is the failover preference — see src/rpc.ts FailoverProvider.
+ */
+export function resolveRpcUrls(chain: ChainConfig): string[] {
+  return parseRpcList(process.env[chain.rpcEnvVar], chain.publicRpcs, `${chain.chainId} (${chain.name})`)
+}
+
+/**
+ * The single highest-preference RPC URL for a chain. Kept for callers that genuinely need ONE url
+ * (logging, diagnostics). Anything doing real chain reads should build its provider with
+ * `rpc.createFailoverProvider(resolveRpcUrls(chain), chain.chainId)` so it gets the full list.
+ */
 export function resolveRpcUrl(chain: ChainConfig): string {
-  return process.env[chain.rpcEnvVar] || chain.publicRpc
+  return resolveRpcUrls(chain)[0]
 }

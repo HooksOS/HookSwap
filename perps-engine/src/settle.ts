@@ -11,6 +11,16 @@
 //     below block base fee reverts "max fee per gas less than block base fee".
 //   - legacy: gasPrice from getGasPrice() (only for chains that require it).
 //
+// ⚠️ WRITE SAFETY (multi-RPC): reads fail over across every configured public
+// endpoint, but the settleBatch BROADCAST does NOT — eth_sendRawTransaction is
+// pinned to one endpoint and attempted exactly once, and the pending-nonce read
+// viem performs right before it is served from that SAME endpoint (see the WRITE
+// SAFETY block in src/rpc/failover.ts). A broadcast that fails ambiguously (timeout
+// / socket / HTTP 5xx) may still be in a mempool, so this function NEVER resends it;
+// it returns settled:false with ambiguous:true. Recovery is by re-derivation, not
+// retry: the next match re-runs simulateContract against fresh on-chain state, and
+// PerpMarket's per-trader sequential `nonces` makes a duplicate settle revert.
+//
 // One-liner to go live: set LIVE_SETTLE=true in the env and restart. See README.
 
 import { encodeFunctionData, type Hash } from "viem";
@@ -28,6 +38,13 @@ export interface SettleResult {
   settled: boolean;
   /** Human-readable outcome, e.g. SIMULATED_OK / MINED / revert reason. */
   reason: string;
+  /**
+   * true when the broadcast failed in a way that leaves it UNKNOWN whether the tx
+   * reached the mempool (timeout / socket / HTTP error) rather than being
+   * definitively rejected. The pair is NOT auto-resent; on-chain state is the
+   * authority on the next pass.
+   */
+  ambiguous?: boolean;
 }
 
 function toTuple(p: MatchedPair) {
@@ -139,8 +156,23 @@ export async function settlePair(
         settled: receipt.status === "success",
         reason: receipt.status === "success" ? "MINED" : "REVERTED_ONCHAIN",
       };
-    } catch (e) {
-      return { calldata, txHash: null, settled: false, reason: `SEND_FAILED: ${shortReason(e)}` };
+    } catch (e: any) {
+      // Tagged by the failover transport when a broadcast's outcome is unknown.
+      const ambiguous = e?.hookswapSendAmbiguous === true;
+      if (ambiguous) {
+        console.error(
+          `[settle] chain=${ctx.chainId} market=${market} broadcast AMBIGUOUS on ` +
+            `${e?.hookswapRpcEndpoint || "?"} — NOT resending on another RPC; the tx may ` +
+            `have landed. Next match re-simulates against on-chain state.`,
+        );
+      }
+      return {
+        calldata,
+        txHash: null,
+        settled: false,
+        reason: `SEND_FAILED${ambiguous ? "_AMBIGUOUS" : ""}: ${shortReason(e)}`,
+        ambiguous,
+      };
     }
   });
 }

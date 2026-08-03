@@ -105,43 +105,23 @@ export function getQuicknodeEndpointUrl(chainId: UniverseChainId): string {
   return `https://${config.quicknodeEndpointName}${quicknodeChainId ? `.${quicknodeChainId}` : ''}.quiknode.pro/${config.quicknodeEndpointToken}${getQuicknodeChainIdPathSuffix(chainId)}`
 }
 
-// HookSwap uses ONE Alchemy API key across every chain (Alchemy keys are enabled
-// for all networks by default — see the Networks tab to scope a key). Slugs below
-// are Alchemy's own network subdomains, verified against alchemy.com/rpc/<chain>.
-// The key ships in the client bundle like every other browser RPC token, so lock
-// it to the hookswap.org domains in the Alchemy dashboard.
-const ALCHEMY_CHAIN_SLUGS: Partial<Record<UniverseChainId, string>> = {
-  [UniverseChainId.Robinhood]: 'robinhood-mainnet',
-  [UniverseChainId.HyperEvm]: 'hyperliquid-mainnet',
-  [UniverseChainId.Ink]: 'ink-mainnet',
-  [UniverseChainId.MegaETH]: 'megaeth-mainnet',
-  [UniverseChainId.XLayer]: 'xlayer-mainnet',
-  [UniverseChainId.Tempo]: 'tempo-mainnet',
-  [UniverseChainId.Stable]: 'stable-mainnet',
-  [UniverseChainId.Sepolia]: 'eth-sepolia',
-  [UniverseChainId.Mainnet]: 'eth-mainnet',
-}
-
-// `.env` ships a literal placeholder and `.env.defaults` ships 'stored-in-.env.local';
-// both are non-empty, so `??` in BaseConfig will NOT fall through them. Treat them as unset.
-const PLACEHOLDER_ALCHEMY_KEYS = new Set(['', 'alchemy_api_key', 'stored-in-.env.local'])
-
-export function getAlchemyEndpointUrl(chainId: UniverseChainId): string | undefined {
-  const slug = ALCHEMY_CHAIN_SLUGS[chainId]
-  const key = config.alchemyApiKey
-  if (!slug || !key || PLACEHOLDER_ALCHEMY_KEYS.has(key)) {
-    return undefined
-  }
-  return `https://${slug}.g.alchemy.com/v2/${key}`
-}
-
-// Puts the keyed Alchemy endpoint first and keeps the public RPCs as fallbacks.
-// Without a key configured the list is unchanged, so builds without ALCHEMY_API_KEY
-// behave exactly as they do today.
-export function withAlchemyPrimary(chainId: UniverseChainId, publicHttp: string[]): string[] {
-  const alchemyUrl = getAlchemyEndpointUrl(chainId)
-  return alchemyUrl ? [alchemyUrl, ...publicHttp] : publicHttp
-}
+// PUBLIC RPCs ONLY (Reggie, 2026-08-02 — indefinite).
+//
+// There is deliberately no keyed-provider helper here any more. The previous
+// `getAlchemyEndpointUrl` / `withAlchemyPrimary` pair inlined a single
+// ALCHEMY_API_KEY into the client bundle at build time and made that endpoint the
+// PRIMARY RPC on all 9 chains. When the key went over its monthly quota every chain
+// 429'd on the first hop of every read, so the browser paid a failed round-trip
+// before reaching a working public endpoint.
+//
+// The whole mechanism (slug map, placeholder-key set, URL builder, list-prepender)
+// and the `alchemyApiKey` config field it read (packages/config/src/BaseConfig.ts)
+// were deleted rather than flag-gated, so no stray ALCHEMY_API_KEY /
+// REACT_APP_ALCHEMY_API_KEY in an env file can silently promote a keyed endpoint
+// back to primary. Per-chain public endpoints live in `evm/info/*.ts` as ordered
+// `rpcUrls[*].http` arrays and are failed over client-side (see
+// `createRpcUrlSelector` -> `RpcConfig.fallbackRpcUrls`, wagmi's `fallback(...)`
+// in apps/web/src/connection/wagmiConfig.ts, and AppJsonRpcProvider).
 
 // Direct UniRPC gateway URL for a chain — mirrors the resolver's `/rpc/{chainId}`
 // construction. Used by chains UniRPC supports so their chain-info RPCs route

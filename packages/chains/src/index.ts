@@ -14,6 +14,7 @@ export { createEthersProviderFactory } from './rpc/createEthersProvider'
 export { createViemClientFactory } from './rpc/createViemClient'
 export { createUniRpcTransportFactory } from './rpc/createUniRpcTransport'
 export { ViemClientManager } from './rpc/ViemClientManager'
+export { FallbackJsonRpcProvider } from './rpc/FallbackJsonRpcProvider'
 export { FlashbotsRpcProvider } from './rpc/FlashbotsRpcProvider'
 export { createFlashbotsRpcClient, createFlashbotsTransport } from './rpc/FlashbotsRpcClient'
 export {

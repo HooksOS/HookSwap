@@ -6,7 +6,6 @@ import { CHAIN_ID_TO_URL_PARAM } from 'uniswap/src/features/chains/chainUrlParam
 import {
   DEFAULT_MS_BEFORE_WARNING,
   DEFAULT_NATIVE_ADDRESS_LEGACY,
-  withAlchemyPrimary,
 } from 'uniswap/src/features/chains/evm/rpc'
 import { buildChainTokens } from 'uniswap/src/features/chains/evm/tokens'
 import { GENERIC_L2_GAS_CONFIG } from 'uniswap/src/features/chains/gasDefaults'
@@ -26,6 +25,21 @@ const tokens = buildChainTokens({
   },
   primaryStablecoin: 'USDT0',
 })
+
+// Verified-live public HyperEVM RPCs, in failover order (each returns chainId 0x3e7 / 999).
+// PUBLIC ONLY — no keyed provider (see evm/rpc.ts). The OFFICIAL endpoint
+// rpc.hyperliquid.xyz/evm is LAST on purpose: it caps at ~100 req/min per IP and
+// 429s hard under normal app load, so it is the last-resort hop, not the first.
+// Dropped: public.1rpc.io/hyperliquid and hyperliquid.api.onfinality.io/evm/public
+// (429'd on ~18/20 sequential requests when measured).
+const HYPEREVM_PUBLIC_RPC_URLS = [
+  'https://hyperliquid.drpc.org',
+  'https://rpc.hyperlend.finance',
+  'https://hyperliquid.rpc.blxrbdn.com',
+  'https://hyperliquid-json-rpc.stakely.io',
+  'https://999.rpc.thirdweb.com',
+  'https://rpc.hyperliquid.xyz/evm',
+]
 
 export const HYPEREVM_CHAIN_INFO = {
   id: UniverseChainId.HyperEvm,
@@ -62,40 +76,13 @@ export const HYPEREVM_CHAIN_INFO = {
   networkLayer: NetworkLayer.L1,
   blockTimeMs: 2000,
   pendingTransactionsRetryOptions: undefined,
+  // PUBLIC RPCs ONLY, ordered for client-side failover. HyperEVM is in
+  // PUBLIC_RPC_ONLY_CHAINS (providers/unirpcOnlyChains.ts).
   rpcUrls: {
-    // Keyed Alchemy (hyperliquid-mainnet) leads when ALCHEMY_API_KEY is set; the
-    // verified public HyperEVM RPCs (each returns chainId 0x3e7 / 999) stay as
-    // fallbacks. rpc.hyperliquid.xyz is the official endpoint but caps at 100
-    // req/min per IP; onfinality's public endpoint 429s on ~18/20 sequential
-    // requests (measured 2026-07-25) so it is last-resort only.
-    // Default feeds third-party wallet-connector rpc maps — stays UNKEYED (see robinhood.ts).
-    [RPCType.Default]: {
-      http: [
-        'https://rpc.hyperliquid.xyz/evm',
-        'https://hyperliquid.drpc.org',
-        'https://public.1rpc.io/hyperliquid',
-        'https://hyperliquid.rpc.blxrbdn.com',
-        'https://hyperliquid.api.onfinality.io/evm/public',
-      ],
-    },
-    [RPCType.Public]: {
-      http: withAlchemyPrimary(UniverseChainId.HyperEvm, [
-        'https://rpc.hyperliquid.xyz/evm',
-        'https://hyperliquid.drpc.org',
-        'https://public.1rpc.io/hyperliquid',
-        'https://hyperliquid.rpc.blxrbdn.com',
-        'https://hyperliquid.api.onfinality.io/evm/public',
-      ]),
-    },
-    [RPCType.Interface]: {
-      http: withAlchemyPrimary(UniverseChainId.HyperEvm, [
-        'https://rpc.hyperliquid.xyz/evm',
-        'https://hyperliquid.drpc.org',
-        'https://public.1rpc.io/hyperliquid',
-        'https://hyperliquid.rpc.blxrbdn.com',
-        'https://hyperliquid.api.onfinality.io/evm/public',
-      ]),
-    },
+    // Default also feeds third-party wallet-connector rpc maps (cookieless in-page clients).
+    [RPCType.Default]: { http: HYPEREVM_PUBLIC_RPC_URLS },
+    [RPCType.Public]: { http: HYPEREVM_PUBLIC_RPC_URLS },
+    [RPCType.Interface]: { http: HYPEREVM_PUBLIC_RPC_URLS },
   },
   supportedURVersions: [TradingApi.UniversalRouterVersion._2_0],
   supportsV4: false,

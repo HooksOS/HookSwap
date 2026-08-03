@@ -18,7 +18,18 @@
  */
 
 import { BigNumber, ethers } from 'ethers'
-import { ChainConfig, getChain, resolveRpcUrl, V2_PAIR_INIT_CODE_HASH } from './chains'
+import { ChainConfig, getChain, resolveRpcUrls, V2_PAIR_INIT_CODE_HASH } from './chains'
+import { createFailoverProvider, isGetLogsBudgetExhausted, MAX_GET_LOGS_RANGE } from './rpc'
+// Cursor + discovered-pool persistence for the INCREMENTAL v3 factory scan (see scanV3PoolCreated).
+// schema.ts imports nothing from this module, so there is no import cycle.
+import {
+  getDb,
+  getScanCursor,
+  getV3DiscoveredPools,
+  setScanCursor,
+  SqliteDatabase,
+  upsertV3DiscoveredPools,
+} from './indexer/schema'
 
 const ERC20_ABI = [
   'function symbol() view returns (string)',
@@ -65,57 +76,21 @@ const v3FactoryIface = new ethers.utils.Interface(V3_FACTORY_EVENT_ABI)
 const providerCache = new Map<number, ethers.providers.BaseProvider>()
 
 /**
- * Per-request RPC timeout (ms). ethers v5 defaults ConnectionInfo.timeout to 120_000ms, which is
- * LONGER than nginx's default 60s `proxy_read_timeout` in front of this service. When an RPC degrades
- * (e.g. the Robinhood RPC's backend intermittently returning "no route to host"), a handler's on-chain
- * reads would hang up to 120s; nginx 504s the request at 60s while the handler is still waiting, the app
- * auto-retries, and the retries pile more slow calls onto the already-degraded RPC → the whole service
- * wedges and every ListTokens/ListTopPools 504s (observed 2026-07-15). Capping each RPC call at 8s (a) keeps
- * total handler time under nginx's window and (b) lets the existing graceful fallbacks fire: getV2Pairs /
- * getV3Pools swallow the timeout and return [], so handleListTokens still returns its static tokens
- * (native + wrapped-native + seeded) instead of 504ing. Healthy calls observed at ~1.5s, so 8s is ~5x headroom.
+ * Ordered, deduped RPC endpoint list for a chain: the comma-separated `WEB3_RPC_<chainId>` env override
+ * if set, otherwise the chain's built-in public list. See chains.ts `resolveRpcUrls` + rpc.ts.
  */
-const RPC_TIMEOUT_MS = 8_000
+function rpcUrlsFor(chain: ChainConfig): string[] {
+  return resolveRpcUrls(chain)
+}
 
 /**
- * A sequential multi-endpoint RPC provider: every JSON-RPC call is tried against each endpoint in order,
- * failing over to the next on ANY transport/server error, and only surfacing the last error if ALL
- * endpoints fail. This is what makes a single RPC outage (e.g. the Robinhood QuickNode going down) NOT
- * blank on-chain reads / token-logo resolution: reads transparently fall through to the public RH RPC and
- * then blockscout's eth-rpc.
- *
- * WHY NOT ethers' FallbackProvider: verified 2026-07-24 that with quorum 1 it surfaces a CALL_EXCEPTION
- * from a dead primary instead of failing over (it treats the primary's error as a terminal result). This
- * sequential wrapper fails over deterministically. It extends StaticJsonRpcProvider (static network from
- * the passed chainId → no per-call eth_chainId round-trip) and overrides `send`, through which every
- * BaseProvider read (call/getLogs/getBalance/getBlockNumber/…) routes.
+ * The per-chain provider. Multi-endpoint auto-failover lives in src/rpc.ts (FailoverProvider): every
+ * JSON-RPC call walks the chain's ordered endpoint list, marking a failing endpoint unhealthy for a
+ * 60s cooldown and advancing to the next, so a single provider's quota blowout (the 2026-08-02 Alchemy
+ * 429 that took every chain down) can no longer blank on-chain reads. Each call is also bounded by
+ * RPC_TIMEOUT_MS so a slow RPC fails fast into the next endpoint instead of hanging past nginx's 60s
+ * proxy_read_timeout (which used to wedge the whole service — observed 2026-07-15).
  */
-class FailoverProvider extends ethers.providers.StaticJsonRpcProvider {
-  private readonly endpoints: ethers.providers.StaticJsonRpcProvider[]
-  constructor(urls: string[], chainId: number) {
-    super({ url: urls[0], timeout: RPC_TIMEOUT_MS }, chainId)
-    this.endpoints = urls.map((u) => new ethers.providers.StaticJsonRpcProvider({ url: u, timeout: RPC_TIMEOUT_MS }, chainId))
-  }
-  // oxlint-disable-next-line typescript/no-explicit-any -- matches ethers v5 JsonRpcProvider.send signature.
-  async send(method: string, params: Array<any>): Promise<any> {
-    let lastErr: unknown
-    for (const ep of this.endpoints) {
-      try {
-        return await ep.send(method, params)
-      } catch (e) {
-        lastErr = e // this endpoint failed → try the next.
-      }
-    }
-    throw lastErr
-  }
-}
-
-/** Ordered, deduped RPC endpoint list for a chain: primary (env→publicRpc), then publicRpc, then fallbacks. */
-function rpcUrlsFor(chain: ChainConfig): string[] {
-  const ordered = [resolveRpcUrl(chain), chain.publicRpc, ...(chain.fallbackRpcs ?? [])]
-  return [...new Set(ordered.map((u) => u.trim()).filter(Boolean))]
-}
-
 export function getProvider(chainId: number): ethers.providers.BaseProvider {
   const cached = providerCache.get(chainId)
   if (cached) {
@@ -125,13 +100,7 @@ export function getProvider(chainId: number): ethers.providers.BaseProvider {
   if (!chain) {
     throw new Error(`unsupported chainId ${chainId}`)
   }
-  const urls = rpcUrlsFor(chain)
-  // `chainId` passed to each provider avoids an extra eth_chainId round-trip on every call.
-  // `timeout` bounds every RPC call so a slow/dead RPC fails fast instead of hanging (see RPC_TIMEOUT_MS).
-  const provider: ethers.providers.BaseProvider =
-    urls.length <= 1
-      ? new ethers.providers.StaticJsonRpcProvider({ url: urls[0] ?? chain.publicRpc, timeout: RPC_TIMEOUT_MS }, chainId)
-      : new FailoverProvider(urls, chainId)
+  const provider = createFailoverProvider(rpcUrlsFor(chain), chainId, `${chainId} (${chain.name})`)
   providerCache.set(chainId, provider)
   return provider
 }
@@ -448,10 +417,48 @@ export interface V3PoolData {
   balance1: BigNumber
 }
 
-/** Block-range window per `eth_getLogs` call — public RPCs commonly cap ranges; 9_500 is broadly safe. */
-const V3_LOG_CHUNK = 9_500
-/** Hard cap on getLogs chunks per discovery call, so a large fromBlock..latest span can't run unbounded. */
-const V3_MAX_CHUNKS = 40
+/**
+ * Block-range window per `eth_getLogs` call, per chain.
+ *
+ * Base value is MAX_GET_LOGS_RANGE (2_000, lowered from 9_500 on 2026-08-02): on the public-only
+ * endpoint lists several endpoints hard-refuse wider ranges (drpc free plans refuse >10000; XLayer's
+ * rpc.xlayer.tech/xlayerrpc.okx.com cap at 100; Stable's rpc.stable.xyz/stable.drpc.org cap at 500),
+ * and a refused range used to silently skip a window of pools.
+ *
+ * Env-overridable (added 2026-08-03): `V3_LOG_CHUNK_<chainId>` → `V3_LOG_CHUNK` → the base value. It is
+ * clamped to MAX_GET_LOGS_RANGE because anything wider is refused outright by the tight endpoints.
+ */
+function v3LogChunk(chainId: number): number {
+  const raw = process.env[`V3_LOG_CHUNK_${chainId}`] ?? process.env.V3_LOG_CHUNK
+  if (raw && /^\d+$/.test(raw.trim()) && Number(raw.trim()) > 0) {
+    return Math.min(Number(raw.trim()), MAX_GET_LOGS_RANGE)
+  }
+  return MAX_GET_LOGS_RANGE
+}
+
+/**
+ * Hard cap on `eth_getLogs` chunks per discovery pass.
+ *
+ * ⚠️ HISTORY — this is the number that took Robinhood down. It was 40, then raised to **190** alongside
+ * the 9_500 → 2_000 chunk shrink to keep the same ~380k-block span. But Robinhood's single public RPC
+ * refuses at ~12 `eth_getLogs` per 60s (measured; see rpc.ts), so a single cache miss issued ~190 calls,
+ * blew the whole endpoint budget, and starved locker-indexer + perps-engine/bot/keeper of ordinary
+ * reads. 40 would ALSO blow a 12-call budget — reverting is not a fix.
+ *
+ * The fix is the pair of changes made 2026-08-03: (a) rpc.ts meters eth_getLogs per chain, and (b) the
+ * scan is now CURSOR-RESUMABLE (scan_cursor), so it no longer needs to cover the whole span in one
+ * pass. Default **6** chunks/pass therefore sits UNDER Robinhood's 8-call data-api budget, leaving
+ * headroom for the indexer's own scans, and still converges across passes (6 × 2_000 = 12k blocks per
+ * pass, persisted). Env-overridable: `V3_MAX_CHUNKS_<chainId>` → `V3_MAX_CHUNKS` → 6.
+ */
+const DEFAULT_V3_MAX_CHUNKS = 6
+function v3MaxChunks(chainId: number): number {
+  const raw = process.env[`V3_MAX_CHUNKS_${chainId}`] ?? process.env.V3_MAX_CHUNKS
+  if (raw && /^\d+$/.test(raw.trim()) && Number(raw.trim()) > 0) {
+    return Number(raw.trim())
+  }
+  return DEFAULT_V3_MAX_CHUNKS
+}
 
 /**
  * Resolve the block to start the v3 `PoolCreated` scan from. UniswapV3Factory has no on-chain pool
@@ -473,14 +480,84 @@ function resolveV3FromBlock(chain: ChainConfig): number | undefined {
   return undefined
 }
 
-/** Scan the v3 factory's PoolCreated logs from `fromBlock` to latest, chunked + bounded. Never throws. */
-async function scanV3PoolCreated(
-  chainId: number,
-  factory: string,
+/**
+ * `eth_getLogs` that bisects the block range on error, down to a single block, and returns the union.
+ * Mirrors the indexer's `getLogsAdaptive`. Needed because the public RPC lists include endpoints with
+ * per-query block-range or result-count caps tighter than our chunk size; failing over reaches them, and
+ * a rejected window would otherwise be silently dropped. Throws only when a SINGLE-block query fails.
+ */
+async function getLogsBisecting(
+  provider: ethers.providers.BaseProvider,
+  filter: { address: string; topics: (string | string[])[] },
   fromBlock: number,
-): Promise<Array<{ pool: string; token0: string; token1: string; fee: number }>> {
+  toBlock: number,
+): Promise<ethers.providers.Log[]> {
+  try {
+    return await provider.getLogs({ ...filter, fromBlock, toBlock })
+  } catch (err) {
+    // BUDGET REFUSAL: nothing was sent and both halves would be refused too — bisecting here would be a
+    // hot loop that burns CPU and log lines while the budget stays empty. Propagate so the caller yields.
+    if (isGetLogsBudgetExhausted(err)) {
+      throw err
+    }
+    if (fromBlock >= toBlock) {
+      throw err // single block already — a real failure
+    }
+    const mid = Math.floor((fromBlock + toBlock) / 2)
+    const [a, b] = await Promise.all([
+      getLogsBisecting(provider, filter, fromBlock, mid),
+      getLogsBisecting(provider, filter, mid + 1, toBlock),
+    ])
+    return a.concat(b)
+  }
+}
+
+/** A v3 pool as emitted by a decoded `PoolCreated` log. */
+interface V3Created {
+  pool: string
+  token0: string
+  token1: string
+  fee: number
+}
+
+/** scan_cursor key for a chain's v3 factory scan. Factory-scoped: a factory change starts a fresh scan. */
+function v3ScanKey(factory: string): string {
+  return `v3factory:${factory.toLowerCase()}`
+}
+
+/**
+ * The SQLite handle, or undefined if the store is unavailable.
+ *
+ * The cursor/discovery persistence is an OPTIMISATION, not a correctness requirement: if the DB can't
+ * be opened this degrades to the previous stateless behaviour (scan from `fromBlock`, keep only what
+ * this pass found) rather than failing the request.
+ */
+function tryGetDb(): SqliteDatabase | undefined {
+  try {
+    return getDb()
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(`[data-api] v3 scan: indexer DB unavailable, scanning without a cursor`, err)
+    return undefined
+  }
+}
+
+/**
+ * INCREMENTAL, RESUMABLE scan of the v3 factory's `PoolCreated` logs. Never throws.
+ *
+ * Each pass starts at `max(fromBlock, cursor + 1)` and advances at most `v3MaxChunks` windows, then
+ * PERSISTS how far it got (scan_cursor) and everything it found (v3_discovered_pools). So the cost is
+ * paid ONCE across passes and converges on `latest`, instead of the old behaviour where every cache
+ * miss rescanned the whole span from scratch — which on Robinhood meant up to 190 `eth_getLogs` per
+ * miss, forever, exhausting the endpoint's ~12/60s getLogs budget and starving every other service.
+ *
+ * Yields early and cleanly when the rpc.ts budget is exhausted: the cursor keeps the progress made so
+ * far, so the next pass resumes rather than repeating. Returns only the pools found in THIS pass —
+ * getV3Pools unions them with the persisted set.
+ */
+async function scanV3PoolCreated(chainId: number, factory: string, fromBlock: number): Promise<V3Created[]> {
   const provider = getProvider(chainId)
-  const found: Array<{ pool: string; token0: string; token1: string; fee: number }> = []
+  const found: V3Created[] = []
   const topic = v3FactoryIface.getEventTopic('PoolCreated')
   let latest: number
   try {
@@ -488,12 +565,34 @@ async function scanV3PoolCreated(
   } catch {
     return found
   }
-  let start = fromBlock
-  let chunks = 0
-  while (start <= latest && chunks < V3_MAX_CHUNKS) {
-    const end = Math.min(start + V3_LOG_CHUNK - 1, latest)
+
+  const db = tryGetDb()
+  const scanKey = v3ScanKey(factory)
+  let cursor: number | undefined
+  if (db) {
     try {
-      const logs = await provider.getLogs({ address: factory, topics: [topic], fromBlock: start, toBlock: end })
+      cursor = getScanCursor(db, chainId, scanKey)
+    } catch {
+      cursor = undefined // fresh/locked DB — scan from fromBlock, persist as we go.
+    }
+  }
+  // Resume from the cursor when it is at or beyond the configured start (a cursor BEHIND fromBlock, e.g.
+  // after V3_SCAN_FROM_BLOCK was moved forward, must not drag the scan backwards).
+  let start = cursor !== undefined ? Math.max(fromBlock, cursor + 1) : fromBlock
+  const passStart = start
+  const maxChunks = v3MaxChunks(chainId)
+  const chunkSize = v3LogChunk(chainId)
+  let chunks = 0
+  let yieldedForBudget = false
+
+  while (start <= latest && chunks < maxChunks) {
+    const end = Math.min(start + chunkSize - 1, latest)
+    try {
+      // ADAPTIVE: bisect on error rather than dropping the whole window. With public-only RPC lists the
+      // failover can land on an endpoint that caps ranges tighter than the chunk (live-tested
+      // 2026-08-02: HyperEVM's hyperliquid.rpc.blxrbdn.com refuses >1000 blocks, Stable's rpc.stable.xyz
+      // >500, XLayer's rpc.xlayer.tech >100), which used to silently skip every pool in that window.
+      const logs = await getLogsBisecting(provider, { address: factory, topics: [topic] }, start, end)
       for (const log of logs) {
         try {
           const parsed = v3FactoryIface.parseLog(log)
@@ -508,17 +607,56 @@ async function scanV3PoolCreated(
           // Non-conforming log at this address — skip it, never fabricate a pool.
         }
       }
-    } catch {
+    } catch (err) {
+      if (isGetLogsBudgetExhausted(err)) {
+        // BUDGET YIELD: stop this pass HERE without advancing past the unscanned window, so the cursor
+        // keeps `start - 1` and the next pass re-attempts exactly this window. No retry, no spin — the
+        // one throttle line comes from rpc.ts (once per window), so this stays quiet.
+        yieldedForBudget = true
+        break
+      }
       // RPC rejected this range (or a transient error) — skip the window, keep scanning the rest.
+      // (Advancing past it is the pre-existing policy: the indexer's own backfill is the full-history path.)
     }
     start = end + 1
     chunks += 1
   }
+
+  // Persist BOTH halves of the progress. Cursor first-class: `start - 1` is the last block fully
+  // attempted this pass. Only written when it actually advanced (setScanCursor is monotonic anyway).
+  if (db) {
+    try {
+      if (found.length > 0) {
+        upsertV3DiscoveredPools(
+          db,
+          found.map((c) => ({
+            chainId,
+            pool: c.pool,
+            token0: c.token0,
+            token1: c.token1,
+            fee: c.fee,
+            blockNumber: 0,
+          })),
+        )
+      }
+      if (start > passStart) {
+        setScanCursor(db, chainId, scanKey, start - 1)
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[data-api] v3 scan chain ${chainId}: failed to persist cursor/pools (will rescan)`, err)
+    }
+  }
+
   if (start <= latest) {
-    // Bounded out before reaching `latest`: honest partial. Log it (no silent truncation) — callers
-    // still get every pool found in the scanned window; a full backfill is the Phase-2 indexer's job.
+    // Honest partial — but NOT the old permanent truncation: the cursor means the next pass picks up
+    // exactly here, so the scan converges instead of re-paying for the same blocks forever.
     // eslint-disable-next-line no-console
-    console.warn(`[data-api] v3 scan chain ${chainId} stopped at block ${start - 1}/${latest} (chunk cap ${V3_MAX_CHUNKS}); increase V3_SCAN_FROM_BLOCK or add an indexer for full history`)
+    console.warn(
+      `[data-api] v3 scan chain ${chainId} yielded at block ${start - 1}/${latest} ` +
+        `(${yieldedForBudget ? 'eth_getLogs budget exhausted' : `chunk cap ${maxChunks}`}); ` +
+        `cursor persisted${db ? '' : ' (NO DB — progress lost, will rescan)'}, resumes next pass`,
+    )
   }
   return found
 }
@@ -545,7 +683,20 @@ export async function getV3Pools(chainId: number): Promise<V3PoolData[]> {
   const provider = getProvider(chainId)
   const created = await scanV3PoolCreated(chainId, chain.v3Factory, fromBlock)
   // A (token0,token1,fee) triple maps to exactly one pool address; dedupe by address defensively.
-  const byAddr = new Map<string, { pool: string; token0: string; token1: string; fee: number }>()
+  const byAddr = new Map<string, V3Created>()
+  // Seed with every pool discovered by PREVIOUS passes. The scan is incremental (see scanV3PoolCreated),
+  // so this pass only sees the window it scanned; without the persisted set, pools found earlier would
+  // disappear from the response whenever the cache missed. Every row is a real decoded PoolCreated log.
+  const db = tryGetDb()
+  if (db) {
+    try {
+      for (const row of getV3DiscoveredPools(db, chainId)) {
+        byAddr.set(row.pool.toLowerCase(), { pool: row.pool, token0: row.token0, token1: row.token1, fee: row.fee })
+      }
+    } catch {
+      // Store unavailable — fall back to just this pass's discoveries (honest subset, never fabricated).
+    }
+  }
   for (const c of created) {
     byAddr.set(c.pool.toLowerCase(), c)
   }

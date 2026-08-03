@@ -7,7 +7,6 @@ process.env.APP_ID = process.env.APP_ID ?? 'web'
 
 module.exports = {
   globals: {
-    ALCHEMY_API_KEY: 'key',
     AMPLITUDE_EXPERIMENTS_DEPLOYMENT_KEY: 'key',
     AMPLITUDE_PROXY_URL_OVERRIDE: '',
     API_BASE_URL_OVERRIDE: '',

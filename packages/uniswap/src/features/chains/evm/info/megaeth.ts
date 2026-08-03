@@ -6,7 +6,6 @@ import { CHAIN_ID_TO_URL_PARAM } from 'uniswap/src/features/chains/chainUrlParam
 import {
   DEFAULT_MS_BEFORE_WARNING,
   DEFAULT_NATIVE_ADDRESS_LEGACY,
-  withAlchemyPrimary,
 } from 'uniswap/src/features/chains/evm/rpc'
 import { buildChainTokens } from 'uniswap/src/features/chains/evm/tokens'
 import { GENERIC_L2_GAS_CONFIG } from 'uniswap/src/features/chains/gasDefaults'
@@ -27,6 +26,17 @@ const tokens = buildChainTokens({
   },
   primaryStablecoin: 'USDM',
 })
+
+// Verified-live public MegaETH RPCs, in failover order (each returns chainId 0x10e6 / 4326).
+// PUBLIC ONLY — no keyed provider (see evm/rpc.ts).
+// ⛔ BLACKLISTED, do not re-add: https://megaeth.blockscout.com/api/eth-rpc — it answers
+// HTTP 200 with WRONG data (silently drops logs and caps results at 1000), so it passes a
+// naive health check while corrupting reads.
+const MEGAETH_PUBLIC_RPC_URLS = [
+  'https://mainnet.megaeth.com/rpc',
+  'https://megaeth.drpc.org',
+  'https://4326.rpc.thirdweb.com',
+]
 
 export const MEGAETH_CHAIN_INFO = {
   id: UniverseChainId.MegaETH,
@@ -69,31 +79,13 @@ export const MEGAETH_CHAIN_INFO = {
   // public client uses RPCType.Public) — this silently broke Locker/Referrals
   // ("Failed to load") despite the contracts/RPC working fine directly. Fix: real
   // public RPC on every RPCType slot, mirroring the already-correct ink.ts pattern.
+  // PUBLIC RPCs ONLY, ordered for client-side failover. MegaETH is in
+  // PUBLIC_RPC_ONLY_CHAINS (providers/unirpcOnlyChains.ts).
   rpcUrls: {
-    // Keyed Alchemy (megaeth-mainnet) leads when ALCHEMY_API_KEY is set; verified
-    // public MegaETH RPCs (chainId 0x10e6 / 4326) stay as fallbacks.
-    // Default feeds third-party wallet-connector rpc maps — stays UNKEYED (see robinhood.ts).
-    [RPCType.Default]: {
-      http: [
-        'https://mainnet.megaeth.com/rpc',
-        'https://megaeth.drpc.org',
-        'https://megaeth.blockscout.com/api/eth-rpc',
-      ],
-    },
-    [RPCType.Public]: {
-      http: withAlchemyPrimary(UniverseChainId.MegaETH, [
-        'https://mainnet.megaeth.com/rpc',
-        'https://megaeth.drpc.org',
-        'https://megaeth.blockscout.com/api/eth-rpc',
-      ]),
-    },
-    [RPCType.Interface]: {
-      http: withAlchemyPrimary(UniverseChainId.MegaETH, [
-        'https://mainnet.megaeth.com/rpc',
-        'https://megaeth.drpc.org',
-        'https://megaeth.blockscout.com/api/eth-rpc',
-      ]),
-    },
+    // Default also feeds third-party wallet-connector rpc maps (cookieless in-page clients).
+    [RPCType.Default]: { http: MEGAETH_PUBLIC_RPC_URLS },
+    [RPCType.Public]: { http: MEGAETH_PUBLIC_RPC_URLS },
+    [RPCType.Interface]: { http: MEGAETH_PUBLIC_RPC_URLS },
   },
   statusPage: 'https://uptime.megaeth.com/',
   supportedURVersions: [TradingApi.UniversalRouterVersion._2_0, TradingApi.UniversalRouterVersion._2_1_1],

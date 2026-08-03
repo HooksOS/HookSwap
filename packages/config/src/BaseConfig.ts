@@ -31,7 +31,9 @@ export const BaseConfigValues = {
   isVercelEnvironment: process.env.VERCEL,
 
   // API Keys
-  alchemyApiKey: process.env.ALCHEMY_API_KEY ?? process.env.REACT_APP_ALCHEMY_API_KEY,
+  // NOTE: no `alchemyApiKey` — HookSwap is public-RPC-only (see
+  // packages/uniswap/src/features/chains/evm/rpc.ts). The field was removed so a
+  // stray ALCHEMY_API_KEY in an env file cannot be inlined into the bundle.
   datadogClientToken: process.env.DATADOG_CLIENT_TOKEN ?? process.env.REACT_APP_DATADOG_CLIENT_TOKEN,
   datadogProjectId: process.env.DATADOG_PROJECT_ID ?? process.env.REACT_APP_DATADOG_PROJECT_ID,
   infuraKey: process.env.INFURA_KEY ?? process.env.REACT_APP_INFURA_KEY,
@@ -92,7 +94,7 @@ export const BaseConfigSchema = z.object({
   isVercelEnvironment: boolFromOne.describe('Is the app deployed on Vercel'),
 
   // API Keys
-  alchemyApiKey: optionalString.describe('API key for Alchemy'),
+  // NOTE: no `alchemyApiKey` — see BaseConfigValues above.
   datadogClientToken: optionalString.describe('Client token for Datadog'),
   datadogProjectId: optionalString.describe('Project ID for Datadog'),
   infuraKey: optionalString.describe('API key for Infura'),

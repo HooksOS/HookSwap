@@ -7,6 +7,16 @@ import type { RpcChainInfo } from './types'
 export interface RpcConfig {
   rpcUrl: string
   /**
+   * Remaining public endpoints for the same chain, in priority order, EXCLUDING
+   * `rpcUrl`. Consumers that can fail over (createViemClient, createEthersProvider)
+   * should try `rpcUrl` first and walk this list on error.
+   *
+   * Only populated for public reads. It is deliberately absent for
+   * `RPCType.Private` (a private/Flashbots tx must never be rebroadcast to public
+   * endpoints) and for UniRPC configs (the gateway does server-side failover).
+   */
+  fallbackRpcUrls?: string[]
+  /**
    * Set when this config targets the UniRPC entry gateway. Consumers should
    * branch on this flag (not on header presence) to decide whether to apply
    * UniRPC-specific transport behavior (session auth, 6s timeout, id:0 patch).
@@ -35,6 +45,39 @@ export interface RpcUrlSelectorCtx {
 }
 
 export type RpcUrlSelector = (chainId: UniverseChainId, rpcType?: RPCType) => RpcConfig | null
+
+/**
+ * Public read slots, in the order a client should fail over through them. Mirrors
+ * `orderedTransportUrls` in apps/web/src/connection/wagmiConfig.ts, minus the Private
+ * slot (never used as a fallback for a public read).
+ */
+const PUBLIC_FALLBACK_RPC_TYPES = [
+  RPCType.Public,
+  RPCType.PublicAlt,
+  RPCType.Default,
+  RPCType.Fallback,
+  RPCType.Interface,
+] as const
+
+/**
+ * Every other public endpoint configured for `chainId`, deduped and with `primaryUrl`
+ * removed. Chain info commonly repeats the same ordered list across slots, so the dedupe
+ * is what keeps the failover chain short.
+ */
+function collectFallbackRpcUrls(ctx: RpcUrlSelectorCtx, chainId: UniverseChainId, primaryUrl: string): string[] {
+  const { rpcUrls } = ctx.getChainInfo(chainId)
+  const seen = new Set<string>([primaryUrl])
+  const urls: string[] = []
+  for (const rpcType of PUBLIC_FALLBACK_RPC_TYPES) {
+    for (const url of rpcUrls[rpcType]?.http ?? []) {
+      if (url && !seen.has(url)) {
+        seen.add(url)
+        urls.push(url)
+      }
+    }
+  }
+  return urls
+}
 
 /**
  * Creates a selector that picks the appropriate RPC URL based on chain ID and RPC type.
@@ -68,14 +111,14 @@ export function createRpcUrlSelector(ctx: RpcUrlSelectorCtx): RpcUrlSelector {
       try {
         const publicRPCUrl = ctx.getChainInfo(chainId).rpcUrls[RPCType.Public]?.http[0]
         if (publicRPCUrl) {
-          return { rpcUrl: publicRPCUrl }
+          return { rpcUrl: publicRPCUrl, fallbackRpcUrls: collectFallbackRpcUrls(ctx, chainId, publicRPCUrl) }
         }
         throw new Error(`No public RPC available for chain ${chainId}`)
       } catch (error) {
         // Fall back to alternative public RPC URL if available
         const altPublicRPCUrl = ctx.getChainInfo(chainId).rpcUrls[RPCType.PublicAlt]?.http[0]
         if (altPublicRPCUrl) {
-          return { rpcUrl: altPublicRPCUrl }
+          return { rpcUrl: altPublicRPCUrl, fallbackRpcUrls: collectFallbackRpcUrls(ctx, chainId, altPublicRPCUrl) }
         }
         throw error
       }

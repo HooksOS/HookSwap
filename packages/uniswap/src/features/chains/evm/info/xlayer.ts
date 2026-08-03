@@ -7,7 +7,6 @@ import {
   DEFAULT_MS_BEFORE_WARNING,
   DEFAULT_NATIVE_ADDRESS_LEGACY,
   DEFAULT_RETRY_OPTIONS,
-  withAlchemyPrimary,
 } from 'uniswap/src/features/chains/evm/rpc'
 import { buildChainTokens } from 'uniswap/src/features/chains/evm/tokens'
 import { GENERIC_L2_GAS_CONFIG } from 'uniswap/src/features/chains/gasDefaults'
@@ -30,6 +29,16 @@ const tokens = buildChainTokens({
   },
   primaryStablecoin: 'USDT0',
 })
+
+// Verified-live public X Layer RPCs, in failover order (each returns chainId 0xc4 / 196).
+// PUBLIC ONLY — no keyed provider (see evm/rpc.ts). *.drpc.org and *.rpc.thirdweb.com are on
+// the CSP connect-src allowlist; rpc.xlayer.tech / xlayerrpc.okx.com are OKX's own endpoints.
+const XLAYER_PUBLIC_RPC_URLS = [
+  'https://xlayer.drpc.org',
+  'https://196.rpc.thirdweb.com',
+  'https://rpc.xlayer.tech',
+  'https://xlayerrpc.okx.com',
+]
 
 export const XLAYER_CHAIN_INFO = {
   ...xLayer,
@@ -65,42 +74,15 @@ export const XLAYER_CHAIN_INFO = {
   networkLayer: NetworkLayer.L2,
   blockTimeMs: 3000,
   pendingTransactionsRetryOptions: DEFAULT_RETRY_OPTIONS,
+  // HookSwap has no Uniswap-hosted UniRPC gateway session for X Layer, so routing
+  // browser reads through the entry-gateway proxy CORS-fails (see
+  // providers/unirpcOnlyChains.ts PUBLIC_RPC_ONLY_CHAINS). Every slot carries the same
+  // ordered public list so whichever slot a consumer reads it gets the full failover set.
   rpcUrls: {
-    // HookSwap has no Uniswap-hosted UniRPC gateway session for X Layer, so routing
-    // browser reads through the entry-gateway proxy CORS-fails (see
-    // providers/unirpcOnlyChains.ts PUBLIC_RPC_ONLY_CHAINS). Point Public at the same
-    // real public RPCs as Default so the public-RPC-only fall-through resolves to a
-    // working endpoint. *.drpc.org is on the CSP allowlist so it leads.
-    [RPCType.Public]: {
-      http: withAlchemyPrimary(UniverseChainId.XLayer, [
-        'https://xlayer.drpc.org',
-        'https://rpc.xlayer.tech',
-        'https://xlayerrpc.okx.com',
-        'https://196.rpc.thirdweb.com',
-      ]),
-    },
-    // Default feeds third-party wallet-connector rpc maps (cookieless) — stays UNKEYED
-    // (see robinhood.ts). Verified real public X Layer RPCs (each returns chainId
-    // 0xc4 / 196); *.drpc.org is on the CSP allowlist so it leads, and rpc.xlayer.tech /
-    // xlayerrpc.okx.com are OKX's official endpoints.
-    [RPCType.Default]: {
-      http: [
-        'https://xlayer.drpc.org',
-        'https://rpc.xlayer.tech',
-        'https://xlayerrpc.okx.com',
-        'https://196.rpc.thirdweb.com',
-      ],
-    },
-    // Was a QuickNode URL built from an unset placeholder token — repointed to the
-    // same Alchemy-first list so the Interface slot resolves to a working endpoint.
-    [RPCType.Interface]: {
-      http: withAlchemyPrimary(UniverseChainId.XLayer, [
-        'https://xlayer.drpc.org',
-        'https://rpc.xlayer.tech',
-        'https://xlayerrpc.okx.com',
-        'https://196.rpc.thirdweb.com',
-      ]),
-    },
+    [RPCType.Public]: { http: XLAYER_PUBLIC_RPC_URLS },
+    // Default feeds third-party wallet-connector rpc maps (cookieless in-page clients).
+    [RPCType.Default]: { http: XLAYER_PUBLIC_RPC_URLS },
+    [RPCType.Interface]: { http: XLAYER_PUBLIC_RPC_URLS },
   },
   tokens,
   statusPage: undefined,

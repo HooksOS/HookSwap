@@ -6,7 +6,6 @@ import { CHAIN_ID_TO_URL_PARAM } from 'uniswap/src/features/chains/chainUrlParam
 import {
   DEFAULT_MS_BEFORE_WARNING,
   DEFAULT_NATIVE_ADDRESS_LEGACY,
-  withAlchemyPrimary,
 } from 'uniswap/src/features/chains/evm/rpc'
 import { buildChainTokens } from 'uniswap/src/features/chains/evm/tokens'
 import { GENERIC_L2_GAS_CONFIG } from 'uniswap/src/features/chains/gasDefaults'
@@ -27,6 +26,18 @@ const tokens = buildChainTokens({
   },
   primaryStablecoin: 'USDT0',
 })
+
+// Verified-live public Ink RPCs, in failover order (each returns chainId 0xdef1 / 57073).
+// PUBLIC ONLY — no keyed provider (see evm/rpc.ts). rpc-gel/rpc-qnd are Ink's own
+// endpoints (both block debug/trace); rpc-gel is DELIBERATELY ranked below rpc-qnd
+// because it is a load balancer whose reads and nonces lag (see CLAUDE.md).
+const INK_PUBLIC_RPC_URLS = [
+  'https://ink.gateway.tenderly.co',
+  'https://rpc-qnd.inkonchain.com',
+  'https://ink.drpc.org',
+  'https://rpc-gel.inkonchain.com',
+  'https://57073.rpc.thirdweb.com',
+]
 
 export const INK_CHAIN_INFO = {
   id: UniverseChainId.Ink,
@@ -63,40 +74,13 @@ export const INK_CHAIN_INFO = {
   networkLayer: NetworkLayer.L2,
   blockTimeMs: 1000,
   pendingTransactionsRetryOptions: undefined,
+  // PUBLIC RPCs ONLY, ordered for client-side failover. Ink is in
+  // PUBLIC_RPC_ONLY_CHAINS (providers/unirpcOnlyChains.ts).
   rpcUrls: {
-    // Keyed Alchemy (ink-mainnet) leads when ALCHEMY_API_KEY is set; the verified
-    // public Ink RPCs (each returns chainId 0xdef1 / 57073) stay as fallbacks.
-    // rpc-gel/rpc-qnd are Ink's official endpoints (both block debug/trace);
-    // *.drpc.org is on the CSP allowlist. NOTE: rpc-gel is a load balancer whose
-    // reads and nonces lag — prefer rpc-qnd for broadcasts (see CLAUDE.md).
-    // Default feeds third-party wallet-connector rpc maps — stays UNKEYED (see robinhood.ts).
-    [RPCType.Default]: {
-      http: [
-        'https://rpc-gel.inkonchain.com',
-        'https://rpc-qnd.inkonchain.com',
-        'https://ink.drpc.org',
-        'https://ink.gateway.tenderly.co',
-        'https://57073.rpc.thirdweb.com',
-      ],
-    },
-    [RPCType.Public]: {
-      http: withAlchemyPrimary(UniverseChainId.Ink, [
-        'https://rpc-gel.inkonchain.com',
-        'https://rpc-qnd.inkonchain.com',
-        'https://ink.drpc.org',
-        'https://ink.gateway.tenderly.co',
-        'https://57073.rpc.thirdweb.com',
-      ]),
-    },
-    [RPCType.Interface]: {
-      http: withAlchemyPrimary(UniverseChainId.Ink, [
-        'https://rpc-gel.inkonchain.com',
-        'https://rpc-qnd.inkonchain.com',
-        'https://ink.drpc.org',
-        'https://ink.gateway.tenderly.co',
-        'https://57073.rpc.thirdweb.com',
-      ]),
-    },
+    // Default also feeds third-party wallet-connector rpc maps (cookieless in-page clients).
+    [RPCType.Default]: { http: INK_PUBLIC_RPC_URLS },
+    [RPCType.Public]: { http: INK_PUBLIC_RPC_URLS },
+    [RPCType.Interface]: { http: INK_PUBLIC_RPC_URLS },
   },
   supportedURVersions: [TradingApi.UniversalRouterVersion._2_0],
   supportsV4: true,

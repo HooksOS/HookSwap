@@ -129,7 +129,7 @@ describe('parseConfig', () => {
       })
 
       expect(config.customField).toBe('hello')
-      expect('alchemyApiKey' in config).toBe(true)
+      expect('infuraKey' in config).toBe(true)
       expect('nodeEnv' in config).toBe(true)
     })
 
@@ -150,14 +150,14 @@ describe('parseConfig', () => {
       })
 
       expect(config.customField).toBe('hello')
-      expect('alchemyApiKey' in config).toBe(false)
+      expect('infuraKey' in config).toBe(false)
       expect('nodeEnv' in config).toBe(false)
     })
 
     it('has expected keys in BaseConfigValues', () => {
       const keys = Object.keys(BaseConfigValues)
 
-      expect(keys).toContain('alchemyApiKey')
+      expect(keys).toContain('infuraKey')
       expect(keys).toContain('isE2ETest')
       expect(keys).toContain('walletConnectProjectId')
       expect(keys).toContain('nodeEnv')

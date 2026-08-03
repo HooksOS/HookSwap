@@ -6,7 +6,6 @@ import { CHAIN_ID_TO_URL_PARAM } from 'uniswap/src/features/chains/chainUrlParam
 import {
   DEFAULT_MS_BEFORE_WARNING,
   DEFAULT_NATIVE_ADDRESS_LEGACY,
-  withAlchemyPrimary,
 } from 'uniswap/src/features/chains/evm/rpc'
 import { buildChainTokens } from 'uniswap/src/features/chains/evm/tokens'
 import { GENERIC_L2_GAS_CONFIG } from 'uniswap/src/features/chains/gasDefaults'
@@ -32,6 +31,19 @@ const tokens = buildChainTokens({
   },
   primaryStablecoin: 'USDG',
 })
+
+// The ONLY working public Robinhood Chain RPC (returns chainId 0x1237 / 4663).
+// PUBLIC ONLY — no keyed provider (see evm/rpc.ts).
+// ⛔ BLACKLISTED, do not re-add — both answer HTTP 200 with WRONG data:
+//   https://robinhood.drpc.org — returns the correct eth_chainId but replies
+//     "does not exist" for every other method, so it passes a naive health check
+//     and then fails every real read.
+//   https://robinhoodchain.blockscout.com/api/eth-rpc — replies HTTP 429 with
+//     `result: null` and NO `error` field, which JSON-RPC clients read as a
+//     successful empty result (phantom "no balance" / "not deployed" states).
+const ROBINHOOD_PUBLIC_RPC_URLS = [
+  'https://rpc.mainnet.chain.robinhood.com',
+]
 
 export const ROBINHOOD_CHAIN_INFO = {
   id: UniverseChainId.Robinhood,
@@ -73,34 +85,18 @@ export const ROBINHOOD_CHAIN_INFO = {
   // — this silently broke Locker/Referrals ("Failed to load") despite the contracts
   // and RPC working fine directly (verified via `cast call`). Fix: real public RPC on
   // every RPCType slot, mirroring the already-correct ink.ts/hyperevm.ts pattern.
-  // Primary = the keyed Alchemy endpoint when ALCHEMY_API_KEY is set (Robinhood is
-  // Alchemy-native: robinhood-mainnet.g.alchemy.com), then the two public RPCs as
-  // fallback (both return 4663 with permissive CORS). Ordered so wagmi's
-  // `orderedTransportUrls(chain)` → viem `fallback(...)` fails over to the official RPC,
-  // then the Blockscout eth-rpc proxy. The ethers balance path via rpcUrlSelector uses
-  // http[0] only — so with a key set, that single endpoint is Alchemy. NOTE: the public
-  // RH RPC rate-limits under adapter load and the Blockscout proxy 429s on ~18/20
-  // sequential requests (measured 2026-07-25), which is why the keyed primary matters.
+  // KNOWN LIMITATION: the official RH RPC rate-limits under load and there is no second
+  // usable endpoint to fail over to, so RH is the one chain with no redundancy. A paid
+  // RH endpoint is the only real fix — do NOT paper over it with a blacklisted mirror.
+  // PUBLIC RPC ONLY. Robinhood Chain has exactly ONE working public endpoint, so
+  // there is no failover set to give it — see ROBINHOOD_PUBLIC_RPC_URLS above for the
+  // endpoints that were removed and why they must not come back.
   rpcUrls: {
-    // Default feeds third-party wallet-connector rpc maps (WalletConnect/Binance read
-    // default.http[0] from a cookieless in-page client), so it stays UNKEYED — a keyed
-    // Alchemy URL would both leak the key into third-party traffic and hard-fail for
-    // those clients once the key is domain-restricted to hookswap.org.
-    [RPCType.Default]: {
-      http: ['https://rpc.mainnet.chain.robinhood.com/', 'https://robinhoodchain.blockscout.com/api/eth-rpc'],
-    },
-    [RPCType.Public]: {
-      http: withAlchemyPrimary(UniverseChainId.Robinhood, [
-        'https://rpc.mainnet.chain.robinhood.com/',
-        'https://robinhoodchain.blockscout.com/api/eth-rpc',
-      ]),
-    },
-    [RPCType.Interface]: {
-      http: withAlchemyPrimary(UniverseChainId.Robinhood, [
-        'https://rpc.mainnet.chain.robinhood.com/',
-        'https://robinhoodchain.blockscout.com/api/eth-rpc',
-      ]),
-    },
+    // Default also feeds third-party wallet-connector rpc maps (WalletConnect/Binance
+    // read default.http[0] from a cookieless in-page client), so it must stay unkeyed.
+    [RPCType.Default]: { http: ROBINHOOD_PUBLIC_RPC_URLS },
+    [RPCType.Public]: { http: ROBINHOOD_PUBLIC_RPC_URLS },
+    [RPCType.Interface]: { http: ROBINHOOD_PUBLIC_RPC_URLS },
   },
   supportedURVersions: [TradingApi.UniversalRouterVersion._2_0, TradingApi.UniversalRouterVersion._2_1_1],
   supportsV4: true,

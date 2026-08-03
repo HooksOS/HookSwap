@@ -28,7 +28,8 @@ import { Protocol } from '@uniswap/router-sdk'
 import { Actions, URVersion, V4Planner } from '@uniswap/v4-sdk'
 import { ethers } from 'ethers'
 import type { ChainConfig } from './chains'
-import { HOOKSWAP_FEE_BIPS, HOOKSWAP_FEE_RECIPIENT, resolveRpcUrl } from './chains'
+import { HOOKSWAP_FEE_BIPS, HOOKSWAP_FEE_RECIPIENT, resolveRpcUrls } from './chains'
+import { createFailoverProvider } from './rpc'
 import { patchMinHopPriceCalldata } from './urCalldata'
 import type {
   QuoteExactRouteParams,
@@ -140,7 +141,13 @@ export class EmbedRoutingProvider implements RoutingProvider {
   private getChainContext(chain: ChainConfig): ChainContext {
     let ctx = this.chainContexts.get(chain.chainId)
     if (!ctx) {
-      const provider = new ethers.providers.JsonRpcProvider(resolveRpcUrl(chain), chain.chainId)
+      // Multi-endpoint auto-failover (src/rpc.ts): every JSON-RPC call the SOR makes (multicall pool
+      // reads, quoter eth_calls, block number) walks the chain's ordered public endpoint list, marking a
+      // failing endpoint unhealthy for 60s and advancing. A FailoverProvider IS a JsonRpcProvider, so
+      // AlphaRouter/UniswapMulticallProvider take it unchanged. NOT ethers' FallbackProvider — its quorum
+      // machinery fans the SAME call out to every endpoint, which burns free-tier quota (the exact thing
+      // that broke us on 2026-08-02) and mis-handles a dead primary as a terminal result.
+      const provider = createFailoverProvider(resolveRpcUrls(chain), chain.chainId, `${chain.chainId} (${chain.name})`)
       const multicall2Provider = new UniswapMulticallProvider(chain.chainId, provider)
       // HookSwap chains have no hosted subgraph — use static (on-chain-derived) pool
       // discovery so the router finds our deployed v2/v3 pools via the factory + bases.

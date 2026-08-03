@@ -1,6 +1,7 @@
 import { requireSessionFetch, SessionGateSource, type Session } from '@universe/sessions'
 import { providers as ethersProviders } from 'ethers/lib/ethers'
 import { logger } from 'utilities/src/logger/logger'
+import { FallbackJsonRpcProvider } from './FallbackJsonRpcProvider'
 import { SignerInfo } from './FlashbotsCommon'
 import { FlashbotsRpcProvider } from './FlashbotsRpcProvider'
 import { extractRpcErrorMeta } from './observability/extractRpcErrorMeta'
@@ -164,6 +165,23 @@ export function createEthersProviderFactory(ctx: CreateEthersProviderFactoryCtx)
           }),
           input.chainId,
         )
+      }
+
+      // Public reads fail over across the chain's ordered public endpoints so a dead or
+      // rate-limited primary doesn't take out every ethers-based read for that chain.
+      // `fallbackRpcUrls` is only populated for public reads (never Private/UniRPC), so
+      // a single-endpoint config keeps the plain instrumented provider.
+      // The `!isUniRpc` guard matters because the UniRPC branch above also requires
+      // `getRequestHeaders`: a cookie-auth UniRPC config falls through to here, and it
+      // must not be failed over to unauthenticated public endpoints.
+      if (!rpcConfig.isUniRpc && rpcConfig.fallbackRpcUrls?.length) {
+        return new FallbackJsonRpcProvider({
+          urls: [rpcConfig.rpcUrl, ...rpcConfig.fallbackRpcUrls],
+          headers: rpcConfig.headers,
+          credentials: rpcConfig.credentials,
+          chainIdOrNetwork: input.chainId,
+          observer: getRpcObserver(),
+        })
       }
 
       return new InstrumentedJsonRpcProvider({
