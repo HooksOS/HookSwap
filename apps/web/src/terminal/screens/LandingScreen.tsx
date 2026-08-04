@@ -1415,10 +1415,13 @@ function LandingScreenBody(): JSX.Element {
             LandingScreen root styles with inline terminalColors (not the class), so
             without this scope `var(--tm-bg)`/`var(--tm-ink-3)` were undefined and the
             ticker text inherited white — invisible on the paper background. */}
+        {/* The tape's percentages come from the same pool-priced feed as Movers, so while
+            the gate is closed it would scroll fabricated crashes across the top of the
+            page. Fall back to the tape's own empty state instead of hiding the strip. */}
         <div className="tm-root">
           <TickerTape
-            items={tickerItems}
-            emptyLabel={tickerEmptyLabel}
+            items={statsLive ? tickerItems : []}
+            emptyLabel={statsLive ? tickerEmptyLabel : 'COMING SOON — pricing returns once liquidity is seeded'}
             onSelect={(i) => goToTickerSwap(tickers[i])}
           />
         </div>
@@ -1603,7 +1606,7 @@ function LandingScreenBody(): JSX.Element {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <DoubleCurrencyLogo currencies={[featuredRow?.currency0, featuredRow?.currency1]} size={26} />
                 <span style={{ fontFamily: MONO, fontSize: 32, fontWeight: 600, letterSpacing: '-0.01em', color: terminalColors.ink }}>
-                  {fiatPrice(featuredMetric?.price)}
+                  {statsLive ? fiatPrice(featuredMetric?.price) : '—'}
                 </span>
                 <span
                   style={{
@@ -1618,7 +1621,7 @@ function LandingScreenBody(): JSX.Element {
                           : terminalColors.redDown,
                   }}
                 >
-                  {featuredMetric?.change1d !== undefined ? formatSignedPct(featuredMetric.change1d) : '—'}
+                  {statsLive && featuredMetric?.change1d !== undefined ? formatSignedPct(featuredMetric.change1d) : '—'}
                 </span>
               </div>
               <div style={{ marginTop: 12 }}>
@@ -1629,26 +1632,40 @@ function LandingScreenBody(): JSX.Element {
                 )}
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderTop: `1px solid ${terminalColors.line2}` }}>
-              <div style={{ padding: '12px 14px', borderRight: `1px solid ${terminalColors.line2}` }}>
-                <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: terminalColors.ink3 }}>Liquidity</div>
-                <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: terminalColors.ink, marginTop: 5 }}>
-                  {featuredRow ? fiatStats(featuredRow.tvl) : '—'}
+            {/* Featured-pool stats are pool-reserve derived: with protocol liquidity withdrawn
+                they read as "<$0.01 / $26.15 / 0.0%", which looks like a live-but-tiny market
+                rather than a paused one. Gate the whole strip. */}
+            {statsLive ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', borderTop: `1px solid ${terminalColors.line2}` }}>
+                <div style={{ padding: '12px 14px', borderRight: `1px solid ${terminalColors.line2}` }}>
+                  <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: terminalColors.ink3 }}>Liquidity</div>
+                  <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: terminalColors.ink, marginTop: 5 }}>
+                    {featuredRow ? fiatStats(featuredRow.tvl) : '—'}
+                  </div>
+                </div>
+                <div style={{ padding: '12px 14px', borderRight: `1px solid ${terminalColors.line2}` }}>
+                  <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: terminalColors.ink3 }}>24h Vol</div>
+                  <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: terminalColors.ink, marginTop: 5 }}>
+                    {featuredRow ? fiatStats(featuredRow.volume24h) : '—'}
+                  </div>
+                </div>
+                <div style={{ padding: '12px 14px' }}>
+                  <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: terminalColors.ink3 }}>APR</div>
+                  <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: terminalColors.brandGreen, marginTop: 5 }}>
+                    {featuredRow ? featuredRow.aprText : '—'}
+                  </div>
                 </div>
               </div>
-              <div style={{ padding: '12px 14px', borderRight: `1px solid ${terminalColors.line2}` }}>
-                <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: terminalColors.ink3 }}>24h Vol</div>
-                <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: terminalColors.ink, marginTop: 5 }}>
-                  {featuredRow ? fiatStats(featuredRow.volume24h) : '—'}
-                </div>
+            ) : (
+              <div style={{ borderTop: `1px solid ${terminalColors.line2}` }}>
+                <ComingSoon
+                  label="COMING SOON"
+                  subtext="Pool liquidity, volume and APR return once liquidity is seeded."
+                  variant="panel"
+                  minHeight={96}
+                />
               </div>
-              <div style={{ padding: '12px 14px' }}>
-                <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: terminalColors.ink3 }}>APR</div>
-                <div style={{ fontFamily: MONO, fontSize: 16, fontWeight: 600, color: terminalColors.brandGreen, marginTop: 5 }}>
-                  {featuredRow ? featuredRow.aprText : '—'}
-                </div>
-              </div>
-            </div>
+            )}
           </InstrumentPanel>
         </div>
 
@@ -1679,10 +1696,13 @@ function LandingScreenBody(): JSX.Element {
               loading={volumeStats.isLoading}
               comingSoon={!statsLive}
             />
+            {/* The pairs still exist on-chain, but every one holds zero protocol liquidity —
+                calling them "live pools" while swaps are paused would be false. */}
             <StatCard
               label="Live pools"
               value={topPools ? topPools.length.toLocaleString('en-US') : undefined}
               loading={poolsLoading && !topPools}
+              comingSoon={!statsLive}
             />
             <StatCard label="Chains live" value={chains.length > 0 ? String(chains.length) : undefined} loading={false} />
           </div>
@@ -1706,9 +1726,18 @@ function LandingScreenBody(): JSX.Element {
             )}
           </InstrumentPanel>
 
-          {/* Movers — top tokens by 24h change, from the live listTokens feed */}
+          {/* Movers — top tokens by 24h change, from the live listTokens feed.
+              Those percentages are priced off protocol pool reserves, so with liquidity
+              withdrawn they render as fabricated crashes (USDG -95.7%, USDC -99.3%) for
+              assets that did not move at all. Gate rather than publish that. */}
           <InstrumentPanel title="Movers" meta={['24h']} style={{ flex: '1 1 280px', minWidth: 0 }}>
-            {tickers.length > 0 ? (
+            {!statsLive ? (
+              <ComingSoon
+                label="COMING SOON"
+                subtext="24h moves are priced from protocol pool reserves. They return once liquidity is seeded."
+                minHeight={150}
+              />
+            ) : tickers.length > 0 ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
                 {tickers.slice(0, 8).map((tk) => {
                   const known = tk.change1d !== undefined
