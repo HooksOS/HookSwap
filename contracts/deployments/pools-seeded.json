@@ -1,54 +1,108 @@
 {
-  "_note": "Real-stablecoin liquidity pools seeded 2026-07-23 by deployer 0xc14C897c6bff88a5Eeac31F795693b9230205125. STABLECOINS ONLY — NO mock/test tokens (per Reggie, 2026-07-23). Each is a v2 pair (HookSwap v2Router 0xBe3729d0.., v2Factory 0xD1Cf6649..) of the chain's wrapped-native against a REAL stablecoin the deployer holds. Sizes are native-gas-limited dust/proof pools — routing-proven via getAmountsOut, not deep liquidity. All txs status 0x1, verified on-chain.",
-  "seededThisSession": {
-    "stable_988": {
+  "_note": "DRAINED 2026-08-04. Every HookSwap protocol-seeded v2 position was withdrawn to deployer 0xc14C897c6bff88a5Eeac31F795693b9230205125 and every pair now holds ZERO deployer LP. This file previously described these as live seeded pools — that is no longer true. Pairs still EXIST on-chain (a v2 pair cannot be un-deployed); they are simply empty and quote nothing. The swap UI is gated COMING SOON accordingly (apps/web/src/terminal/config/liquidityGate.ts).",
+  "status": "DRAINED",
+  "drainedAt": "2026-08-04",
+  "drainedBy": "0xc14C897c6bff88a5Eeac31F795693b9230205125",
+  "_corrections": [
+    "This file previously recorded only 5 of the 9 deployer-owned positions. The 4 that were MISSING are now included and flagged wasUnrecorded:true — stable STT/USDT0, robinhood WETH/tHOOK, and BOTH xlayer pairs.",
+    "XLayer was recorded as a single 'existing STT/WOKB pool'. On-chain it was TWO pairs, both HKT/WOKB (token name 'HookSwap Test'), not STT.",
+    "The robinhood USDG anchor's recorded reserves (0.00833263 WETH / 16.294787 USDG) were stale by the time of the drain; live reserves at withdrawal were 0.0085508219281101 WETH / 15.901481 USDG, consistent with trading against it.",
+    "Tempo was listed under 'blocked' as if a pool were pending. v2Factory.allPairsLength() on 4217 is 0 — there was never anything there to drain. The AA-token blocker below remains accurate.",
+    "No v3 positions ever existed: NonfungiblePositionManager.balanceOf(deployer) = 0 on all 7 chains plus Sepolia."
+  ],
+  "_method": "For each pair: approve(LP -> chain v2Router) then router.removeLiquidity(token0, token1, fullLpBalance, min0, min1, deployer, deadline), with min* = 99% of pro-rata reserves re-read at send time. All 9 confirmed by post-tx balanceOf(deployer) == 0. Guard applied before every send: pair.factory() == router.factory(), because this repo reuses the same address for different roles across chains (0xBe3729d0 is the v2 ROUTER on ink/megaeth/robinhood but the v2 FACTORY on stable; 0xAa1f5Bd5 is the v3 factory on three chains but the v2 ROUTER on xlayer).",
+  "drainedPositions": {
+    "stable_988_STT_USDT0": {
+      "pair": "0x9acca9e8b7888c0197DB490Ce78e77e38b1268CE",
+      "protocol": "v2",
+      "wasUnrecorded": true,
+      "tokens": "STT 0x621A6f2207c2c3354C6a76136032e1055777EA55 (18-dec, self-deployed test token) / USDT0 0x779Ded0c9e1022225f8E0630b35a9b54bE713736 (6-dec)",
+      "recovered": "454669.455305704985208677 STT + 5.499999 USDT0",
+      "residualLp": "0",
+      "note": "STT is a self-deployed test token with no external market — economically zero. Only the USDT0 leg carried value."
+    },
+    "stable_988_USDT0_WgUSDT": {
       "pair": "0x7F9023729F92ecb5aCbe9A4d9F9463fCDf5b2B9f",
       "protocol": "v2",
-      "tokens": "WgUSDT 0x817997ca..f9de (18-dec) / USDT0 0x779Ded0c..3736 (6-dec)",
-      "seeded": "5 WgUSDT : 5 USDT0",
-      "testSwap": "1 USDT0 -> 0.831248957812239453 WgUSDT (mined, status 0x1)",
-      "rpc": "https://rpc.stable.xyz"
+      "tokens": "USDT0 0x779Ded0c9e1022225f8E0630b35a9b54bE713736 (6-dec) / WgUSDT 0x817997Ca8394E26CCE3dE3A076a4889b27DbF9dE (18-dec)",
+      "seededHistorical": "5 WgUSDT : 5 USDT0",
+      "recovered": "5.046470 USDT0 + 5.128798762575807733 WgUSDT",
+      "residualLp": "0",
+      "note": "WgUSDT is Stable's WRAPPED NATIVE; it was unwrapped to native after withdrawal. On chain 988 the native gas token is also exposed as an ERC20 at 0x779Ded0c.., so balanceOf(USDT0) and eth_getBalance report the SAME asset — do not double-count them."
     },
     "ink_57073": {
       "pair": "0xB738BBaC16121D11B1F59AbC619A359413503d12",
       "protocol": "v2",
-      "tokens": "WETH 0x4200..0006 (18-dec) / USD₮0 0x0200C29006150606B650577BBE7B6248F58470c1 (6-dec, canonical USDT0)",
-      "seeded": "0.00527 WETH : 10 USD₮0",
-      "quote": "1 USD₮0 -> 0.000477783941074838 WETH",
+      "tokens": "USD₮0 0x0200C29006150606B650577BBE7B6248F58470c1 (6-dec, canonical) / WETH 0x4200000000000000000000000000000000000006 (18-dec)",
+      "seededHistorical": "0.00527 WETH : 10 USD₮0",
+      "recovered": "9.909111 USD₮0 + 0.005321832559719843 WETH",
+      "residualLp": "0",
       "rpc": "https://rpc-qnd.inkonchain.com",
-      "note": "USD₮0 is Tether-style: approve emitted, but rpc-gel load-balancer lags reads/nonce -> use rpc-qnd + explicit --nonce."
+      "note": "USD₮0 is Tether-style. rpc-gel.inkonchain.com load-balancer lags reads/nonce — use rpc-qnd."
     },
     "megaeth_4326": {
       "pair": "0xAD12931B2ff618C4aFEA9d9BCB7508Ccb51fF674",
       "protocol": "v2",
-      "tokens": "WETH 0x4200..0006 (18-dec) / USDm 0xfafddbb3fc7688494971a79cc65dca3ef82079e7 (18-dec)",
-      "seeded": "0.0025 WETH : 4.75 USDm",
-      "quote": "1 USDm -> 0.000433704541499912 WETH",
-      "rpc": "https://mainnet.megaeth.com/rpc",
-      "note": "Native-limited (~$5/side): deployer had only 0.00308 ETH; can't reach $10/side without more native."
+      "tokens": "WETH 0x4200000000000000000000000000000000000006 (18-dec) / USDm 0xFAfDdbb3FC7688494971a79cc65DCa3EF82079E7 (18-dec)",
+      "seededHistorical": "0.0025 WETH : 4.75 USDm",
+      "recovered": "0.002531008500083612 WETH + 4.691978108022212419 USDm",
+      "residualLp": "0",
+      "rpc": "https://mainnet.megaeth.com/rpc"
     },
     "hyperevm_999": {
       "pair": "0x8628AfE800ca8C26F1d4Dc41e2B02C85e0B19Fc3",
       "protocol": "v2",
-      "tokens": "WHYPE 0x5555555555555555555555555555555555555555 (18-dec) / USDC 0xb88339cb7199b77e23db6e890353e22632ba630f (6-dec, real HyperEVM USDC)",
       "router": "0xbd817036c5bF69Cb27D3A342129e39f9f908577d",
       "v2Factory": "0xB92598Fa464B96FEC394a17A269Ad18060Ec60B2",
-      "seeded": "0.1646 WHYPE : 10 USDC (~$10/side, HYPE~$60.75)",
-      "quote": "1 USDC -> 0.014922815313267254 WHYPE",
+      "tokens": "WHYPE 0x5555555555555555555555555555555555555555 (18-dec) / USDC 0xb88339CB7199b77E23DB6E890353E22632Ba630f (6-dec, real HyperEVM USDC)",
+      "seededHistorical": "0.1646 WHYPE : 10 USDC",
+      "recovered": "0.173593837279138015 WHYPE + 9.487890 USDC",
+      "residualLp": "0",
       "rpc": "https://rpc.hyperliquid.xyz/evm",
-      "note": "The real USDC (0xb88339cb..) was acquired by the deployer via swap tx 0xdef5d565..bf64 (0.0837 HYPE -> 5.085 USDC) — NOT the canonical bridged USD₮0 0xB8CE.. I first checked (which was 0). addLiquidity creates the pair (~2-3M gas) -> HyperEVM routes it to a big block (~1min); nonce advances but the pending tx read lags -> confirm via getPair/getReserves, not the send timeout."
+      "note": "rpc.hyperlend.finance returned a Cloudflare 504 mid-withdrawal; the tx had NOT landed (LP re-read intact) and the leg succeeded on rpc.hyperliquid.xyz/evm. A gateway timeout is a RESPONSE failure — always re-read on-chain state before retrying, never assume."
+    },
+    "robinhood_4663_WETH_tHOOK": {
+      "pair": "0xbf54dFaC1fB1820fBeb5Be6fF09c4dc990DC0dC6",
+      "protocol": "v2",
+      "wasUnrecorded": true,
+      "tokens": "WETH 0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73 (18-dec) / tHOOK 0x3b5a01Efc59f3465b8Eb04697f97CFE0BA700D9D (18-dec, 'Test Hook Token')",
+      "recovered": "0.000230558650274015 WETH + 0.173560659254777609 tHOOK",
+      "residualLp": "0",
+      "note": "tHOOK is a self-deployed test token — economically zero."
+    },
+    "robinhood_4663_WETH_USDG": {
+      "pair": "0xF7ddC3837eAF447689a365f5f6f6B7C2AcdB72D7",
+      "protocol": "v2",
+      "tokens": "WETH 0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73 (18-dec) / USDG 0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168 (6-dec)",
+      "seededHistorical": "0.00833263 WETH : 16.294787 USDG (~$32, the USD pricing anchor)",
+      "reservesAtWithdrawal": "0.0085508219281101 WETH : 15.901481 USDG",
+      "recovered": "0.00855082190489439 WETH + 15.901480 USDG",
+      "residualLp": "0",
+      "note": "This was the largest real position and the source of USD pricing across data-api handlers. Draining it removes that price anchor."
+    },
+    "xlayer_196_a": {
+      "pair": "0x782acfD69d0BeE76aC4B618D2f5fDD9060F5854E",
+      "protocol": "v2",
+      "wasUnrecorded": true,
+      "tokens": "HKT 0x0E88A920A522d2e858B5fB0e896F228f4619E0a6 (18-dec, 'HookSwap Test') / WOKB 0xe538905cf8410324e03A5A23C1c177a474D59b2b (18-dec)",
+      "recovered": "999.9999999999999 HKT + 0.09999999999999999 WOKB",
+      "residualLp": "0"
+    },
+    "xlayer_196_b": {
+      "pair": "0x1A95898916C7872F4712c92A1b665E54414728Bd",
+      "protocol": "v2",
+      "tokens": "HKT 0x144331BB4C3026D135896CaFec3Ae3D667f4F376 (18-dec, 'HookSwap Test') / WOKB 0xe538905cf8410324e03A5A23C1c177a474D59b2b (18-dec)",
+      "seededHistorical": "1000 HKT : 0.05 WOKB — the pool behind the 2026-07-08 XLayer routing deep-dive (0.001 WOKB -> 19.55 quote)",
+      "recovered": "999.999999999999858578 HKT + 0.049999999999999992 WOKB",
+      "residualLp": "0",
+      "note": "Previously mislabelled STT/WOKB and recorded as the only XLayer pool. It is HKT/WOKB and there were two."
     }
   },
-  "alreadyLive": {
-    "robinhood_4663": {
-      "pair": "0xF7ddC3837eAF447689a365f5f6f6B7C2AcdB72D7",
-      "tokens": "WETH 0x0Bd7D308..AD73 / USDG 0x5fc5360D..d168 (6-dec)",
-      "reserves": "0.00833263 WETH : 16.294787 USDG (~$32 TVL, real stablecoin anchor)",
-      "note": "Pre-existing anchor; no action needed."
-    },
-    "xlayer_196": "existing STT/WOKB pool (per CLAUDE.md 2026-07-08 XLayer routing deep-dive)"
+  "emptyChains": {
+    "tempo_4217": "v2Factory 0xE8526A04.. allPairsLength() = 0 — no pool ever existed, nothing to drain. CORRECTED 2026-08-04: the previous claim that pathUSD/USDC.e 'REVERT on approve() AND on EOA transfer()' is FALSE. Both tokens return true on eth_call for transfer(addr,1) AND approve(router,1), and USDC.e 10.962574 was successfully bridged to Base via Relay this session (approve + deposit, status success, $10.93 received). What actually fails on Tempo is gas ESTIMATION under its AA model, not the token logic — every tx needs an explicit --gas-limit plus --legacy --gas-price 20e9. STILL UNRESOLVED: pathUSD 7.449661 remains stranded. It is Tempo's GAS token, so it can never be bridged at 100% (the deposit cannot pay for itself); a 90% attempt also failed to settle — both attempts mined and consumed gas but never moved the balance, and Relay routes pathUSD to a different depository (0xccc88a9d1b..) than USDC.e (0x4cd00e3876..). Root cause not established.",
+    "tempo_4217_weth9": "0xBbBcC62853a5fA27b93d6Bab3E6F7ce841E25Df2 is NOT a real WETH9 — 109 bytes of code, reverts 0xea3559ef on both symbol() and balanceOf(). It exists only as the WETH9 constructor arg for the router/periphery deploy. There is nothing wrapped on Tempo and no withdraw() to call.",
+    "stable_988_third_pair": "0xEf3526Fd5641cd4f516d1CAb46C9D48e8c756F60 (STT/WgUSDT) — totalSupply 1000 wei (burned MINIMUM_LIQUIDITY only), deployer LP 0. Never seeded.",
+    "xlayer_196_duplicate_factory": "0xBe3729d0.. (the nonce-1 duplicate recorded in xlayer.json) — allPairsLength() = 0, confirmed empty. The canonical XLayer v2 factory is 0xD1Cf6649.."
   },
-  "blocked": {
-    "tempo_4217": "Broadcasting DOES work with explicit --gas-limit (+ --legacy --gas-price 20e9); the 'AA missing keys: gas' error was just cast failing gas ESTIMATION. Deployer holds REAL stables pathUSD 7.62 (0x20c0..0000, 6-dec) + USDC.e 10.96 (0x20c000000000000000000000b9537d11c60e8b50, 6-dec). BUT these AA-native system tokens REVERT on approve() AND on EOA transfer() to arbitrary addresses (only the AA gas-payment path moves them); v2Factory.createPair also failed. So a v2 pool needs Tempo's AA-native token flow / paymaster, not standard router-approve or direct-transfer+mint. Router 0x6d8a0783.., factory 0xE8526A04.., WETH9 0xBbBc..25Df2 reverts on symbol/balanceOf (routing wrapper only). Deferred: needs Tempo AA tooling."
-  }
+  "_reseeding": "To go live again: seed pools, then flip SWAP_LIVE and PROTOCOL_STATS_LIVE in apps/web/src/terminal/config/liquidityGate.ts AND the mirrored SWAP_LIVE in packages/uniswap/src/features/transactions/swap/stores/swapFormStore/hooks/useDerivedSwapInfo.ts (duplicated because packages/uniswap must not import from apps/web — it is the easiest of the three to forget). Restoring the robinhood WETH/USDG anchor first re-establishes USD pricing for data-api."
 }
