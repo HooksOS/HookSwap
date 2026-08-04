@@ -64,6 +64,8 @@ import { maxAmountSpend } from '~/utils/maxAmountSpend'
 import { MultichainContextProvider } from '~/state/multichain/MultichainContext'
 import { useOnSelectCurrency } from 'uniswap/src/features/transactions/swap/form/hooks/useOnSelectCurrency'
 import { useIsMobileViewport } from '~/terminal/hooks/useIsMobileViewport'
+import { ComingSoon } from '~/terminal/components/ComingSoon'
+import { useSwapLive } from '~/terminal/config/liquidityGate'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { isChainDexLive } from '~/terminal/TerminalApp'
 import { SwapChainSync } from '~/terminal/screens/swap/SwapChainSync'
@@ -370,6 +372,10 @@ function BreakdownRow({
 }
 
 export function SwapTicket(): JSX.Element {
+  // Protocol-liquidity gate — see ~/terminal/config/liquidityGate.ts. While HookSwap's
+  // own seeded liquidity is withdrawn every quote returns NO_ROUTE, so the ticket renders
+  // an honest gated panel instead. Flip SWAP_LIVE back to true to restore it verbatim.
+  const swapLive = useSwapLive()
   const accountDrawer = useAccountDrawer()
   const account = useAccount()
   const navigate = useNavigate()
@@ -536,6 +542,21 @@ export function SwapTicket(): JSX.Element {
     outputCurrency: outputInfo?.currency,
     typedValue: derived.exactAmountToken,
   })
+
+  // Gated: keep the panel chrome (so the 340px desk column doesn't collapse) and swap the
+  // body for the honest COMING SOON state. Placed after every hook so the hook order is
+  // identical in both states. Everything below is untouched and returns when the flag flips.
+  if (!swapLive) {
+    return (
+      <InstrumentPanel title="Order Ticket" meta={['Market']} style={{ width: '100%' }}>
+        <ComingSoon
+          label="COMING SOON"
+          subtext="Swaps are paused while liquidity is being re-seeded. Adding liquidity, farms, locker, vesting and launchpad stay live."
+          minHeight={320}
+        />
+      </InstrumentPanel>
+    )
+  }
 
   // --- Swap button state ----------------------------------------------------
   let swapLabel: string
@@ -843,6 +864,7 @@ export function SwapTicket(): JSX.Element {
  * `useSelectChain` wallet chain-switch action the Terminal's top-bar switcher uses.
  */
 function WrongChainBanner(): JSX.Element | null {
+  const swapLive = useSwapLive()
   const account = useAccount()
   const selectChain = useSelectChain()
   const [switching, setSwitching] = useState(false)
@@ -851,7 +873,9 @@ function WrongChainBanner(): JSX.Element | null {
   // Only relevant when the wallet is connected to a chain HookSwap does NOT trade on.
   // Data-driven via isChainDexLive (a chain with a live v2/v3 stack) — NOT hardcoded to
   // Robinhood, since swaps route on XLayer/Stable/HyperEVM/etc too.
-  if (connectedChainId === undefined || isChainDexLive(connectedChainId as UniverseChainId)) {
+  // While the swap gate is on, no chain trades — "switch chain" would be misleading noise
+  // next to the COMING SOON ticket, so the banner is suppressed too.
+  if (!swapLive || connectedChainId === undefined || isChainDexLive(connectedChainId as UniverseChainId)) {
     return null
   }
 

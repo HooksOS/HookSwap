@@ -22,6 +22,26 @@ import { useWallet } from 'uniswap/src/features/wallet/hooks/useWallet'
 import { CurrencyField } from 'uniswap/src/types/currency'
 import { buildCurrencyId } from 'uniswap/src/utils/currencyId'
 
+/**
+ * HookSwap protocol-liquidity gate — swap half.
+ *
+ * ⚠️ MUST be kept in sync with `apps/web/src/terminal/config/liquidityGate.ts` → `SWAP_LIVE`.
+ * It is duplicated here rather than imported because `packages/uniswap` is a shared package
+ * and must never depend on `apps/web`.
+ *
+ * HookSwap's own seeded liquidity has been withdrawn from every chain, so every quote would
+ * return NO_ROUTE. Rather than poll the Trading API for a route that cannot exist, the quote
+ * request is skipped outright while the gate is closed. Flip BOTH constants back to `true`
+ * together to restore quoting.
+ *
+ * Scope note: this gates ONLY the swap-form quote path. `useTrade` is also called directly by
+ * user-liquidity flows (e.g. `apps/web/src/features/Liquidity/Create/hooks/useDefaultInitialPrice.ts`),
+ * which do NOT go through this hook and are deliberately left live.
+ */
+// Annotated `boolean` (not the literal `false`) so the `skip` expression below is not
+// narrowed to a constant and flagged as an unnecessary condition by the linter.
+const SWAP_LIVE: boolean = false
+
 /** Returns information derived from the current swap state */
 export function useDerivedSwapInfo({
   isDebouncing,
@@ -135,7 +155,8 @@ export function useDerivedSwapInfo({
   )
 
   const existingPlanTrade = useTradeFromExistingPlan(tradeParams)
-  const tradeFromQuote = useTrade({ ...tradeParams, skip: !!existingPlanTrade })
+  // `!SWAP_LIVE` ORed into the existing skip → no quote request fires while the gate is closed.
+  const tradeFromQuote = useTrade({ ...tradeParams, skip: !SWAP_LIVE || !!existingPlanTrade })
   const trade = existingPlanTrade ?? tradeFromQuote
 
   const displayableTrade = trade.trade ?? trade.indicativeTrade

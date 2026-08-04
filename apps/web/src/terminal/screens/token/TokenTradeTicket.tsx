@@ -54,6 +54,8 @@ import { useAccount } from '~/hooks/useAccount'
 import { useWrapCallback as useDirectWrapCallback } from '~/pages/Swap/Limit/ConfirmLimitOrderModal/useWrapCallback'
 import { MultichainContextProvider } from '~/state/multichain/MultichainContext'
 import { maxAmountSpend } from '~/utils/maxAmountSpend'
+import { ComingSoon } from '~/terminal/components/ComingSoon'
+import { useSwapLive } from '~/terminal/config/liquidityGate'
 import { InstrumentPanel } from '~/terminal/components/InstrumentPanel'
 import { TerminalSwapReviewFlow, useTerminalReviewTrigger } from '~/terminal/screens/swap/TerminalSwapReviewFlow'
 import { terminalColors, terminalFonts, terminalTokenGradients } from '~/terminal/theme/tokens'
@@ -710,6 +712,10 @@ export function TokenTradeTicket({
   token: Maybe<Currency>
   tokenSymbol: string
 }): JSX.Element {
+  // Protocol-liquidity gate — see ~/terminal/config/liquidityGate.ts. Gated at the OUTER
+  // component so the swap-engine provider stack never mounts and no quote is requested;
+  // the rest of the token page (chart, holders, trades) is untouched and stays live.
+  const swapLive = useSwapLive()
   const native = useMemo(() => nativeOnChain(chainId), [chainId])
   const [txScreen, setTxScreen] = useState<TransactionScreen>(TransactionScreen.Form)
 
@@ -720,6 +726,18 @@ export function TokenTradeTicket({
     exactAmountToken: '',
     exactCurrencyField: CurrencyField.INPUT,
   })
+
+  if (!swapLive) {
+    return (
+      <InstrumentPanel title={`Trade ${tokenSymbol}`} meta={['Market']} style={{ width: '100%' }}>
+        <ComingSoon
+          label="COMING SOON"
+          subtext="Swaps are paused while liquidity is being re-seeded. Adding liquidity, farms, locker, vesting and launchpad stay live."
+          minHeight={280}
+        />
+      </InstrumentPanel>
+    )
+  }
 
   if (!token) {
     return (

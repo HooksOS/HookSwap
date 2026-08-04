@@ -63,6 +63,7 @@ import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens
 import { useTopPools } from '~/features/Explore/state/topPools/useTopPools'
 import { useVisibleChains } from '~/terminal/utils/visibleChains'
 import { ComingSoon } from '~/terminal/components/ComingSoon'
+import { useProtocolStatsLive } from '~/terminal/config/liquidityGate'
 import { DataTable, DataTableColumn } from '~/terminal/components/DataTable'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { SparklineCell } from '~/terminal/components/SparklineCell'
@@ -1177,8 +1178,26 @@ function AnalyticsScreenBody(): JSX.Element {
  * `/explore` page uses so the real protocol-stats + pools queries resolve:
  * `ExploreContextProvider` (chain scope; defaults to all-networks) +
  * `ExploreTablesFilterStoreContextProvider` (required by the pools filter layer).
+ *
+ * Every panel on this screen is protocol-wide (TVL / volume / fees / network
+ * allocation), so while `PROTOCOL_STATS_LIVE` is false the whole screen renders
+ * one honest gate rather than eight separate em-dash tiles.
  */
 export function AnalyticsScreen(): JSX.Element {
+  const statsLive = useProtocolStatsLive()
+
+  if (!statsLive) {
+    return (
+      <div style={{ padding: '20px var(--tm-gutter) 40px' }}>
+        <ComingSoon
+          label="COMING SOON"
+          subtext="Protocol TVL, volume and fee analytics publish once liquidity is seeded. Pools, positions, farms and locker stay live."
+          minHeight={420}
+        />
+      </div>
+    )
+  }
+
   return (
     <ExploreContextProvider>
       <ExploreTablesFilterStoreContextProvider>

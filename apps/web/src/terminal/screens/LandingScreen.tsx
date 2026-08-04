@@ -78,10 +78,12 @@ import { useListTokens } from '~/features/Explore/state/listTokens/useListTokens
 import { useTopPools } from '~/features/Explore/state/topPools/useTopPools'
 import { serializeSwapAddressesToURLParameters } from '~/pages/Swap/Swap/state/tradeQueryParams'
 import { useAccount } from '~/hooks/useAccount'
+import { ComingSoon } from '~/terminal/components/ComingSoon'
 import { Eyebrow, InstrumentPanel, terminalKeycap } from '~/terminal/components/InstrumentPanel'
 import { SparklineCell } from '~/terminal/components/SparklineCell'
 import { TerminalCommandPalette } from '~/terminal/components/TerminalCommandPalette'
 import { TickerTape, type TickerItem } from '~/terminal/components/TickerTape'
+import { useProtocolStatsLive } from '~/terminal/config/liquidityGate'
 import { HOOKSWAP_LINKS } from '~/terminal/config/screens'
 import { useCaptureRef } from '~/terminal/referral/useCaptureRef'
 import { isHiddenTokenSymbol, pairHasHiddenToken } from '~/terminal/utils/hiddenTokens'
@@ -852,12 +854,19 @@ function StatCard({
   delta,
   series,
   loading,
+  comingSoon = false,
 }: {
   label: string
   value?: string
   delta?: { text: string; up: boolean }
   series?: number[]
   loading: boolean
+  /**
+   * Metric is gated (protocol liquidity withdrawn) — em-dash + muted caption
+   * instead of a permanent skeleton or a misleading zero. Wins over `loading`.
+   * Mirrors the shared `components/StatCard` `comingSoon` state.
+   */
+  comingSoon?: boolean
 }): JSX.Element {
   return (
     <div
@@ -881,7 +890,23 @@ function StatCard({
       >
         {label}
       </div>
-      {loading || value === undefined ? (
+      {comingSoon ? (
+        <>
+          <div
+            style={{
+              fontFamily: MONO,
+              fontSize: 26,
+              fontWeight: 600,
+              color: terminalColors.ink3,
+              marginTop: 9,
+              letterSpacing: '-0.01em',
+            }}
+          >
+            —
+          </div>
+          <div style={{ fontFamily: SANS, fontSize: 11, color: terminalColors.ink3Alt, marginTop: 6 }}>Coming soon</div>
+        </>
+      ) : loading || value === undefined ? (
         <div style={{ height: 26, width: 84, borderRadius: 4, background: terminalColors.line2, marginTop: 10 }} />
       ) : (
         <>
@@ -1185,6 +1210,11 @@ function LandingScreenBody(): JSX.Element {
   const tvlStats = useDailyTVLWithChange()
   const volumeStats = use24hProtocolVolume()
   const protocolStats = useProtocolStats()
+  // Protocol-wide liquidity metrics (TVL / 24h volume / depth / top markets) are gated
+  // while HookSwap's own seeded liquidity is withdrawn — they would read ~zero, not
+  // "small". Everything user-supplied on this screen (launch, new position, ticker
+  // prices, chains live, wallet activity) stays live.
+  const statsLive = useProtocolStatsLive()
 
   const metricMaps = useMemo(() => buildTokenMetrics(topTokens), [topTokens])
   const tickers = useMemo(() => buildTickers(topTokens), [topTokens])
@@ -1635,6 +1665,7 @@ function LandingScreenBody(): JSX.Element {
               }
               series={tvlSeries}
               loading={tvlStats.isLoading}
+              comingSoon={!statsLive}
             />
             <StatCard
               label="24h Volume"
@@ -1646,6 +1677,7 @@ function LandingScreenBody(): JSX.Element {
               }
               series={volumeSeries}
               loading={volumeStats.isLoading}
+              comingSoon={!statsLive}
             />
             <StatCard
               label="Live pools"
@@ -1660,10 +1692,18 @@ function LandingScreenBody(): JSX.Element {
         <div style={{ padding: `6px ${padX}px 34px`, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
           {/* Liquidity depth — reserve-derived; honest empty until a featured pool exposes reserves */}
           <InstrumentPanel title="Liquidity Depth" meta={['±3% · reserves']} style={{ flex: '1.4 1 340px', minWidth: 0 }}>
-            <DepthCurve
-              tvlUsd={featured?.totalLiquidity?.value}
-              pair={featuredRow ? `${featuredRow.symbol0}/${featuredRow.symbol1}` : undefined}
-            />
+            {statsLive ? (
+              <DepthCurve
+                tvlUsd={featured?.totalLiquidity?.value}
+                pair={featuredRow ? `${featuredRow.symbol0}/${featuredRow.symbol1}` : undefined}
+              />
+            ) : (
+              <ComingSoon
+                label="COMING SOON"
+                subtext="Depth is drawn from protocol pool reserves. It returns once liquidity is seeded."
+                minHeight={150}
+              />
+            )}
           </InstrumentPanel>
 
           {/* Movers — top tokens by 24h change, from the live listTokens feed */}
@@ -1755,7 +1795,13 @@ function LandingScreenBody(): JSX.Element {
                 <span style={{ textAlign: 'right' }}>APR</span>
                 <span style={{ textAlign: 'right' }}>TREND</span>
               </div>
-              {poolsError ? (
+              {!statsLive ? (
+                <ComingSoon
+                  label="COMING SOON"
+                  subtext="Protocol market stats return once liquidity is seeded. Every market is still browsable under All markets."
+                  minHeight={150}
+                />
+              ) : poolsError ? (
                 <div style={{ padding: '32px 20px', textAlign: 'center', fontFamily: SANS, fontSize: 13, color: terminalColors.ink3Alt }}>
                   Markets unavailable right now.
                 </div>

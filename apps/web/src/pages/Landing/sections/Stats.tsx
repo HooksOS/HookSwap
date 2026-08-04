@@ -8,6 +8,8 @@ import { NumberType } from 'utilities/src/format/types'
 import { use24hProtocolVolume, useDailyTVLWithChange } from '~/features/Explore/state/protocolStats'
 import { LiveIcon, StatCard } from '~/pages/Landing/components/StatCard'
 import { useInView } from '~/pages/Landing/sections/useInView'
+import { ComingSoon } from '~/terminal/components/ComingSoon'
+import { useProtocolStatsLive } from '~/terminal/config/liquidityGate'
 import { ExternalLink } from '~/theme/components/Links'
 
 const Container = styled(Flex, {
@@ -169,11 +171,30 @@ const RightBottom = styled(Flex, {
   },
 })
 
+/**
+ * Card-shaped stand-in for a protocol metric that is gated while HookSwap's own
+ * seeded liquidity is withdrawn. `StatCard` animates its value one character at a
+ * time from a numeric/currency sprite set, so it cannot render placeholder text —
+ * a gated metric would fall through as "$0". This keeps the grid cell's card
+ * chrome and says so plainly instead.
+ */
+function GatedStatCard({ subtext }: { subtext: string }) {
+  return (
+    <Flex backgroundColor="$surface2" borderRadius="$rounded20" width="100%" height="100%" justifyContent="center">
+      <ComingSoon label="COMING SOON" subtext={subtext} />
+    </Flex>
+  )
+}
+
 function Cards({ inView }: { inView: boolean }) {
   const { t } = useTranslation()
   const { convertFiatAmountFormatted, formatNumberOrString } = useLocalizationContext()
   const { totalVolume } = use24hProtocolVolume()
   const { totalTVL } = useDailyTVLWithChange()
+  // Protocol TVL + 24h volume read ~zero while protocol-seeded liquidity is
+  // withdrawn — gate them rather than print "$0". The two all-time figures below
+  // are static constants, not feed-derived, so they are unaffected.
+  const statsLive = useProtocolStatsLive()
   // Currently hardcoded, BE task [DAT-1435] to make this data available
   const allTimeVolume = 4.0 * 10 ** 12
   const allTimeSwappers = 119 * 10 ** 6
@@ -189,12 +210,16 @@ function Cards({ inView }: { inView: boolean }) {
         />
       </LeftTop>
       <RightTop>
-        <StatCard
-          title={t('stats.tvl')}
-          value={convertFiatAmountFormatted(totalTVL, NumberType.FiatTokenStats)}
-          delay={0.2}
-          inView={inView}
-        />
+        {statsLive ? (
+          <StatCard
+            title={t('stats.tvl')}
+            value={convertFiatAmountFormatted(totalTVL, NumberType.FiatTokenStats)}
+            delay={0.2}
+            inView={inView}
+          />
+        ) : (
+          <GatedStatCard subtext="Protocol TVL publishes once liquidity is seeded." />
+        )}
       </RightTop>
       <LeftBottom>
         <StatCard
@@ -208,13 +233,17 @@ function Cards({ inView }: { inView: boolean }) {
         />
       </LeftBottom>
       <RightBottom>
-        <StatCard
-          title={t('stats.24swapVolume')}
-          value={convertFiatAmountFormatted(totalVolume, NumberType.FiatTokenStats)}
-          live
-          delay={0.6}
-          inView={inView}
-        />
+        {statsLive ? (
+          <StatCard
+            title={t('stats.24swapVolume')}
+            value={convertFiatAmountFormatted(totalVolume, NumberType.FiatTokenStats)}
+            live
+            delay={0.6}
+            inView={inView}
+          />
+        ) : (
+          <GatedStatCard subtext="24h protocol volume publishes once liquidity is seeded." />
+        )}
       </RightBottom>
     </GridArea>
   )

@@ -28,6 +28,8 @@ import { SwapAndLimitContextProvider } from '~/features/Swap/state/SwapContext'
 import { MultichainContextProvider } from '~/state/multichain/MultichainContext'
 import { SwapDependenciesStoreContextProvider } from 'uniswap/src/features/transactions/swap/stores/swapDependenciesStore/SwapDependenciesStoreContextProvider'
 import { useSwapHandlers } from '~/features/Swap/hooks/useSwapHandlers/useSwapHandlers'
+import { ComingSoon } from '~/terminal/components/ComingSoon'
+import { useSwapLive } from '~/terminal/config/liquidityGate'
 import { SwapTicket } from '~/terminal/screens/SwapScreen'
 import { TerminalSwapReviewFlow } from '~/terminal/screens/swap/TerminalSwapReviewFlow'
 import { terminalColors, terminalFonts } from '~/terminal/theme/tokens'
@@ -79,6 +81,10 @@ function EmbedSwapTicket(): JSX.Element {
 }
 
 export function SwapWidgetPage(): JSX.Element {
+  // Protocol-liquidity gate — see ~/terminal/config/liquidityGate.ts. Third-party iframes
+  // are already embedded in the wild, so the widget must state the pause itself rather than
+  // mount the swap engine and quote NO_ROUTE. Flip SWAP_LIVE to restore the stack verbatim.
+  const swapLive = useSwapLive()
   const [searchParams] = useSearchParams()
   const config = useMemo(() => parseEmbedConfig(searchParams), [searchParams])
 
@@ -130,24 +136,33 @@ export function SwapWidgetPage(): JSX.Element {
           here (the swap ticket + live-quote path read WalletContext). Only the React
           context is mounted — no visual chrome — so the embed stays chromeless.
         */}
-        <WalletContextProvider>
-          <MultichainContextProvider initialChainId={config.chainId}>
-            <SwapTransactionSettingsStoreContextProvider>
-              <SwapAndLimitContextProvider>
-                <SwapFormStoreContextProvider prefilledState={prefilledState}>
-                  <TransactionModalContextProvider
-                    bottomSheetViewStyles={{}}
-                    screen={txScreen}
-                    setScreen={setTxScreen}
-                    onClose={() => undefined}
-                  >
-                    <EmbedSwapTicket />
-                  </TransactionModalContextProvider>
-                </SwapFormStoreContextProvider>
-              </SwapAndLimitContextProvider>
-            </SwapTransactionSettingsStoreContextProvider>
-          </MultichainContextProvider>
-        </WalletContextProvider>
+        {swapLive ? (
+          <WalletContextProvider>
+            <MultichainContextProvider initialChainId={config.chainId}>
+              <SwapTransactionSettingsStoreContextProvider>
+                <SwapAndLimitContextProvider>
+                  <SwapFormStoreContextProvider prefilledState={prefilledState}>
+                    <TransactionModalContextProvider
+                      bottomSheetViewStyles={{}}
+                      screen={txScreen}
+                      setScreen={setTxScreen}
+                      onClose={() => undefined}
+                    >
+                      <EmbedSwapTicket />
+                    </TransactionModalContextProvider>
+                  </SwapFormStoreContextProvider>
+                </SwapAndLimitContextProvider>
+              </SwapTransactionSettingsStoreContextProvider>
+            </MultichainContextProvider>
+          </WalletContextProvider>
+        ) : (
+          <ComingSoon
+            label="COMING SOON"
+            subtext="Swaps are paused while liquidity is being re-seeded."
+            minHeight={200}
+            style={{ width: 340, maxWidth: '100%' }}
+          />
+        )}
       </div>
       <PoweredByHookSwap theme={config.theme} />
     </div>
