@@ -8,6 +8,7 @@ import { NumberType } from 'utilities/src/format/types'
 import { DeltaArrow } from '~/components/DeltaArrow/DeltaArrow'
 import { LoadingBubble } from '~/components/Tokens/loading'
 import { use24hProtocolVolume, useDailyTVLWithChange } from '~/features/Explore/state/protocolStats'
+import { useProtocolStatsLive } from '~/terminal/config/liquidityGate'
 
 interface ExploreStatSectionData {
   label: string
@@ -24,6 +25,10 @@ export const ExploreStatsSection = ({ shouldHideStats = false }: { shouldHideSta
   const media = useMedia()
   const { t } = useTranslation()
   const { convertFiatAmountFormatted } = useLocalizationContext()
+  // Protocol-liquidity gate — these five cells are protocol-wide TVL/volume and would
+  // animate to $0.00 while HookSwap's own seeded liquidity is withdrawn. Reuses the
+  // component's existing hide path rather than adding a second one.
+  const statsLive = useProtocolStatsLive()
 
   const {
     protocolVolumes,
@@ -106,7 +111,7 @@ export const ExploreStatsSection = ({ shouldHideStats = false }: { shouldHideSta
 
   return (
     <AnimatePresence>
-      {!shouldHideStats && (
+      {!shouldHideStats && statsLive && (
         <Flex
           row
           width="100%"
